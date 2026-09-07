@@ -32,3 +32,29 @@ Spring Boot 4.1.1 native backend
 
 `src/features/monaco` 目录是为后续阶段保留的、已有文档说明的占位目录，不是隐藏
 的编辑器实现。
+
+## 第二阶段 Learning Journey
+
+```text
+React Learning Journey
+  ├─ Welcome / profile
+  ├─ Diagnostic / assessment answers
+  └─ Path + Lesson + Tutor
+       │ HTTP / SSE
+       ▼
+LearningController → Learning Engine → JdbcClient → SQLite
+                                  ├─ LLM-generated curriculum and Question bank
+                                  ├─ Assessment / Attempt history
+                                  └─ deterministic Score / Path / Progress
+                                                   ▲
+                     LlmCurriculumGenerator / LlmCodingEvaluator / DiagnosticPlanner
+                                (Spring AI provider boundary only)
+```
+
+课程目录和题库在运行时以 SQLite 为唯一读取来源。应用启动只创建表，不加载固定课程；
+用户提交目标语言创建新 Journey 时，LLM 为这个 Journey 独立生成技能和 Lesson 内容，Java
+校验后 insert-only 写入 SQLite，并通过 `learning_journey_skill` 建立专属关联。同一 Journey
+从 SQLite 恢复，不同 Journey 即使目标语言相同也不会共享技能。诊断或技能评估再按需选择或
+生成 Question。Question 使用 insert-only，退役记录写入 `question_retirement`，所以已有
+Assessment 与 Attempt 不会因题目从活动题库移除而失去历史引用。评估题集创建后固定在
+`assessment_question` 中，Retry 复用同一题集；创建新 Journey 需要 LLM 可用才能生成课程。

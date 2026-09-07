@@ -32,7 +32,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Runs the deterministic ADK/provider/tool/SSE fixture when native:check opts in. */
+/** 在 native:check 启用时运行确定性的 ADK、提供商、工具和 SSE 冒烟夹具。 */
 @Component
 final class NativeSelfTest implements ApplicationRunner {
 

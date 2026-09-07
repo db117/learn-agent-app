@@ -21,3 +21,24 @@ Spring Boot 初始化。
 所有持久化都通过 `SqliteRepository` 和 Spring `JdbcClient` 完成。项目不使用 JPA
 或第二个数据库。ADK 第一阶段的运行中会话状态保留在内存中，事件、消息和运行记录
 构成持久化的应用链路记录。
+
+## Learning Journey 表
+
+| 表 | 用途 |
+| --- | --- |
+| `learning_language` / `learning_skill` | LLM 生成并持久化的语言元数据和技能目录 |
+| `learning_journey_skill` | Journey 与专属技能的关联；隔离同语言的不同课程 |
+| `question` | 唯一的运行时题库；定义 insert-only |
+| `question_retirement` | Question 的 soft delete 标记；活动题库查询会排除它 |
+| `learning_journey` / `learner_profile` | 学习目标和学习者背景 |
+| `learner_skill` / `learning_path_item` | 掌握度、技能状态和路径历史 |
+| `assessment` / `assessment_question` | 诊断或技能评估及固定题集 |
+| `assessment_attempt` / `question_attempt` | 可重试的评估记录和答案/反馈 |
+| `tutor_session` | Journey + LearningSkill 到现有 ADK session 的唯一关联 |
+
+应用启动只创建表，不初始化 `learning_language`、`learning_skill` 或 `question`。用户提交
+目标语言创建新 Journey 时，LLM 为该 Journey 独立生成技能和 Lesson 内容，经 Java 校验后
+insert-only 写入，并在 `learning_journey_skill` 中建立关联；同一 Journey 后续直接读取关联。
+不同 Journey 即使目标语言相同也不会共享技能。诊断或技能评估需要题目时再生成并写入。课程
+目录和 Question 的已持久化定义都不被后续模型响应覆盖。Question 的题干、选项、正确答案、
+分值和 rubric 不做更新。删除使用 `question_retirement`，历史 Assessment 仍可通过原 Question 读取。

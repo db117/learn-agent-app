@@ -1,184 +1,629 @@
-import {useCallback, useEffect, useRef, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {invoke} from "@tauri-apps/api/core";
 import {
-  type AgentEvent,
   api,
+  type AgentEvent,
+  type AssessmentResponse,
+  type AssessmentResultResponse,
   type BackendHealth,
+  type CreateJourneyInput,
+  type JourneyDetail,
+  type LearningSkill,
   type Message,
   type SessionDetail,
-  type SessionSummary
+  type SkillResponse,
 } from "./lib/api";
 
 type BackendStatus = { status: string; detail?: string };
+type View = "welcome" | "diagnostic" | "result" | "dashboard" | "assessment";
+type AnswerDraft = { selectedOptionIds: string[]; submittedCode: string };
+type QuestionOption = { id: string; text: string };
+type QuestionConfig = { options: QuestionOption[]; multiple: boolean };
+
+const emptyDraft: AnswerDraft = {selectedOptionIds: [], submittedCode: ""};
+
+function errorMessage(cause: unknown, fallback: string) {
+  return cause instanceof Error ? cause.message : fallback;
+}
+
+function parseQuestionConfig(raw: string | null): QuestionConfig {
+  if (!raw) return {options: [], multiple: false};
+  try {
+    const parsed = JSON.parse(raw) as { options?: unknown; multiple?: unknown };
+    const options = Array.isArray(parsed.options)
+      ? parsed.options.filter((option): option is QuestionOption =>
+        typeof option === "object" && option !== null &&
+        typeof (option as { id?: unknown }).id === "string" &&
+        typeof (option as { text?: unknown }).text === "string")
+      : [];
+    return {options, multiple: parsed.multiple === true};
+  } catch {
+    return {options: [], multiple: false};
+  }
+}
+
+function stringArray(raw: string | null) {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === "string") ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function answerDrafts(response: AssessmentResponse) {
+  return response.questionAttempts.reduce<Record<string, AnswerDraft>>((drafts, attempt) => {
+    drafts[attempt.questionId] = {
+      selectedOptionIds: stringArray(attempt.selectedOptionIdsJson),
+      submittedCode: attempt.submittedCode ?? "",
+    };
+    return drafts;
+  }, {});
+}
+
+function firstUnanswered(response: AssessmentResponse) {
+  const answered = new Set(response.questionAttempts.map((attempt) => attempt.questionId));
+  const index = response.questions.findIndex((question) => !answered.has(question.id));
+  return index < 0 ? 0 : index;
+}
+
+function skillLabel(skills: LearningSkill[], code: string) {
+  return skills.find((skill) => skill.code === code)?.name ?? code.split(".").pop() ?? code;
+}
+
+function statusLabel(status: string) {
+  return status.toLowerCase().replaceAll("_", " ");
+}
 
 export default function App() {
   const [health, setHealth] = useState<BackendHealth | null>(null);
   const [backend, setBackend] = useState<BackendStatus>({status: "checking"});
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [selected, setSelected] = useState<SessionDetail | null>(null);
-  const [events, setEvents] = useState<AgentEvent[]>([]);
-  const [input, setInput] = useState("");
+  const [skills, setSkills] = useState<LearningSkill[]>([]);
+  const [journey, setJourney] = useState<JourneyDetail | null>(null);
+  const [skill, setSkill] = useState<SkillResponse | null>(null);
+  const [assessment, setAssessment] = useState<AssessmentResponse | null>(null);
+  const [assessmentResult, setAssessmentResult] = useState<AssessmentResultResponse | null>(null);
+  const [answers, setAnswers] = useState<Record<string, AnswerDraft>>({});
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [view, setView] = useState<View>("welcome");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const source = useRef<EventSource | null>(null);
-  const selectedId = selected?.id;
+  const [form, setForm] = useState({
+    languageCode: "",
+    goal: "Build a practical programming foundation",
+    primaryLanguage: "中文",
+    experienceYears: "0",
+    selfDescription: "",
+    learningGoal: "掌握所选语言，并能读写真实项目代码",
+  });
+  const [tutor, setTutor] = useState<SessionDetail | null>(null);
+  const [tutorInput, setTutorInput] = useState("");
+  const [events, setEvents] = useState<AgentEvent[]>([]);
+  const eventSource = useRef<EventSource | null>(null);
 
-  const refresh = useCallback(async (): Promise<boolean> => {
-    try {
-      const [nextHealth, nextSessions] = await Promise.all([api.health(), api.sessions()]);
-      setHealth(nextHealth);
-      setSessions(nextSessions);
-      if (!selectedId && nextSessions[0]) {
-        setSelected(await api.session(nextSessions[0].id));
-      }
-      setError(null);
-      return true;
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Backend unavailable");
-      return false;
-    }
-  }, [selectedId]);
+  const journeyId = journey?.journey.id;
+  const currentQuestion = assessment?.questions[questionIndex] ?? null;
+  const currentDraft = currentQuestion ? answers[currentQuestion.id] ?? emptyDraft : emptyDraft;
+  const questionConfig = currentQuestion ? parseQuestionConfig(currentQuestion.configJson) : {options: [], multiple: false};
 
   useEffect(() => {
     let disposed = false;
     let retryTimer: number | undefined;
-    const load = async () => {
-      if (await refresh() || disposed) return;
-      retryTimer = window.setTimeout(() => void load(), 1000);
-    };
+
+    async function load() {
+      try {
+        const [nextHealth, existingJourneys] = await Promise.all([
+          api.health(),
+          api.journeys(),
+        ]);
+        if (disposed) return;
+        setHealth(nextHealth);
+        const existing = existingJourneys[0];
+        if (existing) {
+          const detail = await api.journey(existing.id);
+          if (disposed) return;
+          setJourney(detail);
+          if (detail.path.length > 0) {
+            setView("dashboard");
+            if (detail.journey.currentLearningSkillId) {
+              setSkill(await api.skill(detail.journey.id, detail.journey.currentLearningSkillId));
+            }
+          }
+        }
+        setError(null);
+      } catch (cause) {
+        if (!disposed) {
+          setError(errorMessage(cause, "Backend unavailable"));
+          retryTimer = window.setTimeout(() => void load(), 1000);
+        }
+      }
+    }
+
     void load();
     void invoke<BackendStatus>("backend_status").then(setBackend).catch(() => setBackend({status: "jvm-dev"}));
     return () => {
       disposed = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
-      source.current?.close();
+      eventSource.current?.close();
     };
-  }, [refresh]);
+  }, []);
 
   useEffect(() => {
-    source.current?.close();
-    if (!selected) {
+    if (!journey?.journey.id) return;
+    void api.journeySkills(journey.journey.id).then(setSkills).catch(() => undefined);
+  }, [journey?.journey.id]);
+
+  useEffect(() => {
+    eventSource.current?.close();
+    if (!tutor) {
       setEvents([]);
       return;
     }
-    const eventSource = new EventSource(api.eventsUrl(selected.id));
-    source.current = eventSource;
-    eventSource.onmessage = (event) => {
+    const source = new EventSource(api.eventsUrl(tutor.id));
+    eventSource.current = source;
+    source.onmessage = (event) => {
       const next = JSON.parse(event.data) as AgentEvent;
-      setEvents((current) => (current.some((item) => item.id === next.id) ? current : [...current, next]));
+      setEvents((current) => current.some((item) => item.id === next.id) ? current : [...current, next]);
       if (next.eventType === "message" && next.author !== "user") {
-        void api.session(selected.id).then(setSelected).catch(() => undefined);
+        void api.session(tutor.id).then(setTutor).catch(() => undefined);
       }
     };
+    source.onerror = () => source.close();
     return () => {
-      eventSource.close();
-      if (source.current === eventSource) source.current = null;
+      source.close();
+      if (eventSource.current === source) eventSource.current = null;
     };
-  }, [selected?.id]);
+  }, [tutor?.id]);
 
-  async function selectSession(id: string) {
+  async function refreshJourney(id: string) {
+    const detail = await api.journey(id);
+    setJourney(detail);
+    if (detail.journey.currentLearningSkillId) {
+      setSkill(await api.skill(id, detail.journey.currentLearningSkillId));
+    } else {
+      setSkill(null);
+    }
+    return detail;
+  }
+
+  function hydrateAssessment(next: AssessmentResponse) {
+    setAssessment(next);
+    setAnswers((current) => ({...current, ...answerDrafts(next)}));
+  }
+
+  async function beginDiagnostic(id: string) {
+    setBusy(true);
+    setError(null);
     try {
-      setSelected(await api.session(id));
-      setEvents([]);
+      const created = await api.diagnostic(id);
+      const started = created.openAttempt ? created : await api.startAssessment(created.assessment.id);
+      hydrateAssessment(started);
+      setAssessmentResult(null);
+      setQuestionIndex(firstUnanswered(started));
+      setView("diagnostic");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to open session");
+      setError(errorMessage(cause, "Unable to start diagnostic"));
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function newSession() {
+  async function createJourney(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    const input: CreateJourneyInput = {
+      languageCode: form.languageCode,
+      goal: form.goal.trim(),
+      primaryLanguage: form.primaryLanguage.trim(),
+      experienceYears: form.experienceYears.trim() ? Number(form.experienceYears) : null,
+      selfDescription: form.selfDescription.trim(),
+      learningGoal: form.learningGoal.trim() || form.goal.trim(),
+    };
     try {
-      const created = await api.createSession();
-      setSessions((current) => [created, ...current]);
-      setSelected({...created, messages: []});
-      setEvents([]);
+      const created = await api.createJourney(input);
+      const detail = await api.journey(created.id);
+      setJourney(detail);
+      await beginDiagnostic(created.id);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to create session");
+      setError(errorMessage(cause, "Unable to create journey"));
+      setBusy(false);
     }
   }
 
-  async function sendMessage() {
-    const content = input.trim();
-    if (!selected || !content) return;
-    setInput("");
-    setSelected((current) => current && {
-      ...current,
-      messages: [...current.messages, {
-        id: `local-${Date.now()}`,
-        sessionId: current.id,
-        role: "user",
-        content,
-        createdAt: new Date().toISOString()
-      }],
-    });
+  async function saveCurrentAnswer() {
+    if (!assessment || !currentQuestion) return true;
+    const draft = answers[currentQuestion.id] ?? emptyDraft;
+    setBusy(true);
+    setError(null);
     try {
-      await api.sendMessage(selected.id, content);
+      const next = await api.answer(assessment.assessment.id, {
+        questionId: currentQuestion.id,
+        selectedOptionIds: draft.selectedOptionIds,
+        submittedCode: draft.submittedCode,
+      });
+      hydrateAssessment(next);
+      return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to send message");
+      setError(errorMessage(cause, "Unable to save answer"));
+      return false;
+    } finally {
+      setBusy(false);
     }
+  }
+
+  async function submitAssessment() {
+    if (!assessment) return;
+    if (!(await saveCurrentAnswer())) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.submit(assessment.assessment.id);
+      setAssessmentResult(result);
+      if (journeyId) await refreshJourney(journeyId);
+      setView("result");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to submit assessment"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function advanceQuestion() {
+    if (!assessment) return;
+    if (questionIndex + 1 < assessment.questions.length) {
+      if (!(await saveCurrentAnswer())) return;
+      setQuestionIndex((current) => current + 1);
+    } else {
+      await submitAssessment();
+    }
+  }
+
+  async function goBackQuestion() {
+    if (questionIndex === 0) return;
+    if (await saveCurrentAnswer()) setQuestionIndex((current) => current - 1);
+  }
+
+  async function openSkill(code: string) {
+    if (!journeyId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const opened = await api.startSkill(journeyId, code);
+      setSkill(opened);
+      setTutor(null);
+      await refreshJourney(journeyId);
+      setView("dashboard");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to open skill"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startSkillAssessment() {
+    if (!journeyId || !skill) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await api.skillAssessment(journeyId, skill.skill.code);
+      const started = created.openAttempt ? created : await api.startAssessment(created.assessment.id);
+      hydrateAssessment(started);
+      setAssessmentResult(null);
+      setQuestionIndex(firstUnanswered(started));
+      setView("assessment");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to start skill assessment"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function skipCurrentSkill() {
+    if (!journeyId || !skill || !window.confirm("Skip this skill? It will remain in your history and will not count as mastered.")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setTutor(null);
+      await api.skipSkill(journeyId, skill.skill.code);
+      await refreshJourney(journeyId);
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to skip skill"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function continueToDashboard() {
+    if (!journeyId) return;
+    setBusy(true);
+    try {
+      await refreshJourney(journeyId);
+      setView("dashboard");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to load learning path"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openTutor() {
+    if (!journeyId || !skill) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const linked = await api.tutor(journeyId, skill.skill.code);
+      setTutor(await api.session(linked.session.id));
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to open tutor"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendTutorMessage(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const content = tutorInput.trim();
+    if (!tutor || !content) return;
+    setTutorInput("");
+    const message: Message = {
+      id: `local-${Date.now()}`,
+      sessionId: tutor.id,
+      role: "user",
+      content,
+      createdAt: new Date().toISOString(),
+    };
+    setTutor((current) => current && {...current, messages: [...current.messages, message]});
+    try {
+      await api.sendMessage(tutor.id, content);
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to send tutor message"));
+    }
+  }
+
+  function newJourney() {
+    setJourney(null);
+    setSkill(null);
+    setAssessment(null);
+    setAssessmentResult(null);
+    setTutor(null);
+    setView("welcome");
+  }
+
+  function renderWelcome() {
+    if (journey) {
+      return (
+        <section className="onboarding panel">
+          <div className="section-kicker">RESUME JOURNEY</div>
+          <h2>{journey.journey.goal}</h2>
+          <p className="lead">你的 {journey.journey.languageCode} 学习 Journey 已保存。完成一次诊断后，系统会按技能前置关系生成路径。</p>
+          <div className="resume-meta">
+            <span className="status-pill">{statusLabel(journey.journey.status)}</span>
+            <span>{journey.profile?.learningGoal || "尚未开始诊断"}</span>
+          </div>
+          <div className="button-row">
+            <button className="primary" onClick={() => void beginDiagnostic(journey.journey.id)} disabled={busy}>继续诊断</button>
+            <button className="secondary" onClick={newJourney} disabled={busy}>新建 Journey</button>
+          </div>
+        </section>
+      );
+    }
+    return (
+      <section className="onboarding panel">
+        <div className="section-kicker">LEARNING JOURNEY · PHASE 2</div>
+        <h2>从目标开始，走一条真正属于你的学习路径。</h2>
+        <p className="lead">先提出你想学习的语言并填写背景。Agent 会按目标生成课程、Lesson 和题目；诊断题集会固定保存，评分和路径由后端确定性规则负责。</p>
+        <form onSubmit={(event) => void createJourney(event)}>
+          <div className="form-grid">
+            <label>学习语言
+              <input value={form.languageCode} onChange={(event) => setForm((current) => ({...current, languageCode: event.target.value}))} placeholder="例如：Python、Rust、TypeScript" required />
+            </label>
+            <label>你的主要语言
+              <input value={form.primaryLanguage} onChange={(event) => setForm((current) => ({...current, primaryLanguage: event.target.value}))} required />
+            </label>
+            <label>相关经验（年）
+              <input type="number" min="0" max="100" value={form.experienceYears} onChange={(event) => setForm((current) => ({...current, experienceYears: event.target.value}))} />
+            </label>
+            <label>Journey 名称
+              <input value={form.goal} onChange={(event) => setForm((current) => ({...current, goal: event.target.value}))} required />
+            </label>
+          </div>
+          <label>你想达成什么
+            <textarea value={form.learningGoal} onChange={(event) => setForm((current) => ({...current, learningGoal: event.target.value}))} rows={3} required />
+          </label>
+          <label>当前水平补充
+                <textarea value={form.selfDescription} onChange={(event) => setForm((current) => ({...current, selfDescription: event.target.value}))} rows={3} placeholder="例如：有后端开发经验，希望系统掌握所选语言。" />
+          </label>
+          <button className="primary wide" type="submit" disabled={busy || !form.languageCode.trim()}>{busy ? "准备中…" : "创建 Journey 并开始诊断"}</button>
+        </form>
+      </section>
+    );
+  }
+
+  function renderAssessment() {
+    if (!assessment || !currentQuestion) return <p className="empty">正在准备题目…</p>;
+    const diagnostic = assessment.assessment.type === "DIAGNOSTIC";
+    return (
+      <section className="assessment panel">
+        <div className="assessment-header">
+          <div>
+            <div className="section-kicker">{diagnostic ? "DIAGNOSTIC" : "SKILL CHECK"}</div>
+            <h2>{diagnostic ? "了解你的起点" : skill?.skill.name ?? "技能评估"}</h2>
+          </div>
+          <span className="muted">{questionIndex + 1} / {assessment.questions.length}</span>
+        </div>
+        <div className="progress-bar"><span style={{width: `${((questionIndex + 1) / assessment.questions.length) * 100}%`}} /></div>
+        <div className="question-card">
+          <div className="question-meta"><span>{currentQuestion.type === "CODING" ? "CODING" : "MULTIPLE CHOICE"}</span><span>{skillLabel(skills, currentQuestion.skillCode)} · {currentQuestion.points} pts</span></div>
+          <h3>{currentQuestion.prompt}</h3>
+          {currentQuestion.type === "MULTIPLE_CHOICE" && (
+            <div className="options">
+              {questionConfig.options.map((option) => {
+                const checked = currentDraft.selectedOptionIds.includes(option.id);
+                return (
+                  <label className={`option ${checked ? "chosen" : ""}`} key={option.id}>
+                    <input
+                      type={questionConfig.multiple ? "checkbox" : "radio"}
+                      name={currentQuestion.id}
+                      checked={checked}
+                      onChange={() => setAnswers((current) => {
+                        const previous = current[currentQuestion.id]?.selectedOptionIds ?? [];
+                        const selectedOptionIds = questionConfig.multiple
+                          ? previous.includes(option.id) ? previous.filter((id) => id !== option.id) : [...previous, option.id]
+                          : [option.id];
+                        return {...current, [currentQuestion.id]: {...(current[currentQuestion.id] ?? emptyDraft), selectedOptionIds}};
+                      })}
+                    />
+                    <span><b>{option.id}</b>{option.text}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          {currentQuestion.type === "CODING" && (
+            <div className="coding-answer">
+              {currentQuestion.starterCode && <pre>{currentQuestion.starterCode}</pre>}
+              <textarea
+                value={currentDraft.submittedCode}
+                onChange={(event) => setAnswers((current) => ({
+                  ...current,
+                  [currentQuestion.id]: {...(current[currentQuestion.id] ?? emptyDraft), submittedCode: event.target.value},
+                }))}
+                rows={12}
+                placeholder="在这里写下你的代码…"
+                spellCheck={false}
+              />
+            </div>
+          )}
+        </div>
+        <div className="assessment-actions">
+          <button className="secondary" onClick={() => void goBackQuestion()} disabled={busy || questionIndex === 0}>上一题</button>
+          <span className="muted">答案会保存到 SQLite</span>
+          <button className="primary" onClick={() => void advanceQuestion()} disabled={busy}>{busy ? "保存中…" : questionIndex + 1 === assessment.questions.length ? "提交评估" : "保存并继续"}</button>
+        </div>
+      </section>
+    );
+  }
+
+  function renderResult() {
+    if (!assessmentResult) return null;
+    return (
+      <section className="result panel">
+        <div className="section-kicker">ASSESSMENT COMPLETE</div>
+        <h2>{assessmentResult.assessment.type === "DIAGNOSTIC" ? "你的学习路径已经准备好了" : "技能评估完成"}</h2>
+        <div className="score-summary">
+          <strong>{assessmentResult.score.totalScore}</strong><span>/ 100</span>
+          <p className={assessmentResult.passed ? "success" : "warning"}>{assessmentResult.passed ? "通过" : "需要继续练习"}</p>
+        </div>
+        {assessmentResult.skillResults.length > 0 && (
+          <div className="result-list">
+            {assessmentResult.skillResults.map((item) => (
+              <div className="result-row" key={item.skillCode}>
+                <span>{skillLabel(skills, item.skillCode)}</span>
+                <span>{item.score.totalScore} · {item.passed ? "已掌握" : "进入路径"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <button className="primary" onClick={() => void continueToDashboard()} disabled={busy}>{busy ? "加载路径…" : "进入学习路径"}</button>
+      </section>
+    );
+  }
+
+  function renderTutorPanel() {
+    if (!skill) return <aside className="tutor panel"><div className="panel-title">Tutor</div><p className="empty">选择当前技能后，Tutor 会在这里出现。</p></aside>;
+    return (
+      <aside className="tutor panel">
+        <div className="panel-title"><span>Tutor</span><span className="muted">{tutor ? "linked" : "ready"}</span></div>
+        {!tutor ? (
+          <div className="tutor-empty">
+            <p>围绕当前技能提问。Tutor 会读取你的目标、掌握度和最近答题反馈。</p>
+            <button className="secondary wide" onClick={() => void openTutor()} disabled={busy}>打开 Tutor</button>
+          </div>
+        ) : (
+          <>
+            <div className="messages">
+              {tutor.messages.map((message) => <article className={`message ${message.role}`} key={message.id}>
+                <span className="message-role">{message.role === "user" ? "你" : "Tutor"}</span>
+                <p>{message.content}</p>
+              </article>)}
+              {!tutor.messages.length && <p className="empty">问一个关于当前技能的问题。</p>}
+            </div>
+            <form className="composer" onSubmit={(event) => void sendTutorMessage(event)}>
+              <textarea value={tutorInput} onChange={(event) => setTutorInput(event.target.value)} placeholder="例如：如何理解这个概念？" rows={3} />
+              <button className="primary" type="submit" disabled={!tutorInput.trim()}>发送</button>
+            </form>
+            <details className="events-details"><summary>Agent events ({events.length})</summary>
+              {events.slice(-8).map((event) => <div className="event" key={event.id}><span>{event.eventType}</span><p>{event.content || event.toolCall || event.toolResult || "(empty)"}</p></div>)}
+            </details>
+          </>
+        )}
+      </aside>
+    );
+  }
+
+  function renderDashboard() {
+    const path = journey?.path ?? [];
+    const completed = path.filter((item) => item.status === "COMPLETED" || item.status === "SKIPPED").length;
+    const current = skill;
+    return (
+      <section className="journey-grid">
+        <aside className="path panel">
+          <div className="panel-title"><span>Learning path</span><span className="muted">{completed}/{path.length}</span></div>
+          <div className="path-list">
+            {path.map((item) => {
+              const actionable = item.status === "CURRENT";
+              return <button className={`path-item ${item.status.toLowerCase()}`} key={item.skillCode} onClick={() => actionable && void openSkill(item.skillCode)} disabled={!actionable || busy}>
+                <span className="path-number">{item.sequence}</span>
+                <span><strong>{skillLabel(skills, item.skillCode)}</strong><small>{statusLabel(item.status)}</small></span>
+                <span className="path-mark">{item.status === "COMPLETED" ? "✓" : item.status === "SKIPPED" ? "–" : item.status === "CURRENT" ? "→" : "·"}</span>
+              </button>;
+            })}
+            {!path.length && <p className="empty">完成诊断后生成路径。</p>}
+          </div>
+        </aside>
+        <section className="lesson panel">
+          {!current ? (
+            <div className="empty">{journey?.journey.status === "COMPLETED" ? "恭喜，你已完成这条学习路径。" : "正在加载当前技能…"}</div>
+          ) : (
+            <>
+              <div className="lesson-header"><div><div className="section-kicker">CURRENT SKILL</div><h2>{current.lesson.title}</h2></div><span className="status-pill">{statusLabel(current.pathItem?.status ?? "CURRENT")}</span></div>
+              <p className="lead">{current.lesson.introContent}</p>
+              <div className="lesson-columns">
+                <div><h3>学习目标</h3><ul>{current.lesson.learningObjectives.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                <div><h3>关键概念</h3><div className="tag-list">{current.lesson.keyConcepts.map((item) => <span key={item}>{item}</span>)}</div></div>
+              </div>
+              <div className="example-block"><h3>Example</h3>{current.lesson.examples.map((item) => <p key={item}>{item}</p>)}</div>
+              <div className="button-row">
+                <button className="primary" onClick={() => void startSkillAssessment()} disabled={busy || current.pathItem?.status !== "CURRENT"}>开始技能评估</button>
+                <button className="secondary" onClick={() => void skipCurrentSkill()} disabled={busy || current.pathItem?.status !== "CURRENT"}>跳过</button>
+              </div>
+            </>
+          )}
+        </section>
+        {renderTutorPanel()}
+      </section>
+    );
   }
 
   return (
-      <main className="shell">
-        <header className="topbar">
-          <div><span className="eyebrow">PHASE 1</span><h1>Desktop Learning Agent</h1></div>
-          <div className="status-row">
-            <span className={`dot ${health?.status === "UP" ? "ok" : "warn"}`}/>
-            <span>Backend {health?.status ?? "offline"}</span>
-            <span className="muted">{backend.status}</span>
-          </div>
-        </header>
-        {error && <div className="error-banner">{error}</div>}
-        <section className="workspace">
-          <aside className="sessions panel">
-            <div className="panel-title"><span>Sessions</span>
-              <button onClick={() => void newSession()} aria-label="New session">＋</button>
-            </div>
-            <div className="session-list">
-              {sessions.map((session) => <button
-                  className={`session-item ${selected?.id === session.id ? "selected" : ""}`} key={session.id}
-                  onClick={() => void selectSession(session.id)}>
-                <strong>{session.title}</strong><small>{new Date(session.updatedAt).toLocaleString()}</small>
-              </button>)}
-              {!sessions.length && <p className="empty">Create a session to begin.</p>}
-            </div>
-          </aside>
-          <section className="chat panel">
-            <div className="panel-title"><span>{selected?.title ?? "Tutor chat"}</span><span className="muted">ADK / TutorAgent</span>
-            </div>
-            <div className="messages">
-              {selected?.messages.map((message: Message) => <article className={`message ${message.role}`}
-                                                                     key={message.id}><span
-                  className="message-role">{message.role === "user" ? "You" : "TutorAgent"}</span>
-                <p>{message.content}</p></article>)}
-              {!selected && <p className="empty">Select or create a session.</p>}
-            </div>
-            <form className="composer" onSubmit={(event) => {
-              event.preventDefault();
-              void sendMessage();
-            }}>
-                        <textarea value={input} onChange={(event) => setInput(event.target.value)}
-                                  placeholder="Ask about a programming language…" disabled={!selected}
-                                  onKeyDown={(event) => {
-                                    if (event.key === "Enter" && !event.shiftKey) {
-                                      event.preventDefault();
-                                      void sendMessage();
-                                    }
-                                  }}/>
-              <button type="submit" disabled={!selected || !input.trim()}>Send</button>
-            </form>
-          </section>
-          <aside className="events panel">
-            <div className="panel-title"><span>Agent / Tool Events</span><span
-                className="muted">{health ? `${health.sqlite} SQLite` : "—"}</span></div>
-            <div className="event-list">
-              {events.map((event) => <article className={`event ${event.eventType}`} key={event.id}>
-                <div><span className="event-type">{event.eventType}</span>
-                  <time>{new Date(event.timestamp).toLocaleTimeString()}</time>
-                </div>
-                <p>{event.content || event.toolCall || event.toolResult || "(empty event)"}</p></article>)}
-              {!events.length && <p className="empty">Events will appear here while the agent runs.</p>}
-            </div>
-          </aside>
-        </section>
-      </main>
+    <main className="shell">
+      <header className="topbar">
+        <div><span className="eyebrow">DESKTOP LEARNING AGENT</span><h1>Learning Journey</h1></div>
+        <div className="status-row">
+          {journey && <button className="link-button" onClick={() => setView("dashboard")}>我的 Journey</button>}
+          {journey && <button className="link-button" onClick={newJourney}>新建</button>}
+          <span className={`dot ${health?.status === "UP" ? "ok" : "warn"}`} />
+          <span>{health?.status ?? "offline"}</span>
+          <span className="muted">{backend.status} · {health?.sqlite ?? "SQLite"}</span>
+        </div>
+      </header>
+      {error && <div className="error-banner">{error}</div>}
+      {view === "welcome" && renderWelcome()}
+      {(view === "diagnostic" || view === "assessment") && renderAssessment()}
+      {view === "result" && renderResult()}
+      {view === "dashboard" && renderDashboard()}
+    </main>
   );
 }

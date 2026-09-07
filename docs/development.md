@@ -38,6 +38,14 @@ pnpm backend:test
 本地 API 有意固定为 `http://127.0.0.1:18080/api`。Vite 界面地址为
 `http://127.0.0.1:1420`。
 
+## Learning Journey 手工验证
+
+依次调用 `POST /api/learning/journeys`、`GET /api/learning/journeys/{id}/skills`、创建并启动
+诊断、逐题提交答案，再检查 `GET /api/learning/journeys/{id}` 返回的 path。创建新 Journey
+时需要用户提供目标语言，LLM 会为该 Journey 独立生成课程目录；同一 Journey 重启后直接从
+SQLite 恢复。诊断规划在没有 LLM 凭据时仍可从 SQLite 题库使用 Java fallback。Coding submit
+会保留 draft 并返回 422。
+
 ## 测试边界
 
 `TutorAgentToolLoopTest` 是确定性的，不会访问 OpenAI。它使用假的 `ChatModel` 验证

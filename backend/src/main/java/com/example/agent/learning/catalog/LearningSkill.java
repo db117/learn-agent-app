@@ -1,0 +1,50 @@
+package com.example.agent.learning.catalog;
+
+import java.util.List;
+
+/**
+ * 课程中的一个可评估技能。
+ *
+ * <p>该 record 同时承载目录信息、前置关系、通过规则和课程展示内容，
+ * 由 Repository 从 SQLite 的 {@code learning_skill} 表恢复。</p>
+ *
+ * @param id 数据库中的稳定主键
+ * @param languageCode 所属学习语言编码
+ * @param code 技能唯一编码，也是 Path 和评估引用的业务键
+ * @param name 技能名称
+ * @param description 技能简介
+ * @param sequence 课程默认顺序；前置关系排序时用于稳定打破并列
+ * @param prerequisiteSkillCodes 必须先完成的技能编码
+ * @param passScore 技能评估总分通过线
+ * @param minCodingScore 存在 Coding 题时的最低 Coding 分数，可为空
+ * @param enabled 是否仍在课程中开放
+ * @param learningObjectives 学习目标
+ * @param lessonIntro Lesson 的开场内容
+ * @param keyConcepts 关键概念
+ * @param examples 示例内容
+ * @param diagnosticEligible 是否纳入初始诊断
+ */
+public record LearningSkill(
+        String id,
+        String languageCode,
+        String code,
+        String name,
+        String description,
+        int sequence,
+        List<String> prerequisiteSkillCodes,
+        int passScore,
+        Integer minCodingScore,
+        boolean enabled,
+        List<String> learningObjectives,
+        String lessonIntro,
+        List<String> keyConcepts,
+        List<String> examples,
+        boolean diagnosticEligible) {
+
+    public LearningSkill {
+        prerequisiteSkillCodes = List.copyOf(prerequisiteSkillCodes == null ? List.of() : prerequisiteSkillCodes);
+        learningObjectives = List.copyOf(learningObjectives == null ? List.of() : learningObjectives);
+        keyConcepts = List.copyOf(keyConcepts == null ? List.of() : keyConcepts);
+        examples = List.copyOf(examples == null ? List.of() : examples);
+    }
+}

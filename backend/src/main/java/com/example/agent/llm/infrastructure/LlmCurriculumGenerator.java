@@ -1,0 +1,167 @@
+package com.example.agent.llm.infrastructure;
+
+import com.example.agent.learning.catalog.CurriculumGenerator;
+import com.example.agent.learning.catalog.LearningLanguage;
+import com.example.agent.learning.catalog.LearningSkill;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.google.adk.JsonBaseModel;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * 使用 Spring AI 的 ChatModel 按用户指定的目标语言按需生成技能和 Lesson 内容。
+ *
+ * <p>这里是唯一的提供商适配边界；生成结果进入领域校验和 SQLite 后，运行时不再
+ * 依赖模型响应的临时状态。</p>
+ */
+@Component
+public final class LlmCurriculumGenerator implements CurriculumGenerator {
+
+    private final ChatModel chatModel;
+
+    public LlmCurriculumGenerator(ChatModel chatModel) {
+        this.chatModel = chatModel;
+    }
+
+    @Override
+    public GeneratedCurriculum generate(String requestedLanguage, String learningContext) {
+        if (requestedLanguage == null || requestedLanguage.isBlank()) {
+            throw new IllegalArgumentException("Requested language must not be blank");
+        }
+        String prompt = """
+                你是一个学习系统的课程架构师。请为编程学习者生成一份可执行的课程目录，
+                返回 JSON，不要返回 Markdown 或解释文字：
+                {
+                  "languages":[{"code":"...","name":"...","description":"..."}],
+                  "skills":[{
+                    "languageCode":"...","code":"...","name":"...","description":"...",
+                    "sequence":1,"prerequisiteSkillCodes":[],"passScore":80,"minCodingScore":70,
+                    "learningObjectives":["..."],"lessonIntro":"...","keyConcepts":["..."],"examples":["..."]
+                  }]
+                }
+                用户指定的目标编程语言是：%s
+                只生成这个目标语言，不要生成其他语言；languages 数组必须只有一个元素。
+                为该语言生成 4 到 8 个循序渐进的技能。
+                学习者的目标和背景如下，请让技能顺序和 Lesson 内容与其相关：%s
+                至少有一个无前置技能的起点；前置技能只能引用同一语言中已经生成的 code，不能循环。
+                code 使用稳定、简短、适合 URL 的英文标识；每个 skill 的 code 必须唯一。
+                name、description、learningObjectives、lessonIntro、keyConcepts、examples 使用中文，
+                但技术术语和语言名称可以保留英文。每个 skill 都要有可讲授的 Lesson 内容。
+                passScore 和 minCodingScore 为 0 到 100 的整数。不要生成题目，不要生成答案，不要生成评分结果。
+                """.formatted(requestedLanguage.trim(), learningContext == null ? "" : learningContext.trim());
+        try {
+            String response = chatModel.call(new Prompt(new UserMessage(prompt)))
+                    .getResult().getOutput().getText();
+            JsonNode root = JsonBaseModel.getMapper().readTree(extractJson(response));
+            return parse(root);
+        } catch (Exception error) {
+            throw new IllegalArgumentException("Curriculum generator returned invalid JSON", error);
+        }
+    }
+
+    private GeneratedCurriculum parse(JsonNode root) {
+        JsonNode languageNodes = root == null ? null : root.get("languages");
+        JsonNode skillNodes = root == null ? null : root.get("skills");
+        if (languageNodes == null || !languageNodes.isArray() || languageNodes.isEmpty()
+                || skillNodes == null || !skillNodes.isArray() || skillNodes.isEmpty()) {
+            throw new IllegalArgumentException("languages and skills must be non-empty arrays");
+        }
+
+        List<LearningLanguage> languages = new ArrayList<>();
+        Set<String> languageCodes = new HashSet<>();
+        for (JsonNode node : languageNodes) {
+            String code = requiredText(node, "code");
+            if (!languageCodes.add(code)) throw new IllegalArgumentException("Duplicate language code: " + code);
+            languages.add(new LearningLanguage(
+                    "generated-language-" + UUID.randomUUID(), code, requiredText(node, "name"),
+                    requiredText(node, "description"), true));
+        }
+
+        List<LearningSkill> skills = new ArrayList<>();
+        Set<String> skillCodes = new HashSet<>();
+        for (JsonNode node : skillNodes) {
+            String code = requiredText(node, "code");
+            String languageCode = requiredText(node, "languageCode");
+            if (!languageCodes.contains(languageCode)) {
+                throw new IllegalArgumentException("Skill belongs to unknown language: " + code);
+            }
+            if (!skillCodes.add(code)) throw new IllegalArgumentException("Duplicate skill code: " + code);
+            skills.add(new LearningSkill(
+                    "generated-skill-" + UUID.randomUUID(), languageCode, code, requiredText(node, "name"),
+                    requiredText(node, "description"), boundedInt(node, "sequence", 1, 1, 1000),
+                    strings(node.get("prerequisiteSkillCodes")), boundedInt(node, "passScore", 80, 0, 100),
+                    nullableBoundedInt(node, "minCodingScore", 0, 100), true,
+                    strings(node.get("learningObjectives")), optionalText(node, "lessonIntro"),
+                    strings(node.get("keyConcepts")), strings(node.get("examples")), true));
+        }
+        for (LearningSkill skill : skills) {
+            for (String prerequisite : skill.prerequisiteSkillCodes()) {
+                if (!skillCodes.contains(prerequisite)) {
+                    throw new IllegalArgumentException("Unknown prerequisite skill: " + prerequisite);
+                }
+            }
+        }
+        return new GeneratedCurriculum(languages, skills);
+    }
+
+    private int boundedInt(JsonNode node, String field, int defaultValue, int min, int max) {
+        JsonNode value = node.get(field);
+        int result = value == null || value.isNull() ? defaultValue : value.asInt(Integer.MIN_VALUE);
+        if (result < min || result > max) throw new IllegalArgumentException("Invalid " + field);
+        return result;
+    }
+
+    private Integer nullableBoundedInt(JsonNode node, String field, int min, int max) {
+        JsonNode value = node.get(field);
+        if (value == null || value.isNull()) return null;
+        int result = value.asInt(Integer.MIN_VALUE);
+        if (result < min || result > max) throw new IllegalArgumentException("Invalid " + field);
+        return result;
+    }
+
+    private List<String> strings(JsonNode node) {
+        if (node == null || !node.isArray()) return List.of();
+        List<String> result = new ArrayList<>();
+        for (JsonNode value : node) {
+            if (!value.isTextual() || value.textValue().isBlank()) {
+                throw new IllegalArgumentException("Array fields must contain non-empty strings");
+            }
+            result.add(value.textValue().trim());
+        }
+        return result;
+    }
+
+    private String requiredText(JsonNode node, String field) {
+        String value = optionalText(node, field);
+        if (value == null || value.isBlank()) throw new IllegalArgumentException("Missing " + field);
+        return value;
+    }
+
+    private String optionalText(JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.get(field);
+        return value == null || value.isNull() ? "" : value.asText().trim();
+    }
+
+    private String extractJson(String value) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException("Empty curriculum response");
+        String trimmed = value.trim();
+        if (trimmed.startsWith("```") && trimmed.endsWith("```")) {
+            int newline = trimmed.indexOf('\n');
+            trimmed = newline >= 0
+                    ? trimmed.substring(newline + 1, trimmed.length() - 3).trim()
+                    : trimmed.substring(3, trimmed.length() - 3).trim();
+        }
+        int start = trimmed.indexOf('{');
+        int end = trimmed.lastIndexOf('}');
+        if (start < 0 || end <= start) throw new IllegalArgumentException("Response is not a JSON object");
+        return trimmed.substring(start, end + 1);
+    }
+}

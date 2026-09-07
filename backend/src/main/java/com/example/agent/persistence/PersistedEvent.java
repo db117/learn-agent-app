@@ -8,6 +8,23 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * ADK Event 的 SQLite 投影和 SSE 传输载荷。
+ *
+ * <p>除了便于查询的字段外，{@code rawJson} 保留完整事件快照；工具调用和工具结果分别保存在
+ * {@code toolCall}、{@code toolResult} 中，便于前端和诊断工具使用。
+ *
+ * @param id ADK 事件唯一标识
+ * @param sessionId 所属会话标识
+ * @param runId 所属 Agent 运行标识
+ * @param author 事件作者
+ * @param eventType 事件类型，例如 message、tool_call、tool_result 或 error
+ * @param content 事件文本内容
+ * @param toolCall 工具调用 JSON；非工具事件为空
+ * @param toolResult 工具结果 JSON；非工具事件为空
+ * @param timestamp 事件时间
+ * @param rawJson ADK 事件的原始 JSON 快照
+ */
 public record PersistedEvent(
         String id,
         String sessionId,

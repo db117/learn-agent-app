@@ -165,6 +165,12 @@ public class TutorAgentService {
     activeSessions.remove(sessionId);
   }
 
+  /**
+   * 启动异步 Agent 运行后交给 HTTP 层的回执。
+   *
+   * @param runId 运行标识，用于查询运行状态和事件流
+   * @param messageId 已写入数据库的用户消息标识
+   */
   public record RunReceipt(String runId, String messageId) {
   }
 }

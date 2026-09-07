@@ -18,3 +18,15 @@ ADK 负责执行，而不是由 Spring AI 负责。
 
 提供商密钥从 `OPENAI_API_KEY` 读取，仓库中不保存任何凭据。`OPENAI_MODEL` 默认值
 为 `gpt-5-mini`，无需修改 Agent 代码即可调整。
+
+## Learning Tutor 上下文
+
+Phase 2 仍只有一个 `tutor_agent`。`TutorContextService` 根据 session 关联的
+Journey + LearningSkill，在每次 ADK instruction 请求时读取 profile、当前技能、
+mastery 和最近的答题反馈；上下文只影响解释，不允许 Agent 改分数、通过状态、跳过
+状态或学习路径。
+
+诊断规划器和 Coding evaluator 都位于 `llm/infrastructure`，复用 Spring AI
+`ChatModel`。它们只返回候选题目或受限评分维度；Java 校验题目定义、计算总分并决定
+通过。模型失败时诊断回退到确定性题集；Coding 评估失败时保留 draft Attempt 并
+返回可重试错误。

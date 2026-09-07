@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+/** Phase 1 Tutor 会话和 SSE 事件的 HTTP 接口。 */
 @RestController
 @RequestMapping("/api/sessions")
 public class SessionController {
@@ -37,6 +38,7 @@ public class SessionController {
         this.properties = properties;
     }
 
+    /** 创建一个新的 Tutor 会话。 */
     @PostMapping
     public SessionResponse create(@RequestBody(required = false) CreateSessionRequest request) {
         String title = request == null || request.title() == null || request.title().isBlank()
@@ -50,11 +52,13 @@ public class SessionController {
         return SessionResponse.from(session);
     }
 
+    /** 查询所有已持久化的 Tutor 会话。 */
     @GetMapping
     public List<SessionResponse> list() {
         return repository.listSessions().stream().map(SessionResponse::from).toList();
     }
 
+    /** 查询会话详情及历史消息。 */
     @GetMapping("/{sessionId}")
     public SessionDetailResponse get(@PathVariable String sessionId) {
         SessionRecord session = find(sessionId);
@@ -66,6 +70,7 @@ public class SessionController {
                 repository.listMessages(session.id()));
     }
 
+    /** 保存用户消息并异步启动 ADK Agent。 */
     @PostMapping("/{sessionId}/messages")
     public SendMessageResponse send(
             @PathVariable String sessionId, @RequestBody SendMessageRequest request) {
@@ -81,6 +86,7 @@ public class SessionController {
         return new SendMessageResponse(receipt.runId(), receipt.messageId());
     }
 
+    /** 以 SSE 方式订阅会话事件，已落库事件会先回放。 */
     @GetMapping(value = "/{sessionId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter events(@PathVariable String sessionId) {
         find(sessionId);

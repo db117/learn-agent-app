@@ -16,3 +16,10 @@
 - 保留固定的后端地址 `127.0.0.1:18080`。
 - MVP 明确不包含应用认证、授权、Token、工作区沙箱、MCP、RAG、Monaco 实现或自动更新系统。
 - 前端、Tauri 或会影响完整构建的后端发生变更后，运行 `pnpm check`。Native Image 行为发生变更时，运行 `pnpm native:check`。
+
+## Phase 2 Learning Core
+
+- Learning Journey 是主入口；确定性评分、通过、路径和进度由 Java Learning Engine 控制，TutorAgent 只负责教学对话。
+- 用户提出目标语言；每个新 Journey 的技能、Lesson 内容和 Question 再由 LLM 按需生成。同一 Journey 从 SQLite 恢复，不同 Journey 不共享课程；不依赖固定课程资源或启动 seed。
+- Question 的运行时来源是 SQLite。题目定义只允许新增或 soft delete；不得更新题干、答案、分值或评分规则。Assessment 只引用不可变 Question，历史 Attempt 必须可读。
+- 题集在创建时持久化并固定；诊断和技能评估都由 LLM 按需选题或生成新题，Java 必须校验已有题目不可变、每个 Skill 至少包含 MC 和 Coding。应用启动不初始化 Question；LLM 不可用时只能从已有 SQLite 题库确定性回退。

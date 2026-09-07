@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 
+/** 后端、SQLite、ADK 和 LLM 提供商的健康检查接口。 */
 @RestController
 @RequestMapping("/api")
 public class HealthController {
@@ -23,6 +24,7 @@ public class HealthController {
     this.chatModel = chatModel;
   }
 
+  /** 返回各运行时依赖的可用状态。 */
   @GetMapping("/health")
   public HealthResponse health() {
     try {

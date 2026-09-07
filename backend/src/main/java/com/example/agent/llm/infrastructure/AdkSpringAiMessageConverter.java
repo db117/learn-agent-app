@@ -40,7 +40,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/** Converts only the ADK message/tool shapes needed by the Phase 1 tutor. */
+/** 只转换 Phase 1 Tutor 所需的 ADK 消息和工具调用结构。 */
 public final class AdkSpringAiMessageConverter {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {

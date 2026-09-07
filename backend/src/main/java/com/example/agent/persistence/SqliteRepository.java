@@ -7,6 +7,12 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Phase 1 Tutor 数据的 SQLite 访问层。
+ *
+ * <p>使用 Spring {@link JdbcClient} 直接访问 schema.sql 创建的表；ADK 事件和消息都保留在数据库中，
+ * 以支持应用重启后的会话恢复和 SSE 追踪。</p>
+ */
 @Repository
 public class SqliteRepository {
 
@@ -16,6 +22,7 @@ public class SqliteRepository {
     this.jdbc = jdbc;
   }
 
+  /** 新增一个 Tutor 会话主记录。 */
   public void insertSession(SessionRecord session) {
     jdbc.sql("""
                     INSERT INTO "session" (id, user_id, title, created_at, updated_at)
@@ -29,6 +36,7 @@ public class SqliteRepository {
             .update();
   }
 
+  /** 按最近更新时间倒序查询会话摘要。 */
   public List<SessionRecord> listSessions() {
     return jdbc.sql("""
                     SELECT id, user_id, title, created_at, updated_at
@@ -44,6 +52,7 @@ public class SqliteRepository {
             .list();
   }
 
+  /** 按会话标识查询单个会话。 */
   public Optional<SessionRecord> findSession(String id) {
     return jdbc.sql("""
                     SELECT id, user_id, title, created_at, updated_at
@@ -60,6 +69,7 @@ public class SqliteRepository {
             .optional();
   }
 
+  /** 更新会话最近活动时间。 */
   public void touchSession(String sessionId, Instant updatedAt) {
     jdbc.sql("UPDATE \"session\" SET updated_at = :updatedAt WHERE id = :id")
             .param("id", sessionId)
@@ -67,6 +77,7 @@ public class SqliteRepository {
             .update();
   }
 
+  /** 保存用户或助手消息，并同步刷新会话活动时间。 */
   public void insertMessage(MessageRecord message) {
     jdbc.sql("""
                     INSERT INTO message (id, session_id, role, content, created_at)
@@ -81,6 +92,7 @@ public class SqliteRepository {
     touchSession(message.sessionId(), message.createdAt());
   }
 
+  /** 按创建顺序读取会话消息。 */
   public List<MessageRecord> listMessages(String sessionId) {
     return jdbc.sql("""
                     SELECT id, session_id, role, content, created_at
@@ -97,6 +109,7 @@ public class SqliteRepository {
             .list();
   }
 
+  /** 保存一次 Agent 运行的初始状态。 */
   public void insertRun(RunRecord run) {
     jdbc.sql("""
                     INSERT INTO agent_run (id, session_id, status, error_message, started_at, completed_at)
@@ -111,6 +124,7 @@ public class SqliteRepository {
             .update();
   }
 
+  /** 写入 Agent 运行的最终状态和完成时间。 */
   public void finishRun(String runId, String status, String errorMessage, Instant completedAt) {
     jdbc.sql("""
                     UPDATE agent_run SET status = :status, error_message = :errorMessage,
@@ -123,6 +137,7 @@ public class SqliteRepository {
             .update();
   }
 
+  /** 持久化 ADK 事件，并依靠 sequence 保证读取顺序。 */
   public void insertEvent(PersistedEvent event) {
     jdbc.sql("""
                     INSERT OR IGNORE INTO "event"
@@ -144,6 +159,7 @@ public class SqliteRepository {
             .update();
   }
 
+  /** 按数据库 sequence 读取会话事件。 */
   public List<PersistedEvent> listEvents(String sessionId) {
     return jdbc.sql("""
                     SELECT id, session_id, run_id, author, event_type, content, tool_call_json,
@@ -166,6 +182,7 @@ public class SqliteRepository {
             .list();
   }
 
+  /** 执行最小数据库探针，用于健康检查。 */
   public void probe() {
     String now = Instant.now().toString();
     jdbc.sql("""

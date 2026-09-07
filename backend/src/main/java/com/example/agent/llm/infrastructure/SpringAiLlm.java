@@ -11,7 +11,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 
 import java.util.Objects;
 
-/** The small ADK-to-Spring-AI provider seam. ADK still owns the execution loop. */
+/** ADK 到 Spring AI 的轻量提供商适配缝；执行循环仍由 ADK 持有。 */
 public final class SpringAiLlm extends BaseLlm {
 
   private final ChatModel chatModel;
