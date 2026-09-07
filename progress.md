@@ -78,6 +78,8 @@
 - 用户确认项目尚未投入使用，因此移除旧 Journey 兼容回退；技能、路径和诊断题全部按 Journey 关联读取。
 - 删除未再使用的语言级技能和全局诊断题查询；新增的集成测试验证两个相同语言 Journey 的技能集合相互隔离。
 - `pnpm backend:test` 和完整 `pnpm check` 均通过，共 23 项 JVM 测试；`pnpm native:check` 仍因本机 JDK 缺少 `native-image` 阻塞在 AOT 编译阶段。
+- 排查 IntelliJ 的 pnpm 提示：系统 PATH 没有真实 pnpm，只能看到 Codex 临时 shim；已在 `package.json` 声明 `pnpm@11.19.0`
+  ，并验证 `corepack pnpm --version` 返回 11.19.0。
 
 ### Errors
 | Error | Resolution |
