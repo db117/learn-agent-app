@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Desktop Learning Agent",
+  "version": "0.1.0",
+  "identifier": "com.example.desktop-learning-agent",
+  "build": {
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Desktop Learning Agent",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 980,
+        "minHeight": 640,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": [
+      "binaries/agent-backend"
+    ],
+    "icon": ["icons/icon.png"]
+  }
+}

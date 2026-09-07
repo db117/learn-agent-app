@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.vite/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+.idea/
+
