@@ -148,7 +148,7 @@ pub fn run() {
             stop_backend
         ])
         .setup(|app| {
-            if !backend_reachable() {
+            if !cfg!(debug_assertions) && !backend_reachable() {
                 let state = app.state::<BackendState>();
                 if let Err(error) = start_backend(app.handle().clone(), state) {
                     let _ = app.emit("backend-required", error);
