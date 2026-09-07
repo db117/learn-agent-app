@@ -6,14 +6,16 @@ import com.example.agent.persistence.PersistedEvent;
 import com.example.agent.persistence.RunRecord;
 import com.example.agent.persistence.SessionRecord;
 import com.example.agent.persistence.SqliteRepository;
+import com.google.adk.agents.RunConfig;
 import com.google.adk.events.Event;
 import com.google.adk.runner.Runner;
 import com.google.adk.sessions.InMemorySessionService;
 import com.google.adk.sessions.Session;
 import com.google.genai.types.Content;
 import com.google.genai.types.Part;
-import com.google.adk.agents.RunConfig;
 import io.reactivex.rxjava3.core.Flowable;
+import org.springframework.stereotype.Service;
+
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -21,7 +23,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.stream.Collectors;
-import org.springframework.stereotype.Service;
 
 @Service
 public class TutorAgentService {
@@ -36,12 +37,12 @@ public class TutorAgentService {
   private final ConcurrentHashMap<String, StringBuilder> responseText = new ConcurrentHashMap<>();
 
   public TutorAgentService(
-      Runner runner,
-      InMemorySessionService adkSessions,
-      SqliteRepository repository,
-      EventHub eventHub,
-      AppProperties properties,
-      ExecutorService executor) {
+          Runner runner,
+          InMemorySessionService adkSessions,
+          SqliteRepository repository,
+          EventHub eventHub,
+          AppProperties properties,
+          ExecutorService executor) {
     this.runner = runner;
     this.adkSessions = adkSessions;
     this.repository = repository;
@@ -52,31 +53,31 @@ public class TutorAgentService {
 
   public synchronized void ensureAdkSession(SessionRecord session) {
     Session adkSession =
-        adkSessions
-            .getSession(properties.appName(), session.userId(), session.id(), Optional.empty())
-            .blockingGet();
+            adkSessions
+                    .getSession(properties.appName(), session.userId(), session.id(), Optional.empty())
+                    .blockingGet();
     if (adkSession == null) {
       adkSession =
-          adkSessions
-              .createSession(properties.appName(), session.userId(), Map.of(), session.id())
-              .blockingGet();
+              adkSessions
+                      .createSession(properties.appName(), session.userId(), Map.of(), session.id())
+                      .blockingGet();
       for (MessageRecord message : repository.listMessages(session.id())) {
         String author = "user".equals(message.role()) ? "user" : "tutor_agent";
         adkSessions
-            .appendEvent(
-                adkSession,
-                Event.builder()
-                    .id(message.id())
-                    .invocationId("restored-" + message.id())
-                    .author(author)
-                    .content(
-                        Content.builder()
-                            .role("user".equals(author) ? "user" : "model")
-                            .parts(Part.fromText(message.content()))
-                            .build())
-                    .timestamp(message.createdAt().toEpochMilli())
-                    .build())
-            .blockingGet();
+                .appendEvent(
+                        adkSession,
+                        Event.builder()
+                                .id(message.id())
+                                .invocationId("restored-" + message.id())
+                                .author(author)
+                                .content(
+                                        Content.builder()
+                                                .role("user".equals(author) ? "user" : "model")
+                                                .parts(Part.fromText(message.content()))
+                                                .build())
+                                .timestamp(message.createdAt().toEpochMilli())
+                                .build())
+                .blockingGet();
       }
     }
   }
@@ -100,18 +101,18 @@ public class TutorAgentService {
   private void execute(SessionRecord session, String runId, String content) {
     try {
       Flowable<Event> events =
-          runner.runAsync(
-              session.userId(),
-              session.id(),
-              Content.fromParts(Part.fromText(content)),
-              RunConfig.builder()
-                  .streamingMode(RunConfig.StreamingMode.SSE)
-                  .toolExecutionMode(RunConfig.ToolExecutionMode.SEQUENTIAL)
-                  .build());
+              runner.runAsync(
+                      session.userId(),
+                      session.id(),
+                      Content.fromParts(Part.fromText(content)),
+                      RunConfig.builder()
+                              .streamingMode(RunConfig.StreamingMode.SSE)
+                              .toolExecutionMode(RunConfig.ToolExecutionMode.SEQUENTIAL)
+                              .build());
       events.blockingSubscribe(
-          event -> persistEvent(session, runId, event),
-          error -> finishFailed(session.id(), runId, error),
-          () -> finishCompleted(session.id(), runId));
+              event -> persistEvent(session, runId, event),
+              error -> finishFailed(session.id(), runId, error),
+              () -> finishCompleted(session.id(), runId));
     } catch (Throwable error) {
       finishFailed(session.id(), runId, error);
     }
@@ -122,9 +123,9 @@ public class TutorAgentService {
     repository.insertEvent(persisted);
     eventHub.publish(persisted);
     if (event.author() != null
-        && !"user".equals(event.author())
-        && event.functionCalls().isEmpty()
-        && event.functionResponses().isEmpty()) {
+            && !"user".equals(event.author())
+            && event.functionCalls().isEmpty()
+            && event.functionResponses().isEmpty()) {
       String text = textOf(event);
       if (!text.isBlank()) {
         responseText.computeIfAbsent(runId, ignored -> new StringBuilder()).append(text);
@@ -134,7 +135,7 @@ public class TutorAgentService {
         String finalText = accumulated == null ? "" : accumulated.toString();
         if (!finalText.isBlank()) {
           repository.insertMessage(
-              new MessageRecord(event.id(), session.id(), "assistant", finalText, persisted.timestamp()));
+                  new MessageRecord(event.id(), session.id(), "assistant", finalText, persisted.timestamp()));
         }
       }
     }
@@ -142,11 +143,11 @@ public class TutorAgentService {
 
   private String textOf(Event event) {
     return event.content()
-        .flatMap(Content::parts)
-        .orElseGet(java.util.List::of)
-        .stream()
-        .flatMap(part -> part.text().stream())
-        .collect(Collectors.joining());
+            .flatMap(Content::parts)
+            .orElseGet(java.util.List::of)
+            .stream()
+            .flatMap(part -> part.text().stream())
+            .collect(Collectors.joining());
   }
 
   private void finishCompleted(String sessionId, String runId) {
@@ -164,5 +165,6 @@ public class TutorAgentService {
     activeSessions.remove(sessionId);
   }
 
-  public record RunReceipt(String runId, String messageId) {}
+  public record RunReceipt(String runId, String messageId) {
+  }
 }

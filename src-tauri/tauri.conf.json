@@ -27,6 +27,8 @@
     "externalBin": [
       "binaries/agent-backend"
     ],
-    "icon": ["icons/icon.png"]
+    "icon": [
+      "icons/icon.png"
+    ]
   }
 }

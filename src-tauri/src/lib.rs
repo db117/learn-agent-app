@@ -50,7 +50,7 @@ fn status(state: &BackendState) -> BackendStatus {
         } else {
             "stopped"
         }
-        .to_string(),
+            .to_string(),
         detail: Some("127.0.0.1:18080".to_string()),
     }
 }

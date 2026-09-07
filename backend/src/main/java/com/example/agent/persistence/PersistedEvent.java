@@ -3,48 +3,49 @@ package com.example.agent.persistence;
 import com.google.adk.JsonBaseModel;
 import com.google.adk.events.Event;
 import com.google.genai.JsonSerializable;
+
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 public record PersistedEvent(
-    String id,
-    String sessionId,
-    String runId,
-    String author,
-    String eventType,
-    String content,
-    String toolCall,
-    String toolResult,
-    Instant timestamp,
-    String rawJson) {
+        String id,
+        String sessionId,
+        String runId,
+        String author,
+        String eventType,
+        String content,
+        String toolCall,
+        String toolResult,
+        Instant timestamp,
+        String rawJson) {
 
   public static PersistedEvent from(String sessionId, String runId, Event event) {
     String toolCall =
-        event.functionCalls().isEmpty()
-            ? null
-            : JsonSerializable.toJsonString(event.functionCalls());
+            event.functionCalls().isEmpty()
+                    ? null
+                    : JsonSerializable.toJsonString(event.functionCalls());
     String toolResult =
-        event.functionResponses().isEmpty()
-            ? null
-            : JsonSerializable.toJsonString(event.functionResponses());
+            event.functionResponses().isEmpty()
+                    ? null
+                    : JsonSerializable.toJsonString(event.functionResponses());
     String eventType =
-        !event.functionCalls().isEmpty()
-            ? "tool_call"
-            : !event.functionResponses().isEmpty()
-                ? "tool_result"
-                : event.errorMessage().isPresent() ? "error" : "message";
+            !event.functionCalls().isEmpty()
+                    ? "tool_call"
+                    : !event.functionResponses().isEmpty()
+                    ? "tool_result"
+                    : event.errorMessage().isPresent() ? "error" : "message";
     return new PersistedEvent(
-        event.id(),
-        sessionId,
-        runId,
-        event.author() == null ? "unknown" : event.author(),
-        eventType,
-        event.stringifyContent(),
-        toolCall,
-        toolResult,
-        Instant.ofEpochMilli(event.timestamp()),
-        rawJson(event, toolCall, toolResult));
+            event.id(),
+            sessionId,
+            runId,
+            event.author() == null ? "unknown" : event.author(),
+            eventType,
+            event.stringifyContent(),
+            toolCall,
+            toolResult,
+            Instant.ofEpochMilli(event.timestamp()),
+            rawJson(event, toolCall, toolResult));
   }
 
   private static String rawJson(Event event, String toolCall, String toolResult) {
@@ -67,16 +68,16 @@ public record PersistedEvent(
   public static PersistedEvent error(String sessionId, String runId, Throwable error) {
     String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
     return new PersistedEvent(
-        Event.generateEventId(),
-        sessionId,
-        runId,
-        "system",
-        "error",
-        message,
-        null,
-        null,
-        Instant.now(),
-        JsonBaseModel.toJsonString(Map.of("errorMessage", message)));
+            Event.generateEventId(),
+            sessionId,
+            runId,
+            "system",
+            "error",
+            message,
+            null,
+            null,
+            Instant.now(),
+            JsonBaseModel.toJsonString(Map.of("errorMessage", message)));
   }
 
   public String json() {

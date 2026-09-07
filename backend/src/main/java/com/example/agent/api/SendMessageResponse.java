@@ -1,3 +1,4 @@
 package com.example.agent.api;
 
-public record SendMessageResponse(String runId, String messageId) {}
+public record SendMessageResponse(String runId, String messageId) {
+}

@@ -11,8 +11,8 @@ public class SpringAiModelFactory {
   private final String modelName;
 
   public SpringAiModelFactory(
-      ChatModel chatModel,
-      @Value("${spring.ai.openai.chat.model:gpt-5-mini}") String modelName) {
+          ChatModel chatModel,
+          @Value("${spring.ai.openai.chat.model:gpt-5-mini}") String modelName) {
     this.chatModel = chatModel;
     this.modelName = modelName;
   }

@@ -1,3 +1,4 @@
 package com.example.agent.api;
 
-public record SendMessageRequest(String content) {}
+public record SendMessageRequest(String content) {
+}

@@ -40,7 +40,7 @@ const API_BASE = "http://127.0.0.1:18080/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: {"Content-Type": "application/json"},
     ...init,
   });
   if (!response.ok) {
@@ -53,11 +53,11 @@ export const api = {
   health: () => request<BackendHealth>("/health"),
   sessions: () => request<SessionSummary[]>("/sessions"),
   session: (id: string) => request<SessionDetail>(`/sessions/${id}`),
-  createSession: () => request<SessionSummary>("/sessions", { method: "POST", body: "{}" }),
+  createSession: () => request<SessionSummary>("/sessions", {method: "POST", body: "{}"}),
   sendMessage: (id: string, content: string) =>
-    request<{ runId: string; messageId: string }>(`/sessions/${id}/messages`, {
-      method: "POST",
-      body: JSON.stringify({ content }),
-    }),
+      request<{ runId: string; messageId: string }>(`/sessions/${id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({content}),
+      }),
   eventsUrl: (id: string) => `${API_BASE}/sessions/${id}/events`,
 };
