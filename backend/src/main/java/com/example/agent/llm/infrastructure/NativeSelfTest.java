@@ -56,6 +56,7 @@ final class NativeSelfTest implements ApplicationRunner {
                 || !model.receivedToolResult()) {
             throw new IllegalStateException("Native SAA tool loop did not complete");
         }
+        System.out.println("Native SAA self-test passed");
     }
 
     private static final class ScriptedChatModel implements ChatModel {

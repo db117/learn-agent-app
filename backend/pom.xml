@@ -24,7 +24,7 @@
         <spring-ai-alibaba.version>2.0.0-M1.1</spring-ai-alibaba.version>
         <sqlite-jdbc.version>3.53.2.0</sqlite-jdbc.version>
         <start-class>com.example.agent.AgentBackendApplication</start-class>
-        <native.image.parallelism>4</native.image.parallelism>
+        <native.image.parallelism>12</native.image.parallelism>
         <native.image.max-heap>12g</native.image.max-heap>
     </properties>
 

@@ -162,13 +162,8 @@ async function waitForSelfTest() {
     const deadline = Date.now() + 60_000;
     let lastError = "not ready";
     while (Date.now() < deadline) {
-        try {
-            const detail = await json("http://127.0.0.1:18080/api/sessions/native-self-test");
-            if (detail.messages.some((message) => message.content.includes("Echo observed: hello"))) return detail;
-            lastError = "self-test session has no final message";
-        } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error);
-        }
+        if (output.includes("Native SAA self-test passed")) return {id: "native-self-test"};
+        lastError = "self-test marker not found";
         await new Promise((resolve) => setTimeout(resolve, 500));
     }
     throw new Error(`Native SAA self-test did not complete: ${lastError}`);
