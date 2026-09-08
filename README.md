@@ -13,7 +13,7 @@ SQLite 是长期事实来源。
 ## 本地运行
 
 前置条件：Node.js 22+、pnpm、Rust、Maven Wrapper，以及用于 JVM 开发路径的 Java 21。
-发送真实消息前，请设置 `OPENAI_API_KEY`。
+没有 `OPENAI_API_KEY` 也可以启动 dev，此时后端使用 disabled ChatModel；创建 Journey、Tutor 和其他 LLM 功能仍需配置真实 key。
 
 ```bash
 pnpm install

@@ -5,7 +5,12 @@ import path from "node:path";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const backend = path.join(root, "backend");
 const command = process.platform === "win32" ? "mvnw.cmd" : "./mvnw";
-const child = spawn(command, ["spring-boot:run"], {
+const args = ["spring-boot:run"];
+if (!process.env.OPENAI_API_KEY?.trim()) {
+    args.push("-Dspring-boot.run.arguments=--spring.ai.model.chat=none");
+    console.warn("OPENAI_API_KEY is not set; starting dev backend without an LLM provider.");
+}
+const child = spawn(command, args, {
     cwd: backend,
     stdio: "inherit",
     shell: process.platform === "win32"

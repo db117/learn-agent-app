@@ -9,10 +9,14 @@ import com.alibaba.cloud.ai.graph.skills.registry.classpath.ClasspathSkillRegist
 import com.example.agent.learning.tutor.TutorContextService;
 import com.example.agent.tool.EchoTool;
 import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.support.ToolCallbacks;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.ImportRuntimeHints;
+import reactor.core.publisher.Flux;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -49,6 +53,12 @@ public class SaaAgentConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(name = "spring.ai.model.chat", havingValue = "none")
+    ChatModel unavailableChatModel() {
+        return new UnavailableChatModel();
+    }
+
+    @Bean
     CompiledGraph saaWorkflowGraph(ReactAgent saaTutorAgent) {
         try {
             StateGraph graph = new StateGraph();
@@ -72,5 +82,22 @@ public class SaaAgentConfiguration {
     @Bean(destroyMethod = "shutdown")
     ExecutorService agentExecutor() {
         return Executors.newCachedThreadPool();
+    }
+
+    private static final class UnavailableChatModel implements ChatModel {
+
+        @Override
+        public ChatResponse call(Prompt prompt) {
+            throw unavailable();
+        }
+
+        @Override
+        public Flux<ChatResponse> stream(Prompt prompt) {
+            return Flux.error(unavailable());
+        }
+
+        private IllegalStateException unavailable() {
+            return new IllegalStateException("LLM is not configured; set OPENAI_API_KEY");
+        }
     }
 }

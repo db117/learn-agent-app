@@ -12,6 +12,8 @@ export OPENAI_API_KEY=...
 export OPENAI_MODEL=gpt-5-mini       # 可选
 ```
 
+未设置 `OPENAI_API_KEY` 时 `pnpm dev` 仍可启动界面和后端，但 LLM 功能会明确提示未配置。
+
 ## 命令
 
 ```bash
