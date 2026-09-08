@@ -1,11 +1,12 @@
 import {spawn} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import path from "node:path";
+import {withNativeParallelism} from "./native-parallelism.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const backend = path.join(root, "backend");
 const command = process.platform === "win32" ? "mvnw.cmd" : "./mvnw";
-const child = spawn(command, process.argv.slice(2), {
+const child = spawn(command, withNativeParallelism(process.argv.slice(2)), {
     cwd: backend,
     stdio: "inherit",
     shell: process.platform === "win32"

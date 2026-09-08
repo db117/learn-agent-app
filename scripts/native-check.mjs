@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {spawn, spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
+import {withNativeParallelism} from "./native-parallelism.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const backend = path.join(root, "backend");
@@ -17,7 +18,9 @@ if (!existsSync(wrapperPath)) {
 }
 
 if (process.env.NATIVE_CHECK_SKIP_BUILD !== "true") {
-    const build = spawnSync(wrapperPath, ["-Pnative", "native:compile"], {
+    const buildArgs = withNativeParallelism(["-Pnative", "native:compile"]);
+    console.log(`Native Image parallelism: ${buildArgs.find((arg) => arg.startsWith("-Dnative.image.parallelism="))?.split("=")[1]}`);
+    const build = spawnSync(wrapperPath, buildArgs, {
         cwd: backend,
         env: process.env,
         encoding: "utf8",

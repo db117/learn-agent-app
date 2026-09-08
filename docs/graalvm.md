@@ -7,7 +7,7 @@
 - Spring AI：2.0.0-M1
 - Spring AI Alibaba：2.0.0-M1.1
 - GraalVM：Oracle GraalVM 25.3.4.1（Windows x64，包含 `native-image`）
-- Native 构建：`./backend/mvnw -Pnative native:compile`
+- Native 构建：`pnpm native:build`
 
 Maven Wrapper 固定使用 Maven 3.9.9，因此开发者不需要全局安装 Maven。Native 是正式
 生产后端验收，不是 Phase 0 门禁。
@@ -18,7 +18,7 @@ Maven Wrapper 固定使用 Maven 3.9.9，因此开发者不需要全局安装 Ma
 作为默认 Java；Native 验收使用用户级安装的 Oracle GraalVM 25.3.4.1，并在本次命令中
 临时设置 `JAVA_HOME` 和 `PATH`。
 
-`pnpm native:check` 已通过：Native Image 使用 12 个编译线程，后端 health、SQLite、SAA
+`pnpm native:check` 已通过：Native Image 按逻辑处理器数减 3（最低 1）个编译线程，后端 health、SQLite、SAA
 ReactAgent 工具循环、持久化空闲 SSE、流式工具调用/结果事件、工具结果重发和最终
 Assistant 消息持久化全部通过。
 
@@ -33,7 +33,10 @@ pnpm native:check
 Native 后端启动、health、SQLite 会话读写、SAA ReactAgent 工具循环、持久化空闲 SSE、
 流式工具调用/结果事件、工具结果重发和最终 Assistant 消息持久化。
 
-构建参数默认使用 12 个编译线程和 12 GB 堆，可按机器规格覆盖：
+`pnpm native:build` 和 `pnpm native:check` 会自动使用
+`max(1, os.cpus().length - 3)` 个编译线程；显式传入
+`-Dnative.image.parallelism=N` 时保留手动覆盖能力。Native Maven 配置中的 12 仅作为直接调用
+Maven 时的兜底值。堆默认仍为 12 GB，可按机器规格覆盖：
 
 ```bash
 ./backend/mvnw -Pnative \

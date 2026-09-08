@@ -13,4 +13,4 @@
 - [x] 删除 ADK dependencies、旧实现和过时架构文档，更新项目说明。
 - [x] Native 作为正式迁移后的最终验收，不恢复或新增 Phase 0。
 
-**Evidence:** `pnpm native:check` passes with Oracle GraalVM 25.3.4.1 and `--parallelism=12`; health, SQLite, SAA Agent/tool loop, SSE, tool-result resend, and final Assistant persistence all report `UP`.
+**Evidence:** `pnpm native:check` passes with Oracle GraalVM 25.3.4.1; the scripts calculate `--parallelism=max(1, logical processors - 3)` and used `13` on the current 16-processor host. Health, SQLite, SAA Agent/tool loop, SSE, tool-result resend, and final Assistant persistence all report `UP`.
