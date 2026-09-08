@@ -1,30 +1,13 @@
 package com.example.agent.persistence;
 
-import com.google.adk.JsonBaseModel;
-import com.google.adk.events.Event;
-import com.google.genai.JsonSerializable;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
-/**
- * ADK Event 的 SQLite 投影和 SSE 传输载荷。
- *
- * <p>除了便于查询的字段外，{@code rawJson} 保留完整事件快照；工具调用和工具结果分别保存在
- * {@code toolCall}、{@code toolResult} 中，便于前端和诊断工具使用。
- *
- * @param id ADK 事件唯一标识
- * @param sessionId 所属会话标识
- * @param runId 所属 Agent 运行标识
- * @param author 事件作者
- * @param eventType 事件类型，例如 message、tool_call、tool_result 或 error
- * @param content 事件文本内容
- * @param toolCall 工具调用 JSON；非工具事件为空
- * @param toolResult 工具结果 JSON；非工具事件为空
- * @param timestamp 事件时间
- * @param rawJson ADK 事件的原始 JSON 快照
- */
+/** Framework-neutral SQLite projection and SSE payload for one Tutor event. */
 public record PersistedEvent(
         String id,
         String sessionId,
@@ -37,78 +20,77 @@ public record PersistedEvent(
         Instant timestamp,
         String rawJson) {
 
-  public static PersistedEvent from(String sessionId, String runId, Event event) {
-    String toolCall =
-            event.functionCalls().isEmpty()
-                    ? null
-                    : JsonSerializable.toJsonString(event.functionCalls());
-    String toolResult =
-            event.functionResponses().isEmpty()
-                    ? null
-                    : JsonSerializable.toJsonString(event.functionResponses());
-    String eventType =
-            !event.functionCalls().isEmpty()
-                    ? "tool_call"
-                    : !event.functionResponses().isEmpty()
-                    ? "tool_result"
-                    : event.errorMessage().isPresent() ? "error" : "message";
-    return new PersistedEvent(
-            event.id(),
-            sessionId,
-            runId,
-            event.author() == null ? "unknown" : event.author(),
-            eventType,
-            event.stringifyContent(),
-            toolCall,
-            toolResult,
-            Instant.ofEpochMilli(event.timestamp()),
-            rawJson(event, toolCall, toolResult));
-  }
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
-  private static String rawJson(Event event, String toolCall, String toolResult) {
-    Map<String, Object> raw = new LinkedHashMap<>();
-    raw.put("id", event.id());
-    raw.put("invocationId", event.invocationId());
-    raw.put("author", event.author());
-    raw.put("content", event.stringifyContent());
-    raw.put("functionCalls", toolCall);
-    raw.put("functionResponses", toolResult);
-    event.partial().ifPresent(value -> raw.put("partial", value));
-    event.turnComplete().ifPresent(value -> raw.put("turnComplete", value));
-    event.errorCode().ifPresent(value -> raw.put("errorCode", value.toString()));
-    event.errorMessage().ifPresent(value -> raw.put("errorMessage", value));
-    event.finishReason().ifPresent(value -> raw.put("finishReason", value.toString()));
-    raw.put("timestamp", event.timestamp());
-    return JsonBaseModel.toJsonString(raw);
-  }
+    public static PersistedEvent message(
+            String sessionId, String runId, String author, String content, Instant timestamp) {
+        return create(sessionId, runId, author, "message", content, null, null, timestamp);
+    }
 
-  public static PersistedEvent error(String sessionId, String runId, Throwable error) {
-    String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-    return new PersistedEvent(
-            Event.generateEventId(),
-            sessionId,
-            runId,
-            "system",
-            "error",
-            message,
-            null,
-            null,
-            Instant.now(),
-            JsonBaseModel.toJsonString(Map.of("errorMessage", message)));
-  }
+    public static PersistedEvent toolCall(
+            String sessionId, String runId, String author, String content, String toolCall, Instant timestamp) {
+        return create(sessionId, runId, author, "tool_call", content, toolCall, null, timestamp);
+    }
 
-  public String json() {
-    Map<String, Object> payload = new LinkedHashMap<>();
-    payload.put("id", id);
-    payload.put("sessionId", sessionId);
-    payload.put("runId", runId);
-    payload.put("author", author);
-    payload.put("eventType", eventType);
-    payload.put("content", content);
-    payload.put("toolCall", toolCall);
-    payload.put("toolResult", toolResult);
-    payload.put("timestamp", timestamp.toString());
-    payload.put("rawJson", rawJson);
-    return JsonBaseModel.toJsonString(payload);
-  }
+    public static PersistedEvent toolResult(
+            String sessionId, String runId, String author, String content, String toolResult, Instant timestamp) {
+        return create(sessionId, runId, author, "tool_result", content, null, toolResult, timestamp);
+    }
+
+    public static PersistedEvent error(String sessionId, String runId, Throwable error) {
+        String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+        return create(sessionId, runId, "system", "error", message, null, null, Instant.now());
+    }
+
+    public static PersistedEvent complete(String sessionId, String runId, Instant timestamp) {
+        return create(sessionId, runId, "system", "complete", "", null, null, timestamp);
+    }
+
+    private static PersistedEvent create(
+            String sessionId,
+            String runId,
+            String author,
+            String eventType,
+            String content,
+            String toolCall,
+            String toolResult,
+            Instant timestamp) {
+        String id = UUID.randomUUID().toString();
+        Map<String, Object> raw = new LinkedHashMap<>();
+        raw.put("id", id);
+        raw.put("sessionId", sessionId);
+        raw.put("runId", runId);
+        raw.put("author", author);
+        raw.put("eventType", eventType);
+        raw.put("content", content == null ? "" : content);
+        raw.put("toolCall", toolCall);
+        raw.put("toolResult", toolResult);
+        raw.put("timestamp", timestamp.toString());
+        return new PersistedEvent(
+                id, sessionId, runId, author, eventType, content == null ? "" : content,
+                toolCall, toolResult, timestamp, write(raw));
+    }
+
+    public String json() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", id);
+        payload.put("sessionId", sessionId);
+        payload.put("runId", runId);
+        payload.put("author", author);
+        payload.put("eventType", eventType);
+        payload.put("content", content);
+        payload.put("toolCall", toolCall);
+        payload.put("toolResult", toolResult);
+        payload.put("timestamp", timestamp.toString());
+        payload.put("rawJson", rawJson);
+        return write(payload);
+    }
+
+    private static String write(Object value) {
+        try {
+            return MAPPER.writeValueAsString(value);
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to serialize Tutor event", error);
+        }
+    }
 }

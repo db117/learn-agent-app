@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS agent_run
     completed_at TEXT
     );
 
--- Phase 1：ADK 事件流水表，sequence 用于按接收顺序恢复 SSE/事件流。
+-- Phase 1：Tutor 事件流水表，sequence 用于按接收顺序恢复 SSE/事件流。
 CREATE TABLE IF NOT EXISTS "event"
 (
     sequence
@@ -130,8 +130,8 @@ CREATE TABLE IF NOT EXISTS learning_language
     enabled INTEGER NOT NULL DEFAULT 0
 );
 
--- 技能目录；前置关系和通过规则由课程数据定义。
-CREATE TABLE IF NOT EXISTS learning_skill
+-- LearnUnit 目录；前置关系和通过规则由课程数据定义。
+CREATE TABLE IF NOT EXISTS learn_unit
 (
     id TEXT PRIMARY KEY,
     language_code TEXT NOT NULL REFERENCES learning_language(code),
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS learning_skill
     name TEXT NOT NULL,
     description TEXT NOT NULL,
     sequence INTEGER NOT NULL,
-    prerequisite_skill_codes TEXT NOT NULL,
+    prerequisite_learn_unit_codes TEXT NOT NULL,
     pass_score INTEGER NOT NULL DEFAULT 80,
     min_coding_score INTEGER,
     enabled INTEGER NOT NULL DEFAULT 1,
@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS learning_skill
     diagnostic_eligible INTEGER NOT NULL DEFAULT 1
 );
 
--- 学习 Journey 主记录；current_learning_skill_id 指向当前路径节点。
+-- 学习 Journey 主记录；current_learn_unit_code 指向当前路径节点。
 CREATE TABLE IF NOT EXISTS learning_journey
 (
     id TEXT PRIMARY KEY,
@@ -160,15 +160,15 @@ CREATE TABLE IF NOT EXISTS learning_journey
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    current_learning_skill_id TEXT
+    current_learn_unit_code TEXT
 );
 
--- Journey 专属课程关系；同一语言的不同 Journey 可以拥有不同的技能和 Lesson。
-CREATE TABLE IF NOT EXISTS learning_journey_skill
+-- Journey 专属课程关系；同一语言的不同 Journey 可以拥有不同的 LearnUnit 内容。
+CREATE TABLE IF NOT EXISTS learning_journey_learn_unit
 (
     journey_id TEXT NOT NULL REFERENCES learning_journey(id),
-    skill_code TEXT NOT NULL REFERENCES learning_skill(code),
-    PRIMARY KEY (journey_id, skill_code)
+    learn_unit_code TEXT NOT NULL REFERENCES learn_unit(code),
+    PRIMARY KEY (journey_id, learn_unit_code)
 );
 
 -- 学习者背景资料，供诊断规划和 Tutor 上下文使用。
@@ -181,11 +181,11 @@ CREATE TABLE IF NOT EXISTS learner_profile
     learning_goal TEXT NOT NULL
 );
 
--- Journey 中每项技能的状态、掌握度、历史最佳成绩和通过时间。
-CREATE TABLE IF NOT EXISTS learner_skill
+-- Journey 中每项 LearnUnit 的状态、掌握度、历史最佳成绩和通过时间。
+CREATE TABLE IF NOT EXISTS learner_learn_unit
 (
     journey_id TEXT NOT NULL REFERENCES learning_journey(id),
-    skill_code TEXT NOT NULL REFERENCES learning_skill(code),
+    learn_unit_code TEXT NOT NULL REFERENCES learn_unit(code),
     status TEXT NOT NULL,
     mastery_score INTEGER NOT NULL DEFAULT 0,
     best_assessment_score INTEGER NOT NULL DEFAULT 0,
@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS learner_skill
     started_at TEXT,
     passed_at TEXT,
     skipped_at TEXT,
-    PRIMARY KEY (journey_id, skill_code)
+    PRIMARY KEY (journey_id, learn_unit_code)
 );
 
 -- Journey 的学习路径节点；已完成/跳过节点保留，便于恢复和审计。
@@ -202,17 +202,17 @@ CREATE TABLE IF NOT EXISTS learning_path_item
 (
     id TEXT PRIMARY KEY,
     journey_id TEXT NOT NULL REFERENCES learning_journey(id),
-    skill_code TEXT NOT NULL REFERENCES learning_skill(code),
+    learn_unit_code TEXT NOT NULL REFERENCES learn_unit(code),
     sequence INTEGER NOT NULL,
     status TEXT NOT NULL,
-    UNIQUE (journey_id, skill_code)
+    UNIQUE (journey_id, learn_unit_code)
 );
 
 -- 不可变题目定义；只能新增，不能更新，历史引用的题目通过下方表软删除。
 CREATE TABLE IF NOT EXISTS question
 (
     id TEXT PRIMARY KEY,
-    skill_code TEXT NOT NULL REFERENCES learning_skill(code),
+    learn_unit_code TEXT NOT NULL REFERENCES learn_unit(code),
     type TEXT NOT NULL,
     difficulty INTEGER NOT NULL,
     prompt TEXT NOT NULL,
@@ -237,7 +237,7 @@ CREATE TABLE IF NOT EXISTS assessment
 (
     id TEXT PRIMARY KEY,
     journey_id TEXT NOT NULL REFERENCES learning_journey(id),
-    skill_code TEXT REFERENCES learning_skill(code),
+    learn_unit_code TEXT REFERENCES learn_unit(code),
     type TEXT NOT NULL,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -259,7 +259,7 @@ CREATE TABLE IF NOT EXISTS assessment_attempt
     id TEXT PRIMARY KEY,
     assessment_id TEXT NOT NULL REFERENCES assessment(id),
     journey_id TEXT NOT NULL REFERENCES learning_journey(id),
-    skill_code TEXT,
+    learn_unit_code TEXT,
     attempt_number INTEGER NOT NULL,
     choice_score INTEGER,
     coding_score INTEGER,
@@ -285,23 +285,38 @@ CREATE TABLE IF NOT EXISTS question_attempt
     PRIMARY KEY (question_id, assessment_attempt_id)
 );
 
--- Journey 技能到既有 ADK Session 的关联，保证同一技能复用 Tutor 会话。
+-- Journey LearnUnit 到 Tutor Session 的关联，保证同一 LearnUnit 复用 Tutor 会话。
 CREATE TABLE IF NOT EXISTS tutor_session
 (
     id TEXT PRIMARY KEY,
     journey_id TEXT NOT NULL REFERENCES learning_journey(id),
-    skill_code TEXT NOT NULL REFERENCES learning_skill(code),
+    learn_unit_code TEXT NOT NULL REFERENCES learn_unit(code),
     session_id TEXT NOT NULL UNIQUE REFERENCES "session"(id),
-    UNIQUE (journey_id, skill_code)
+    UNIQUE (journey_id, learn_unit_code)
 );
 
 -- Learning 查询索引：按课程顺序、Journey、技能状态和题目可用性读取。
-CREATE INDEX IF NOT EXISTS learning_skill_language_idx ON learning_skill(language_code, sequence);
-CREATE INDEX IF NOT EXISTS journey_skill_journey_idx ON learning_journey_skill(journey_id, skill_code);
+CREATE INDEX IF NOT EXISTS learn_unit_language_idx ON learn_unit(language_code, sequence);
+CREATE INDEX IF NOT EXISTS journey_learn_unit_journey_idx ON learning_journey_learn_unit(journey_id, learn_unit_code);
 CREATE INDEX IF NOT EXISTS journey_user_idx ON learning_journey(user_id, updated_at);
-CREATE INDEX IF NOT EXISTS learner_skill_journey_idx ON learner_skill(journey_id, status);
+CREATE INDEX IF NOT EXISTS learner_learn_unit_journey_idx ON learner_learn_unit(journey_id, status);
 CREATE INDEX IF NOT EXISTS path_journey_idx ON learning_path_item(journey_id, sequence);
-CREATE INDEX IF NOT EXISTS question_skill_idx ON question(skill_code, diagnostic_eligible);
+CREATE INDEX IF NOT EXISTS question_learn_unit_idx ON question(learn_unit_code, diagnostic_eligible);
 CREATE INDEX IF NOT EXISTS question_retirement_idx ON question_retirement(retired_at);
 CREATE INDEX IF NOT EXISTS assessment_journey_idx ON assessment(journey_id, created_at);
-CREATE INDEX IF NOT EXISTS attempt_skill_idx ON assessment_attempt(journey_id, skill_code, completed_at);
+CREATE INDEX IF NOT EXISTS attempt_learn_unit_idx ON assessment_attempt(journey_id, learn_unit_code, completed_at);
+
+-- Java-owned workflow facts; payload contains deterministic facts only, never model chain-of-thought.
+CREATE TABLE IF NOT EXISTS workflow_transition
+(
+    id TEXT PRIMARY KEY,
+    journey_id TEXT NOT NULL REFERENCES learning_journey(id),
+    from_state TEXT,
+    action TEXT NOT NULL,
+    to_state TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS workflow_transition_journey_idx
+    ON workflow_transition(journey_id, created_at);

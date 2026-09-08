@@ -55,7 +55,7 @@ public class LearningJourneyService {
         CurriculumGenerator.GeneratedCurriculum generated = curriculum.generateForJourney(
                 id, languageCode, learningContext);
         LearningLanguage language = generated.languages().get(0);
-        // 语言行是外键依赖，先写入元数据；技能在 Journey 建立后再绑定。
+        // 语言行是外键依赖，先写入元数据；LearnUnit 在 Journey 建立后再绑定。
         curriculum.persistLanguages(generated);
         Instant now = Instant.now();
         LearningJourney journey = new LearningJourney(
@@ -80,7 +80,7 @@ public class LearningJourneyService {
     public LearningJourney archive(String id) {
         LearningJourney journey = get(id);
         Instant now = Instant.now();
-        repository.updateJourney(id, JourneyStatus.ARCHIVED, journey.currentLearningSkillId(), now);
+        repository.updateJourney(id, JourneyStatus.ARCHIVED, journey.currentLearnUnitCode(), now);
         return get(id);
     }
 

@@ -2,8 +2,8 @@ package com.example.agent.learning.assessment;
 
 /** Assessment 的业务用途。 */
 public enum AssessmentType {
-    /** Journey 初始诊断，按技能拆分结果并生成 Path。 */
+    /** Journey 初始诊断，按 LearnUnit 拆分结果并生成 Path。 */
     DIAGNOSTIC,
-    /** 单个技能的学习评估，可重复 Retry。 */
-    SKILL
+    /** 单个 LearnUnit 的学习评估，可重复 Retry。 */
+    LEARN_UNIT
 }

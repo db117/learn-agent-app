@@ -3,7 +3,7 @@ package com.example.agent.persistence;
 import java.time.Instant;
 
 /**
- * 一次 ADK Runner 执行的持久化摘要。
+ * 一次 TutorAgent 执行的持久化摘要。
  *
  * @param id 运行唯一标识
  * @param sessionId 所属会话标识

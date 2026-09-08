@@ -48,7 +48,7 @@ public class SessionController {
         SessionRecord session =
                 new SessionRecord(UUID.randomUUID().toString(), properties.userId(), title, now, now);
         repository.insertSession(session);
-        tutor.ensureAdkSession(session);
+        tutor.ensureSession(session);
         return SessionResponse.from(session);
     }
 
@@ -70,7 +70,7 @@ public class SessionController {
                 repository.listMessages(session.id()));
     }
 
-    /** 保存用户消息并异步启动 ADK Agent。 */
+    /** 保存用户消息并异步启动 SAA TutorAgent。 */
     @PostMapping("/{sessionId}/messages")
     public SendMessageResponse send(
             @PathVariable String sessionId, @RequestBody SendMessageRequest request) {

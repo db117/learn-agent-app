@@ -12,7 +12,7 @@ import java.time.Instant;
  * @param status Journey 当前生命周期状态
  * @param createdAt 创建时间
  * @param updatedAt 最近一次状态或路径变化时间
- * @param currentLearningSkillId 当前 Path 项对应的技能编码，完成后为空
+ * @param currentLearnUnitCode 当前 Path 项对应的 LearnUnit 编码，完成后为空
  */
 public record LearningJourney(
         String id,
@@ -22,5 +22,5 @@ public record LearningJourney(
         JourneyStatus status,
         Instant createdAt,
         Instant updatedAt,
-        String currentLearningSkillId) {
+        String currentLearnUnitCode) {
 }

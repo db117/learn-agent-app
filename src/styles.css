@@ -67,12 +67,15 @@ textarea { resize: vertical; line-height: 1.5; }
 .lesson { padding: 28px; overflow: auto; }
 .lesson-header, .assessment-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
 .lesson-header h2, .assessment-header h2 { margin-top: 6px; font-size: 27px; }
+.lesson-stats { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 18px 0; color: #93a4bd; font-size: 12px; }
 .lesson-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 28px 0; }
 ul { margin: 0; padding-left: 19px; color: #b8c2d2; line-height: 1.8; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .tag-list span { border: 1px solid #32425c; border-radius: 99px; padding: 7px 10px; color: #b7c7e7; background: #1b2638; font-size: 12px; }
 .example-block { margin-top: 22px; border-left: 2px solid #658fe6; padding: 3px 0 3px 16px; color: #aebbd0; }
 .example-block p { line-height: 1.6; }
+.feedback-block { margin-top: 22px; border: 1px solid #303e54; border-radius: 8px; padding: 14px 16px; color: #aebbd0; }
+.feedback-block p { margin: 6px 0 0; line-height: 1.5; }
 .tutor { min-height: 0; }
 .tutor-empty { padding: 22px 17px; color: #aeb8c8; font-size: 13px; line-height: 1.6; }
 

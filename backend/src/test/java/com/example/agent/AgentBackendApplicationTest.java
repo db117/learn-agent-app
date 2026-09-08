@@ -1,5 +1,8 @@
 package com.example.agent;
 
+import com.alibaba.cloud.ai.graph.CompiledGraph;
+import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
 import com.example.agent.agent.TutorAgentService;
 import com.example.agent.learning.assessment.Assessment;
 import com.example.agent.learning.assessment.AssessmentAttempt;
@@ -9,11 +12,11 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.CurriculumGenerator;
-import com.example.agent.learning.journey.LearnerSkillStatus;
+import com.example.agent.learning.journey.LearnerLearnUnitStatus;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
 import com.example.agent.learning.catalog.LearningLanguage;
-import com.example.agent.learning.catalog.LearningSkill;
+import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
@@ -21,9 +24,6 @@ import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.persistence.SessionRecord;
 import com.example.agent.persistence.SqliteRepository;
 import com.example.agent.tool.EchoTool;
-import com.google.adk.agents.LlmAgent;
-import com.google.adk.sessions.InMemorySessionService;
-import com.google.adk.sessions.Session;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,8 +46,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
-                "app.data-dir=target/context-test-data",
-                "app.database=target/context-test-data/context.db"
+                "app.data-dir=target/context-test-data-learn-unit",
+                "app.database=target/context-test-data-learn-unit/context.db",
+                "spring.ai.openai.api-key=test-key",
+                "spring.ai.openai.base-url=http://localhost"
         })
 @Import(AgentBackendApplicationTest.TestCurriculumConfiguration.class)
 class AgentBackendApplicationTest {
@@ -55,15 +57,17 @@ class AgentBackendApplicationTest {
     @Autowired
     private SqliteRepository repository;
     @Autowired
-    private LlmAgent tutorAgent;
+    private ReactAgent saaTutorAgent;
+    @Autowired
+    private SkillRegistry agentSkillRegistry;
+    @Autowired
+    private CompiledGraph saaWorkflowGraph;
     @Autowired
     private ChatModel chatModel;
     @Autowired
     private EchoTool echoTool;
     @Autowired
     private TutorAgentService tutorAgentService;
-    @Autowired
-    private InMemorySessionService adkSessions;
     @Autowired
     private LearningRepository learning;
     @Autowired
@@ -72,19 +76,23 @@ class AgentBackendApplicationTest {
     private ProgressService progress;
 
     @Test
-    void startsAgentAndReadsBackASessionFromSqlite() {
+    void startsAgentAndReadsBackASessionFromSqlite() throws Exception {
         Instant now = Instant.now();
         String id = UUID.randomUUID().toString();
         repository.insertSession(new SessionRecord(id, "test-user", "context", now, now));
 
-        assertNotNull(tutorAgent);
+        assertNotNull(saaTutorAgent);
+        assertEquals(1, agentSkillRegistry.size());
+        assertTrue(agentSkillRegistry.contains("echo-verification"));
+        assertTrue(agentSkillRegistry.readSkillContent("echo-verification").contains("Agent capability"));
+        assertNotNull(saaWorkflowGraph);
         assertNotNull(chatModel);
         assertEquals(Map.of("echo", "context"), echoTool.echo("context"));
         assertEquals(id, repository.findSession(id).orElseThrow().id());
     }
 
     @Test
-    void restoresPersistedMessagesIntoANewAdkSession() {
+    void restoresPersistedMessagesForASaaSession() {
         Instant now = Instant.now();
         String id = UUID.randomUUID().toString();
         SessionRecord session = new SessionRecord(id, "test-user", "history", now, now);
@@ -94,47 +102,45 @@ class AgentBackendApplicationTest {
         repository.insertMessage(new com.example.agent.persistence.MessageRecord(
                 UUID.randomUUID().toString(), id, "assistant", "I remembered it", now.plusMillis(1)));
 
-        tutorAgentService.ensureAdkSession(session);
-
-        Session restored = adkSessions.getSession("desktop-learning-agent", "test-user", id, java.util.Optional.empty()).blockingGet();
-        assertNotNull(restored);
+        tutorAgentService.ensureSession(session);
         assertEquals(
                 List.of("remember this", "I remembered it"),
-                restored.events().stream().map(event -> event.stringifyContent()).toList());
+                repository.listMessages(id).stream().map(message -> message.content()).toList());
     }
 
     @Test
     void persistsJourneyProgressAttemptsAndRetiredQuestionHistory() {
         LearningJourney journey = journeys.create(
                 "test-user", "typescript", "integration", "Java", 8, "backend developer", "learn TypeScript");
-        List<LearningSkill> skills = learning.listSkillsForJourney(journey.id());
-        assertEquals(3, skills.size());
+        List<LearnUnit> learnUnits = learning.listLearnUnitsForJourney(journey.id());
+        assertEquals(3, learnUnits.size());
         LearningJourney otherJourney = journeys.create(
                 "test-user", "typescript", "other integration", "Java", 8, "backend developer", "learn TypeScript differently");
-        List<LearningSkill> otherSkills = learning.listSkillsForJourney(otherJourney.id());
-        assertEquals(3, otherSkills.size());
-        assertTrue(skills.stream().noneMatch(skill -> otherSkills.stream()
-                .anyMatch(other -> other.code().equals(skill.code()))));
-        String firstSkill = skills.get(0).code();
+        List<LearnUnit> otherLearnUnits = learning.listLearnUnitsForJourney(otherJourney.id());
+        assertEquals(3, otherLearnUnits.size());
+        assertTrue(learnUnits.stream().noneMatch(learnUnit -> otherLearnUnits.stream()
+                .anyMatch(other -> other.code().equals(learnUnit.code()))));
+        String firstLearnUnit = learnUnits.get(0).code();
         progress.recordDiagnosticResult(
-                journey.id(), firstSkill, new AssessmentScore(100, 100, 90, true, true), true);
+                journey.id(), firstLearnUnit, new AssessmentScore(100, 100, 90, true, true), true);
         progress.generatePath(journey.id());
 
         var path = learning.listPath(journey.id());
         assertEquals(LearningPathItemStatus.COMPLETED, path.get(0).status());
         assertEquals(LearningPathItemStatus.CURRENT, path.get(1).status());
-        String current = path.get(1).skillCode();
-        progress.startSkill(journey.id(), current);
-        progress.recordSkillAssessment(
+        String current = path.get(1).learnUnitCode();
+        progress.startLearnUnit(journey.id(), current);
+        progress.recordLearnUnitAssessment(
                 journey.id(), current, new AssessmentScore(100, 60, 70, true, true), false);
-        assertEquals(LearnerSkillStatus.LEARNING, learning.findLearnerSkill(journey.id(), current).orElseThrow().status());
-        progress.recordSkillAssessment(
+        assertEquals(LearnerLearnUnitStatus.LEARNING, learning.findLearnerLearnUnit(journey.id(), current).orElseThrow().status());
+        progress.recordLearnUnitAssessment(
                 journey.id(), current, new AssessmentScore(100, 100, 90, true, true), true);
-        assertEquals(LearnerSkillStatus.PASSED, learning.findLearnerSkill(journey.id(), current).orElseThrow().status());
+        assertEquals(LearnerLearnUnitStatus.PASSED, learning.findLearnerLearnUnit(journey.id(), current).orElseThrow().status());
+        assertTrue(learning.listWorkflowTransitions(journey.id()).size() >= 5);
 
-        String skipped = learning.findJourney(journey.id()).orElseThrow().currentLearningSkillId();
-        progress.skipSkill(journey.id(), skipped);
-        assertEquals(LearnerSkillStatus.SKIPPED, learning.findLearnerSkill(journey.id(), skipped).orElseThrow().status());
+        String skipped = learning.findJourney(journey.id()).orElseThrow().currentLearnUnitCode();
+        progress.skipLearnUnit(journey.id(), skipped);
+        assertEquals(LearnerLearnUnitStatus.SKIPPED, learning.findLearnerLearnUnit(journey.id(), skipped).orElseThrow().status());
         assertEquals(LearningPathItemStatus.SKIPPED, learning.findPathItem(journey.id(), skipped).orElseThrow().status());
 
         Question question = new Question(
@@ -142,7 +148,7 @@ class AgentBackendApplicationTest {
                 "Choose A", 20, "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
         learning.insertGeneratedQuestion(question);
         Assessment assessment = new Assessment(
-                UUID.randomUUID().toString(), journey.id(), current, AssessmentType.SKILL,
+                UUID.randomUUID().toString(), journey.id(), current, AssessmentType.LEARN_UNIT,
                 AssessmentStatus.COMPLETED, Instant.now(), Instant.now());
         learning.insertAssessment(assessment);
         learning.insertAssessmentQuestion(assessment.id(), question.id(), 0);
@@ -154,10 +160,10 @@ class AgentBackendApplicationTest {
                 question.id(), attempt.id(), "{}", 0, 20, "wrong", false, null, null, "[]"));
         learning.retireQuestion(question.id());
 
-        assertTrue(learning.listQuestionsForSkill(current).stream().noneMatch(value -> value.id().equals(question.id())));
+        assertTrue(learning.listQuestionsForLearnUnit(current).stream().noneMatch(value -> value.id().equals(question.id())));
         assertEquals(question.id(), learning.listQuestionsForAssessment(assessment.id()).get(0).id());
-        assertEquals(1, learning.listAttemptsForSkill(journey.id(), current).size());
-        assertEquals(1, learning.listQuestionAttemptsForSkill(journey.id(), current).size());
+        assertEquals(1, learning.listAttemptsForLearnUnit(journey.id(), current).size());
+        assertEquals(1, learning.listQuestionAttemptsForLearnUnit(journey.id(), current).size());
     }
 
     @TestConfiguration(proxyBeanMethods = false)
@@ -171,18 +177,18 @@ class AgentBackendApplicationTest {
                 String suffix = UUID.randomUUID().toString();
                 LearningLanguage language = new LearningLanguage(
                         "generated-language-" + suffix, languageCode, "TypeScript", "typed JavaScript", true);
-                LearningSkill runtime = new LearningSkill(
-                        "generated-skill-runtime-" + suffix, languageCode, languageCode + ".javascript-runtime",
+                LearnUnit runtime = new LearnUnit(
+                        "generated-learnUnit-runtime-" + suffix, languageCode, languageCode + ".javascript-runtime",
                         "JavaScript Runtime", "Runtime fundamentals", 1, List.of(), 80, 70, true,
                         List.of("Understand the runtime"), "Runtime lesson", List.of("event loop"),
                         List.of("Promise callbacks"), true);
-                LearningSkill types = new LearningSkill(
-                        "generated-skill-types-" + suffix, languageCode, languageCode + ".basic-types",
+                LearnUnit types = new LearnUnit(
+                        "generated-learnUnit-types-" + suffix, languageCode, languageCode + ".basic-types",
                         "Basic Types", "Common types", 2, List.of(runtime.code()), 80, 70, true,
                         List.of("Use common types"), "Types lesson", List.of("unknown"),
                         List.of("unknown at boundaries"), true);
-                LearningSkill functions = new LearningSkill(
-                        "generated-skill-functions-" + suffix, languageCode, languageCode + ".functions",
+                LearnUnit functions = new LearnUnit(
+                        "generated-learnUnit-functions-" + suffix, languageCode, languageCode + ".functions",
                         "Functions", "Function fundamentals", 3, List.of(types.code()), 80, 70, true,
                         List.of("Write reusable functions"), "Functions lesson", List.of("parameters"),
                         List.of("small functions"), true);

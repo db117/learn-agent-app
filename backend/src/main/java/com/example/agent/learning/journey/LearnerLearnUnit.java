@@ -3,11 +3,11 @@ package com.example.agent.learning.journey;
 import java.time.Instant;
 
 /**
- * 某个 Journey 对单个技能的学习状态和历史最佳成绩。
+ * 某个 Journey 对单个 LearnUnit 的学习状态和历史最佳成绩。
  *
  * @param journeyId 所属 Journey
- * @param skillCode 技能编码
- * @param status 当前技能状态
+ * @param learnUnitCode LearnUnit 编码
+ * @param status 当前 LearnUnit 状态
  * @param masteryScore 掌握度；按历史成绩最大值维护
  * @param bestAssessmentScore 历史评估最高总分
  * @param attemptCount 已完成的评估次数
@@ -16,10 +16,10 @@ import java.time.Instant;
  * @param passedAt 最近一次通过时间
  * @param skippedAt 跳过时间；跳过不代表通过
  */
-public record LearnerSkill(
+public record LearnerLearnUnit(
         String journeyId,
-        String skillCode,
-        LearnerSkillStatus status,
+        String learnUnitCode,
+        LearnerLearnUnitStatus status,
         int masteryScore,
         int bestAssessmentScore,
         int attemptCount,

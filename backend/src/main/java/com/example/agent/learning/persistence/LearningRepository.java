@@ -8,16 +8,17 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.LearningLanguage;
-import com.example.agent.learning.catalog.LearningSkill;
+import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.journey.JourneyStatus;
 import com.example.agent.learning.journey.LearnerProfile;
-import com.example.agent.learning.journey.LearnerSkill;
-import com.example.agent.learning.journey.LearnerSkillStatus;
+import com.example.agent.learning.journey.LearnerLearnUnit;
+import com.example.agent.learning.journey.LearnerLearnUnitStatus;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.PassReason;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
-import com.google.adk.JsonBaseModel;
+import com.example.agent.learning.workflow.WorkflowTransition;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,8 @@ import java.util.UUID;
 @Repository
 public class LearningRepository {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final JdbcClient jdbc;
 
     public LearningRepository(JdbcClient jdbc) {
@@ -45,13 +48,13 @@ public class LearningRepository {
     }
 
     /**
-     * 写入 LLM 生成的语言和技能目录。
+     * 写入 LLM 生成的语言和 LearnUnit 目录。
      *
      * <p>这里使用 insert-only，避免后续模型响应覆盖已经持久化的课程定义。题目另由
-     * {@link #insertGeneratedQuestion(Question)} 写入；Journey 专属技能由关联方法绑定。</p>
+     * {@link #insertGeneratedQuestion(Question)} 写入；Journey 专属 LearnUnit 由关联方法绑定。</p>
      */
     @Transactional
-    public void insertGeneratedCatalog(List<LearningLanguage> languages, List<LearningSkill> skills) {
+    public void insertGeneratedCatalog(List<LearningLanguage> languages, List<LearnUnit> learnUnits) {
         for (LearningLanguage language : languages) {
             jdbc.sql("""
                             INSERT INTO learning_language (id, code, name, description, enabled)
@@ -65,11 +68,11 @@ public class LearningRepository {
                     .param("enabled", language.enabled() ? 1 : 0)
                     .update();
         }
-        for (LearningSkill skill : skills) {
+        for (LearnUnit learnUnit : learnUnits) {
             jdbc.sql("""
-                            INSERT INTO learning_skill
+                            INSERT INTO learn_unit
                               (id, language_code, code, name, description, sequence,
-                               prerequisite_skill_codes, pass_score, min_coding_score, enabled,
+                               prerequisite_learn_unit_codes, pass_score, min_coding_score, enabled,
                                learning_objectives_json, lesson_intro, key_concepts_json, examples_json,
                                diagnostic_eligible)
                             VALUES (:id, :languageCode, :code, :name, :description, :sequence,
@@ -77,38 +80,38 @@ public class LearningRepository {
                               :objectives, :intro, :concepts, :examples, :diagnosticEligible)
                             ON CONFLICT(code) DO NOTHING
                             """)
-                    .param("id", skill.id())
-                    .param("languageCode", skill.languageCode())
-                    .param("code", skill.code())
-                    .param("name", skill.name())
-                    .param("description", skill.description())
-                    .param("sequence", skill.sequence())
-                    .param("prerequisites", json(skill.prerequisiteSkillCodes()))
-                    .param("passScore", skill.passScore())
-                    .param("minCodingScore", skill.minCodingScore())
-                    .param("enabled", skill.enabled() ? 1 : 0)
-                    .param("objectives", json(skill.learningObjectives()))
-                    .param("intro", skill.lessonIntro())
-                    .param("concepts", json(skill.keyConcepts()))
-                    .param("examples", json(skill.examples()))
-                    .param("diagnosticEligible", skill.diagnosticEligible() ? 1 : 0)
+                    .param("id", learnUnit.id())
+                    .param("languageCode", learnUnit.languageCode())
+                    .param("code", learnUnit.code())
+                    .param("name", learnUnit.name())
+                    .param("description", learnUnit.description())
+                    .param("sequence", learnUnit.sequence())
+                    .param("prerequisites", json(learnUnit.prerequisiteLearnUnitCodes()))
+                    .param("passScore", learnUnit.passScore())
+                    .param("minCodingScore", learnUnit.minCodingScore())
+                    .param("enabled", learnUnit.enabled() ? 1 : 0)
+                    .param("objectives", json(learnUnit.learningObjectives()))
+                    .param("intro", learnUnit.lessonIntro())
+                    .param("concepts", json(learnUnit.keyConcepts()))
+                    .param("examples", json(learnUnit.examples()))
+                    .param("diagnosticEligible", learnUnit.diagnosticEligible() ? 1 : 0)
                     .update();
         }
     }
 
-    /** 将生成的技能绑定到一个 Journey；同语言的其他 Journey 不会看到这些技能。 */
+    /** 将生成的 LearnUnit 绑定到一个 Journey；同语言的其他 Journey 不会看到这些内容。 */
     @Transactional
     public void insertGeneratedCatalogForJourney(
-            String journeyId, List<LearningLanguage> languages, List<LearningSkill> skills) {
-        insertGeneratedCatalog(languages, skills);
-        for (LearningSkill skill : skills) {
+            String journeyId, List<LearningLanguage> languages, List<LearnUnit> learnUnits) {
+        insertGeneratedCatalog(languages, learnUnits);
+        for (LearnUnit learnUnit : learnUnits) {
             jdbc.sql("""
-                            INSERT INTO learning_journey_skill (journey_id, skill_code)
-                            VALUES (:journeyId, :skillCode)
-                            ON CONFLICT(journey_id, skill_code) DO NOTHING
+                            INSERT INTO learning_journey_learn_unit (journey_id, learn_unit_code)
+                            VALUES (:journeyId, :learnUnitCode)
+                            ON CONFLICT(journey_id, learn_unit_code) DO NOTHING
                             """)
                     .param("journeyId", journeyId)
-                    .param("skillCode", skill.code())
+                    .param("learnUnitCode", learnUnit.code())
                     .update();
         }
     }
@@ -132,48 +135,48 @@ public class LearningRepository {
                 .optional();
     }
 
-    /** 查询一个 Journey 自己的技能；不同 Journey 的同语言课程不会混用。 */
-    public List<LearningSkill> listSkillsForJourney(String journeyId) {
+    /** 查询一个 Journey 自己的 LearnUnit；不同 Journey 的同语言课程不会混用。 */
+    public List<LearnUnit> listLearnUnitsForJourney(String journeyId) {
         return jdbc.sql("""
                         SELECT s.id, s.language_code, s.code, s.name, s.description, s.sequence,
-                          s.prerequisite_skill_codes, s.pass_score, s.min_coding_score, s.enabled,
+                          s.prerequisite_learn_unit_codes, s.pass_score, s.min_coding_score, s.enabled,
                           s.learning_objectives_json, s.lesson_intro, s.key_concepts_json, s.examples_json,
                           s.diagnostic_eligible
-                        FROM learning_skill s
-                        JOIN learning_journey_skill js ON js.skill_code = s.code
+                        FROM learn_unit s
+                        JOIN learning_journey_learn_unit js ON js.learn_unit_code = s.code
                         WHERE js.journey_id = :journeyId AND s.enabled = 1
                         ORDER BY s.sequence, s.code
                         """)
                 .param("journeyId", journeyId)
-                .query((rs, rowNum) -> mapSkill(rs))
+                .query((rs, rowNum) -> mapLearnUnit(rs))
                 .list();
     }
 
-    /** 按业务编码查询技能。 */
-    public Optional<LearningSkill> findSkill(String code) {
+    /** 按业务编码查询 LearnUnit。 */
+    public Optional<LearnUnit> findLearnUnit(String code) {
         return jdbc.sql("""
                         SELECT id, language_code, code, name, description, sequence,
-                          prerequisite_skill_codes, pass_score, min_coding_score, enabled,
+                          prerequisite_learn_unit_codes, pass_score, min_coding_score, enabled,
                           learning_objectives_json, lesson_intro, key_concepts_json, examples_json,
                           diagnostic_eligible
-                        FROM learning_skill WHERE code = :code
+                        FROM learn_unit WHERE code = :code
                         """)
                 .param("code", code)
-                .query((rs, rowNum) -> mapSkill(rs))
+                .query((rs, rowNum) -> mapLearnUnit(rs))
                 .optional();
     }
 
-    /** 查询指定技能的活动题目；已 soft delete 的题目不会出现在新评估中。 */
-    public List<Question> listQuestionsForSkill(String skillCode) {
+    /** 查询指定 LearnUnit 的活动题目；已 soft delete 的题目不会出现在新评估中。 */
+    public List<Question> listQuestionsForLearnUnit(String learnUnitCode) {
         return jdbc.sql("""
-                        SELECT id, skill_code, type, difficulty, prompt, points, config_json, rubric_json,
+                        SELECT id, learn_unit_code, type, difficulty, prompt, points, config_json, rubric_json,
                           language, starter_code, reference_concepts_json, diagnostic_eligible
                         FROM question
-                        WHERE skill_code = :skillCode
+                        WHERE learn_unit_code = :learnUnitCode
                           AND NOT EXISTS (SELECT 1 FROM question_retirement r WHERE r.question_id = question.id)
                         ORDER BY id
                         """)
-                .param("skillCode", skillCode)
+                .param("learnUnitCode", learnUnitCode)
                 .query((rs, rowNum) -> mapQuestion(rs))
                 .list();
     }
@@ -181,11 +184,11 @@ public class LearningRepository {
     /** 查询一个 Journey 课程中的活动诊断题，避免混入同语言其他 Journey 的题目。 */
     public List<Question> listDiagnosticQuestionsForJourney(String journeyId) {
         return jdbc.sql("""
-                        SELECT q.id, q.skill_code, q.type, q.difficulty, q.prompt, q.points, q.config_json,
+                        SELECT q.id, q.learn_unit_code, q.type, q.difficulty, q.prompt, q.points, q.config_json,
                           q.rubric_json, q.language, q.starter_code, q.reference_concepts_json, q.diagnostic_eligible
                         FROM question q
-                        JOIN learning_journey_skill js ON js.skill_code = q.skill_code
-                        JOIN learning_skill s ON s.code = q.skill_code
+                        JOIN learning_journey_learn_unit js ON js.learn_unit_code = q.learn_unit_code
+                        JOIN learn_unit s ON s.code = q.learn_unit_code
                         WHERE js.journey_id = :journeyId AND q.diagnostic_eligible = 1 AND s.enabled = 1
                           AND NOT EXISTS (SELECT 1 FROM question_retirement r WHERE r.question_id = q.id)
                         ORDER BY s.sequence, q.id
@@ -199,13 +202,13 @@ public class LearningRepository {
     public void insertGeneratedQuestion(Question question) {
         jdbc.sql("""
                         INSERT OR IGNORE INTO question
-                          (id, skill_code, type, difficulty, prompt, points, config_json, rubric_json,
+                          (id, learn_unit_code, type, difficulty, prompt, points, config_json, rubric_json,
                            language, starter_code, reference_concepts_json, diagnostic_eligible)
-                        VALUES (:id, :skillCode, :type, :difficulty, :prompt, :points, :configJson, :rubricJson,
+                        VALUES (:id, :learnUnitCode, :type, :difficulty, :prompt, :points, :configJson, :rubricJson,
                           :language, :starterCode, :referenceConcepts, :diagnosticEligible)
                         """)
                 .param("id", question.id())
-                .param("skillCode", question.skillCode())
+                .param("learnUnitCode", question.learnUnitCode())
                 .param("type", question.type().name())
                 .param("difficulty", question.difficulty())
                 .param("prompt", question.prompt())
@@ -234,8 +237,8 @@ public class LearningRepository {
     public void insertJourney(LearningJourney journey) {
         jdbc.sql("""
                         INSERT INTO learning_journey
-                          (id, user_id, language_code, goal, status, created_at, updated_at, current_learning_skill_id)
-                        VALUES (:id, :userId, :languageCode, :goal, :status, :createdAt, :updatedAt, :currentSkill)
+                          (id, user_id, language_code, goal, status, created_at, updated_at, current_learn_unit_code)
+                        VALUES (:id, :userId, :languageCode, :goal, :status, :createdAt, :updatedAt, :currentLearnUnit)
                         """)
                 .param("id", journey.id())
                 .param("userId", journey.userId())
@@ -244,14 +247,14 @@ public class LearningRepository {
                 .param("status", journey.status().name())
                 .param("createdAt", journey.createdAt().toString())
                 .param("updatedAt", journey.updatedAt().toString())
-                .param("currentSkill", journey.currentLearningSkillId())
+                .param("currentLearnUnit", journey.currentLearnUnitCode())
                 .update();
     }
 
     /** 查询本地用户的 Journey，最近更新的排在前面。 */
     public List<LearningJourney> listJourneys(String userId) {
         return jdbc.sql("""
-                        SELECT id, user_id, language_code, goal, status, created_at, updated_at, current_learning_skill_id
+                        SELECT id, user_id, language_code, goal, status, created_at, updated_at, current_learn_unit_code
                         FROM learning_journey WHERE user_id = :userId ORDER BY updated_at DESC
                         """)
                 .param("userId", userId)
@@ -262,7 +265,7 @@ public class LearningRepository {
     /** 按 Journey 主键查询。 */
     public Optional<LearningJourney> findJourney(String id) {
         return jdbc.sql("""
-                        SELECT id, user_id, language_code, goal, status, created_at, updated_at, current_learning_skill_id
+                        SELECT id, user_id, language_code, goal, status, created_at, updated_at, current_learn_unit_code
                         FROM learning_journey WHERE id = :id
                         """)
                 .param("id", id)
@@ -270,15 +273,15 @@ public class LearningRepository {
                 .optional();
     }
 
-    /** 更新 Journey 状态和当前技能指针。 */
-    public void updateJourney(String id, JourneyStatus status, String currentSkill, Instant updatedAt) {
+    /** 更新 Journey 状态和当前 LearnUnit 指针。 */
+    public void updateJourney(String id, JourneyStatus status, String currentLearnUnit, Instant updatedAt) {
         jdbc.sql("""
-                        UPDATE learning_journey SET status = :status, current_learning_skill_id = :currentSkill,
+                        UPDATE learning_journey SET status = :status, current_learn_unit_code = :currentLearnUnit,
                           updated_at = :updatedAt WHERE id = :id
                         """)
                 .param("id", id)
                 .param("status", status.name())
-                .param("currentSkill", currentSkill)
+                .param("currentLearnUnit", currentLearnUnit)
                 .param("updatedAt", updatedAt.toString())
                 .update();
     }
@@ -314,54 +317,54 @@ public class LearningRepository {
                 .optional();
     }
 
-    /** 查询 Journey 已产生状态记录的技能。 */
-    public List<LearnerSkill> listLearnerSkills(String journeyId) {
+    /** 查询 Journey 已产生状态记录的 LearnUnit。 */
+    public List<LearnerLearnUnit> listLearnerLearnUnits(String journeyId) {
         return jdbc.sql("""
-                        SELECT journey_id, skill_code, status, mastery_score, best_assessment_score, attempt_count,
+                        SELECT journey_id, learn_unit_code, status, mastery_score, best_assessment_score, attempt_count,
                           pass_reason, started_at, passed_at, skipped_at
-                        FROM learner_skill WHERE journey_id = :journeyId ORDER BY skill_code
+                        FROM learner_learn_unit WHERE journey_id = :journeyId ORDER BY learn_unit_code
                         """)
                 .param("journeyId", journeyId)
-                .query((rs, rowNum) -> mapLearnerSkill(rs))
+                .query((rs, rowNum) -> mapLearnerLearnUnit(rs))
                 .list();
     }
 
-    /** 查询单个技能状态；尚未被评估的技能没有记录。 */
-    public Optional<LearnerSkill> findLearnerSkill(String journeyId, String skillCode) {
+    /** 查询单个 LearnUnit 状态；尚未被评估的 LearnUnit 没有记录。 */
+    public Optional<LearnerLearnUnit> findLearnerLearnUnit(String journeyId, String learnUnitCode) {
         return jdbc.sql("""
-                        SELECT journey_id, skill_code, status, mastery_score, best_assessment_score, attempt_count,
+                        SELECT journey_id, learn_unit_code, status, mastery_score, best_assessment_score, attempt_count,
                           pass_reason, started_at, passed_at, skipped_at
-                        FROM learner_skill WHERE journey_id = :journeyId AND skill_code = :skillCode
+                        FROM learner_learn_unit WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode
                         """)
                 .param("journeyId", journeyId)
-                .param("skillCode", skillCode)
-                .query((rs, rowNum) -> mapLearnerSkill(rs))
+                .param("learnUnitCode", learnUnitCode)
+                .query((rs, rowNum) -> mapLearnerLearnUnit(rs))
                 .optional();
     }
 
-    /** 保存技能状态，同时保留掌握度和历史最佳成绩。 */
-    public void upsertLearnerSkill(LearnerSkill skill) {
+    /** 保存 LearnUnit 状态，同时保留掌握度和历史最佳成绩。 */
+    public void upsertLearnerLearnUnit(LearnerLearnUnit learnUnit) {
         jdbc.sql("""
-                        INSERT INTO learner_skill
-                          (journey_id, skill_code, status, mastery_score, best_assessment_score, attempt_count,
+                        INSERT INTO learner_learn_unit
+                          (journey_id, learn_unit_code, status, mastery_score, best_assessment_score, attempt_count,
                            pass_reason, started_at, passed_at, skipped_at)
-                        VALUES (:journeyId, :skillCode, :status, :masteryScore, :bestScore, :attemptCount,
+                        VALUES (:journeyId, :learnUnitCode, :status, :masteryScore, :bestScore, :attemptCount,
                           :passReason, :startedAt, :passedAt, :skippedAt)
-                        ON CONFLICT(journey_id, skill_code) DO UPDATE SET status = excluded.status,
+                        ON CONFLICT(journey_id, learn_unit_code) DO UPDATE SET status = excluded.status,
                           mastery_score = excluded.mastery_score, best_assessment_score = excluded.best_assessment_score,
                           attempt_count = excluded.attempt_count, pass_reason = excluded.pass_reason,
                           started_at = excluded.started_at, passed_at = excluded.passed_at, skipped_at = excluded.skipped_at
                         """)
-                .param("journeyId", skill.journeyId())
-                .param("skillCode", skill.skillCode())
-                .param("status", skill.status().name())
-                .param("masteryScore", skill.masteryScore())
-                .param("bestScore", skill.bestAssessmentScore())
-                .param("attemptCount", skill.attemptCount())
-                .param("passReason", skill.passReason() == null ? null : skill.passReason().name())
-                .param("startedAt", instant(skill.startedAt()))
-                .param("passedAt", instant(skill.passedAt()))
-                .param("skippedAt", instant(skill.skippedAt()))
+                .param("journeyId", learnUnit.journeyId())
+                .param("learnUnitCode", learnUnit.learnUnitCode())
+                .param("status", learnUnit.status().name())
+                .param("masteryScore", learnUnit.masteryScore())
+                .param("bestScore", learnUnit.bestAssessmentScore())
+                .param("attemptCount", learnUnit.attemptCount())
+                .param("passReason", learnUnit.passReason() == null ? null : learnUnit.passReason().name())
+                .param("startedAt", instant(learnUnit.startedAt()))
+                .param("passedAt", instant(learnUnit.passedAt()))
+                .param("skippedAt", instant(learnUnit.skippedAt()))
                 .update();
     }
 
@@ -378,12 +381,12 @@ public class LearningRepository {
 
     private void insertPathItem(LearningPathItem item) {
         jdbc.sql("""
-                        INSERT INTO learning_path_item (id, journey_id, skill_code, sequence, status)
-                        VALUES (:id, :journeyId, :skillCode, :sequence, :status)
+                        INSERT INTO learning_path_item (id, journey_id, learn_unit_code, sequence, status)
+                        VALUES (:id, :journeyId, :learnUnitCode, :sequence, :status)
                         """)
                 .param("id", item.id())
                 .param("journeyId", item.journeyId())
-                .param("skillCode", item.skillCode())
+                .param("learnUnitCode", item.learnUnitCode())
                 .param("sequence", item.sequence())
                 .param("status", item.status().name())
                 .update();
@@ -392,26 +395,26 @@ public class LearningRepository {
     /** 查询完整 Path，包括已完成和已跳过的历史节点。 */
     public List<LearningPathItem> listPath(String journeyId) {
         return jdbc.sql("""
-                        SELECT id, journey_id, skill_code, sequence, status
+                        SELECT id, journey_id, learn_unit_code, sequence, status
                         FROM learning_path_item WHERE journey_id = :journeyId ORDER BY sequence
                         """)
                 .param("journeyId", journeyId)
                 .query((rs, rowNum) -> new LearningPathItem(
-                        rs.getString("id"), rs.getString("journey_id"), rs.getString("skill_code"),
+                        rs.getString("id"), rs.getString("journey_id"), rs.getString("learn_unit_code"),
                         rs.getInt("sequence"), LearningPathItemStatus.valueOf(rs.getString("status"))))
                 .list();
     }
 
-    /** 查询 Journey 中某技能对应的 Path 节点。 */
-    public Optional<LearningPathItem> findPathItem(String journeyId, String skillCode) {
+    /** 查询 Journey 中某 LearnUnit 对应的 Path 节点。 */
+    public Optional<LearningPathItem> findPathItem(String journeyId, String learnUnitCode) {
         return jdbc.sql("""
-                        SELECT id, journey_id, skill_code, sequence, status
-                        FROM learning_path_item WHERE journey_id = :journeyId AND skill_code = :skillCode
+                        SELECT id, journey_id, learn_unit_code, sequence, status
+                        FROM learning_path_item WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode
                         """)
                 .param("journeyId", journeyId)
-                .param("skillCode", skillCode)
+                .param("learnUnitCode", learnUnitCode)
                 .query((rs, rowNum) -> new LearningPathItem(
-                        rs.getString("id"), rs.getString("journey_id"), rs.getString("skill_code"),
+                        rs.getString("id"), rs.getString("journey_id"), rs.getString("learn_unit_code"),
                         rs.getInt("sequence"), LearningPathItemStatus.valueOf(rs.getString("status"))))
                 .optional();
     }
@@ -424,10 +427,10 @@ public class LearningRepository {
     }
 
     /** 更新一个 Path 节点状态。 */
-    public void updatePathItem(String journeyId, String skillCode, LearningPathItemStatus status) {
-        jdbc.sql("UPDATE learning_path_item SET status = :status WHERE journey_id = :journeyId AND skill_code = :skillCode")
+    public void updatePathItem(String journeyId, String learnUnitCode, LearningPathItemStatus status) {
+        jdbc.sql("UPDATE learning_path_item SET status = :status WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode")
                 .param("journeyId", journeyId)
-                .param("skillCode", skillCode)
+                .param("learnUnitCode", learnUnitCode)
                 .param("status", status.name())
                 .update();
     }
@@ -435,12 +438,12 @@ public class LearningRepository {
     /** 新增 Assessment 定义；题目关联由 insertAssessmentQuestion 单独写入。 */
     public void insertAssessment(Assessment assessment) {
         jdbc.sql("""
-                        INSERT INTO assessment (id, journey_id, skill_code, type, status, created_at, completed_at)
-                        VALUES (:id, :journeyId, :skillCode, :type, :status, :createdAt, :completedAt)
+                        INSERT INTO assessment (id, journey_id, learn_unit_code, type, status, created_at, completed_at)
+                        VALUES (:id, :journeyId, :learnUnitCode, :type, :status, :createdAt, :completedAt)
                         """)
                 .param("id", assessment.id())
                 .param("journeyId", assessment.journeyId())
-                .param("skillCode", assessment.skillCode())
+                .param("learnUnitCode", assessment.learnUnitCode())
                 .param("type", assessment.type().name())
                 .param("status", assessment.status().name())
                 .param("createdAt", assessment.createdAt().toString())
@@ -451,7 +454,7 @@ public class LearningRepository {
     /** 按 Assessment 主键查询评估定义。 */
     public Optional<Assessment> findAssessment(String id) {
         return jdbc.sql("""
-                        SELECT id, journey_id, skill_code, type, status, created_at, completed_at
+                        SELECT id, journey_id, learn_unit_code, type, status, created_at, completed_at
                         FROM assessment WHERE id = :id
                         """)
                 .param("id", id)
@@ -462,7 +465,7 @@ public class LearningRepository {
     /** 查询 Journey 最近的一份诊断，确保重启和 Retry 使用固定题集。 */
     public Optional<Assessment> findDiagnosticAssessment(String journeyId) {
         return jdbc.sql("""
-                        SELECT id, journey_id, skill_code, type, status, created_at, completed_at
+                        SELECT id, journey_id, learn_unit_code, type, status, created_at, completed_at
                         FROM assessment
                         WHERE journey_id = :journeyId AND type = 'DIAGNOSTIC'
                         ORDER BY created_at DESC LIMIT 1
@@ -472,16 +475,16 @@ public class LearningRepository {
                 .optional();
     }
 
-    /** 查询某技能最近的一份评估，Retry 沿用该 Assessment 的题集。 */
-    public Optional<Assessment> findLatestSkillAssessment(String journeyId, String skillCode) {
+    /** 查询某 LearnUnit 最近的一份评估，Retry 沿用该 Assessment 的题集。 */
+    public Optional<Assessment> findLatestLearnUnitAssessment(String journeyId, String learnUnitCode) {
         return jdbc.sql("""
-                        SELECT id, journey_id, skill_code, type, status, created_at, completed_at
+                        SELECT id, journey_id, learn_unit_code, type, status, created_at, completed_at
                         FROM assessment
-                        WHERE journey_id = :journeyId AND skill_code = :skillCode AND type = 'SKILL'
+                        WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode AND type = 'LEARN_UNIT'
                         ORDER BY created_at DESC LIMIT 1
                         """)
                 .param("journeyId", journeyId)
-                .param("skillCode", skillCode)
+                .param("learnUnitCode", learnUnitCode)
                 .query((rs, rowNum) -> mapAssessment(rs))
                 .optional();
     }
@@ -510,7 +513,7 @@ public class LearningRepository {
     /** 查询 Assessment 的固定题集；故意包含已退役题目以支持历史读取。 */
     public List<Question> listQuestionsForAssessment(String assessmentId) {
         return jdbc.sql("""
-                        SELECT q.id, q.skill_code, q.type, q.difficulty, q.prompt, q.points, q.config_json,
+                        SELECT q.id, q.learn_unit_code, q.type, q.difficulty, q.prompt, q.points, q.config_json,
                           q.rubric_json, q.language, q.starter_code, q.reference_concepts_json, q.diagnostic_eligible
                         FROM assessment_question aq JOIN question q ON q.id = aq.question_id
                         WHERE aq.assessment_id = :assessmentId ORDER BY aq.sequence
@@ -524,15 +527,15 @@ public class LearningRepository {
     public void insertAttempt(AssessmentAttempt attempt) {
         jdbc.sql("""
                         INSERT INTO assessment_attempt
-                          (id, assessment_id, journey_id, skill_code, attempt_number, choice_score, coding_score,
+                          (id, assessment_id, journey_id, learn_unit_code, attempt_number, choice_score, coding_score,
                            total_score, passed, started_at, completed_at)
-                        VALUES (:id, :assessmentId, :journeyId, :skillCode, :attemptNumber, :choiceScore, :codingScore,
+                        VALUES (:id, :assessmentId, :journeyId, :learnUnitCode, :attemptNumber, :choiceScore, :codingScore,
                           :totalScore, :passed, :startedAt, :completedAt)
                         """)
                 .param("id", attempt.id())
                 .param("assessmentId", attempt.assessmentId())
                 .param("journeyId", attempt.journeyId())
-                .param("skillCode", attempt.skillCode())
+                .param("learnUnitCode", attempt.learnUnitCode())
                 .param("attemptNumber", attempt.attemptNumber())
                 .param("choiceScore", attempt.choiceScore())
                 .param("codingScore", attempt.codingScore())
@@ -561,7 +564,7 @@ public class LearningRepository {
     /** 查询当前未提交 Attempt，用于继续答题或恢复页面。 */
     public Optional<AssessmentAttempt> findOpenAttempt(String assessmentId) {
         return jdbc.sql("""
-                        SELECT id, assessment_id, journey_id, skill_code, attempt_number, choice_score, coding_score,
+                        SELECT id, assessment_id, journey_id, learn_unit_code, attempt_number, choice_score, coding_score,
                           total_score, passed, started_at, completed_at
                         FROM assessment_attempt WHERE assessment_id = :assessmentId AND completed_at IS NULL
                         ORDER BY attempt_number DESC LIMIT 1
@@ -574,7 +577,7 @@ public class LearningRepository {
     /** 按 Attempt 主键查询。 */
     public Optional<AssessmentAttempt> findAttempt(String id) {
         return jdbc.sql("""
-                        SELECT id, assessment_id, journey_id, skill_code, attempt_number, choice_score, coding_score,
+                        SELECT id, assessment_id, journey_id, learn_unit_code, attempt_number, choice_score, coding_score,
                           total_score, passed, started_at, completed_at
                         FROM assessment_attempt WHERE id = :id
                         """)
@@ -595,7 +598,7 @@ public class LearningRepository {
     /** 查询一个 Assessment 的全部尝试记录。 */
     public List<AssessmentAttempt> listAttemptsForAssessment(String assessmentId) {
         return jdbc.sql("""
-                        SELECT id, assessment_id, journey_id, skill_code, attempt_number, choice_score, coding_score,
+                        SELECT id, assessment_id, journey_id, learn_unit_code, attempt_number, choice_score, coding_score,
                           total_score, passed, started_at, completed_at
                         FROM assessment_attempt WHERE assessment_id = :assessmentId ORDER BY attempt_number DESC
                         """)
@@ -604,16 +607,16 @@ public class LearningRepository {
                 .list();
     }
 
-    /** 查询某 Journey 技能的全部评估尝试。 */
-    public List<AssessmentAttempt> listAttemptsForSkill(String journeyId, String skillCode) {
+    /** 查询某 Journey LearnUnit 的全部评估尝试。 */
+    public List<AssessmentAttempt> listAttemptsForLearnUnit(String journeyId, String learnUnitCode) {
         return jdbc.sql("""
-                        SELECT id, assessment_id, journey_id, skill_code, attempt_number, choice_score, coding_score,
+                        SELECT id, assessment_id, journey_id, learn_unit_code, attempt_number, choice_score, coding_score,
                           total_score, passed, started_at, completed_at
-                        FROM assessment_attempt WHERE journey_id = :journeyId AND skill_code = :skillCode
+                        FROM assessment_attempt WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode
                         ORDER BY started_at DESC
                         """)
                 .param("journeyId", journeyId)
-                .param("skillCode", skillCode)
+                .param("learnUnitCode", learnUnitCode)
                 .query((rs, rowNum) -> mapAttempt(rs))
                 .list();
     }
@@ -660,18 +663,18 @@ public class LearningRepository {
                 .list();
     }
 
-    /** 查询已完成技能评估的逐题反馈，供 Tutor 识别弱点。 */
-    public List<QuestionAttempt> listQuestionAttemptsForSkill(String journeyId, String skillCode) {
+    /** 查询已完成 LearnUnit 评估的逐题反馈，供 Tutor 识别弱点。 */
+    public List<QuestionAttempt> listQuestionAttemptsForLearnUnit(String journeyId, String learnUnitCode) {
         return jdbc.sql("""
                         SELECT qa.question_id, qa.assessment_attempt_id, qa.answer_json, qa.score, qa.max_score,
                           qa.feedback, qa.correct, qa.submitted_code, qa.evaluation_json, qa.selected_option_ids_json
                         FROM question_attempt qa
                         JOIN assessment_attempt aa ON aa.id = qa.assessment_attempt_id
-                        WHERE aa.journey_id = :journeyId AND aa.skill_code = :skillCode AND aa.completed_at IS NOT NULL
+                        WHERE aa.journey_id = :journeyId AND aa.learn_unit_code = :learnUnitCode AND aa.completed_at IS NOT NULL
                         ORDER BY aa.completed_at DESC, qa.rowid
                         """)
                 .param("journeyId", journeyId)
-                .param("skillCode", skillCode)
+                .param("learnUnitCode", learnUnitCode)
                 .query((rs, rowNum) -> new QuestionAttempt(
                         rs.getString("question_id"), rs.getString("assessment_attempt_id"), rs.getString("answer_json"),
                         nullableInt(rs.getObject("score")), rs.getInt("max_score"), rs.getString("feedback"),
@@ -680,52 +683,83 @@ public class LearningRepository {
                 .list();
     }
 
-    /** 建立或复用 Journey + Skill 到既有 ADK Session 的唯一关联。 */
-    public void linkTutorSession(String journeyId, String skillCode, String sessionId) {
+    /** 保存一次由 Java 决定的 Learning Workflow 状态迁移。 */
+    public void insertWorkflowTransition(WorkflowTransition transition) {
         jdbc.sql("""
-                        INSERT INTO tutor_session (id, journey_id, skill_code, session_id)
-                        VALUES (:id, :journeyId, :skillCode, :sessionId)
-                        ON CONFLICT(journey_id, skill_code) DO UPDATE SET session_id = excluded.session_id
+                        INSERT INTO workflow_transition
+                          (id, journey_id, from_state, action, to_state, payload_json, created_at)
+                        VALUES (:id, :journeyId, :fromState, :action, :toState, :payloadJson, :createdAt)
+                        """)
+                .param("id", transition.id())
+                .param("journeyId", transition.journeyId())
+                .param("fromState", transition.fromState())
+                .param("action", transition.action())
+                .param("toState", transition.toState())
+                .param("payloadJson", transition.payloadJson())
+                .param("createdAt", transition.createdAt().toString())
+                .update();
+    }
+
+    /** 按发生顺序恢复 Journey 的 Workflow 状态迁移。 */
+    public List<WorkflowTransition> listWorkflowTransitions(String journeyId) {
+        return jdbc.sql("""
+                        SELECT id, journey_id, from_state, action, to_state, payload_json, created_at
+                        FROM workflow_transition WHERE journey_id = :journeyId ORDER BY created_at, rowid
+                        """)
+                .param("journeyId", journeyId)
+                .query((rs, rowNum) -> new WorkflowTransition(
+                        rs.getString("id"), rs.getString("journey_id"), rs.getString("from_state"),
+                        rs.getString("action"), rs.getString("to_state"), rs.getString("payload_json"),
+                        Instant.parse(rs.getString("created_at"))))
+                .list();
+    }
+
+    /** 建立或复用 Journey + LearnUnit 到 Tutor Session 的唯一关联。 */
+    public void linkTutorSession(String journeyId, String learnUnitCode, String sessionId) {
+        jdbc.sql("""
+                        INSERT INTO tutor_session (id, journey_id, learn_unit_code, session_id)
+                        VALUES (:id, :journeyId, :learnUnitCode, :sessionId)
+                        ON CONFLICT(journey_id, learn_unit_code) DO UPDATE SET session_id = excluded.session_id
                         """)
                 .param("id", UUID.randomUUID().toString())
                 .param("journeyId", journeyId)
-                .param("skillCode", skillCode)
+                .param("learnUnitCode", learnUnitCode)
                 .param("sessionId", sessionId)
                 .update();
     }
 
-    /** 查询 Journey + Skill 已关联的 ADK Session。 */
-    public Optional<String> findTutorSessionId(String journeyId, String skillCode) {
-        return jdbc.sql("SELECT session_id FROM tutor_session WHERE journey_id = :journeyId AND skill_code = :skillCode")
+    /** 查询 Journey + LearnUnit 已关联的 Tutor Session。 */
+    public Optional<String> findTutorSessionId(String journeyId, String learnUnitCode) {
+        return jdbc.sql("SELECT session_id FROM tutor_session WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode")
                 .param("journeyId", journeyId)
-                .param("skillCode", skillCode)
+                .param("learnUnitCode", learnUnitCode)
                 .query(String.class)
                 .optional();
     }
 
-    /** 通过 ADK Session 反查 Learning 上下文。 */
+    /** 通过 Tutor Session 反查 Learning 上下文。 */
     public Optional<TutorSessionLink> findTutorSessionBySessionId(String sessionId) {
-        return jdbc.sql("SELECT journey_id, skill_code, session_id FROM tutor_session WHERE session_id = :sessionId")
+        return jdbc.sql("SELECT journey_id, learn_unit_code, session_id FROM tutor_session WHERE session_id = :sessionId")
                 .param("sessionId", sessionId)
                 .query((rs, rowNum) -> new TutorSessionLink(
-                        rs.getString("journey_id"), rs.getString("skill_code"), rs.getString("session_id")))
+                        rs.getString("journey_id"), rs.getString("learn_unit_code"), rs.getString("session_id")))
                 .optional();
     }
 
     /**
-     * 现有 ADK Session 与 Learning Journey 技能的关联。
+     * Tutor Session 与 Learning Journey LearnUnit 的关联。
      *
      * @param journeyId Journey 编码
-     * @param skillCode 当前技能编码
-     * @param sessionId Phase 1 Session 主键
+     * @param learnUnitCode 当前 LearnUnit 编码
+     * @param sessionId Tutor Session 主键
      */
-    public record TutorSessionLink(String journeyId, String skillCode, String sessionId) {
+    public record TutorSessionLink(String journeyId, String learnUnitCode, String sessionId) {
     }
 
-    private LearningSkill mapSkill(java.sql.ResultSet rs) throws java.sql.SQLException {
-        return new LearningSkill(
+    private LearnUnit mapLearnUnit(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new LearnUnit(
                 rs.getString("id"), rs.getString("language_code"), rs.getString("code"), rs.getString("name"),
-                rs.getString("description"), rs.getInt("sequence"), list(rs.getString("prerequisite_skill_codes")),
+                rs.getString("description"), rs.getInt("sequence"), list(rs.getString("prerequisite_learn_unit_codes")),
                 rs.getInt("pass_score"), nullableInt(rs.getObject("min_coding_score")), rs.getInt("enabled") != 0,
                 list(rs.getString("learning_objectives_json")), rs.getString("lesson_intro"),
                 list(rs.getString("key_concepts_json")), list(rs.getString("examples_json")),
@@ -734,7 +768,7 @@ public class LearningRepository {
 
     private Question mapQuestion(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Question(
-                rs.getString("id"), rs.getString("skill_code"), QuestionType.valueOf(rs.getString("type")),
+                rs.getString("id"), rs.getString("learn_unit_code"), QuestionType.valueOf(rs.getString("type")),
                 rs.getInt("difficulty"), rs.getString("prompt"), rs.getInt("points"), rs.getString("config_json"),
                 rs.getString("rubric_json"), rs.getString("language"), rs.getString("starter_code"),
                 rs.getString("reference_concepts_json"), rs.getInt("diagnostic_eligible") != 0);
@@ -744,13 +778,13 @@ public class LearningRepository {
         return new LearningJourney(
                 rs.getString("id"), rs.getString("user_id"), rs.getString("language_code"), rs.getString("goal"),
                 JourneyStatus.valueOf(rs.getString("status")), Instant.parse(rs.getString("created_at")),
-                Instant.parse(rs.getString("updated_at")), rs.getString("current_learning_skill_id"));
+                Instant.parse(rs.getString("updated_at")), rs.getString("current_learn_unit_code"));
     }
 
-    private LearnerSkill mapLearnerSkill(java.sql.ResultSet rs) throws java.sql.SQLException {
+    private LearnerLearnUnit mapLearnerLearnUnit(java.sql.ResultSet rs) throws java.sql.SQLException {
         String reason = rs.getString("pass_reason");
-        return new LearnerSkill(
-                rs.getString("journey_id"), rs.getString("skill_code"), LearnerSkillStatus.valueOf(rs.getString("status")),
+        return new LearnerLearnUnit(
+                rs.getString("journey_id"), rs.getString("learn_unit_code"), LearnerLearnUnitStatus.valueOf(rs.getString("status")),
                 rs.getInt("mastery_score"), rs.getInt("best_assessment_score"), rs.getInt("attempt_count"),
                 reason == null ? null : PassReason.valueOf(reason), instant(rs.getString("started_at")),
                 instant(rs.getString("passed_at")), instant(rs.getString("skipped_at")));
@@ -758,7 +792,7 @@ public class LearningRepository {
 
     private Assessment mapAssessment(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Assessment(
-                rs.getString("id"), rs.getString("journey_id"), rs.getString("skill_code"),
+                rs.getString("id"), rs.getString("journey_id"), rs.getString("learn_unit_code"),
                 AssessmentType.valueOf(rs.getString("type")), AssessmentStatus.valueOf(rs.getString("status")),
                 Instant.parse(rs.getString("created_at")), instant(rs.getString("completed_at")));
     }
@@ -766,20 +800,24 @@ public class LearningRepository {
     private AssessmentAttempt mapAttempt(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new AssessmentAttempt(
                 rs.getString("id"), rs.getString("assessment_id"), rs.getString("journey_id"),
-                rs.getString("skill_code"), rs.getInt("attempt_number"), nullableInt(rs.getObject("choice_score")),
+                rs.getString("learn_unit_code"), rs.getInt("attempt_number"), nullableInt(rs.getObject("choice_score")),
                 nullableInt(rs.getObject("coding_score")), nullableInt(rs.getObject("total_score")),
                 nullableBool(rs.getObject("passed")), Instant.parse(rs.getString("started_at")),
                 instant(rs.getString("completed_at")));
     }
 
     private String json(Object value) {
-        return JsonBaseModel.toJsonString(value);
+        try {
+            return MAPPER.writeValueAsString(value);
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to serialize learning data", error);
+        }
     }
 
     private List<String> list(String value) {
         if (value == null || value.isBlank()) return List.of();
         try {
-            return JsonBaseModel.getMapper().readValue(value, JsonBaseModel.getMapper().getTypeFactory()
+            return MAPPER.readValue(value, MAPPER.getTypeFactory()
                     .constructCollectionType(List.class, String.class));
         } catch (Exception error) {
             throw new IllegalStateException("Invalid curriculum JSON", error);

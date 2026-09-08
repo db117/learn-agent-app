@@ -148,7 +148,7 @@ async function waitForHealth() {
     while (Date.now() < deadline) {
         try {
             const health = await json("http://127.0.0.1:18080/api/health");
-            if (health.status === "UP" && health.sqlite === "UP" && health.adk === "UP") return health;
+            if (health.status === "UP" && health.sqlite === "UP" && health.agent === "UP") return health;
             lastError = JSON.stringify(health);
         } catch (error) {
             lastError = error instanceof Error ? error.message : String(error);
@@ -171,7 +171,7 @@ async function waitForSelfTest() {
         }
         await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    throw new Error(`Native ADK self-test did not complete: ${lastError}`);
+    throw new Error(`Native SAA self-test did not complete: ${lastError}`);
 }
 
 async function assertIdleStreamStaysOpen(sessionId) {
@@ -199,14 +199,14 @@ async function readUntilMessage(sessionId) {
     const decoder = new TextDecoder();
     let stream = "";
     try {
-        while (!stream.includes('"eventType":"message"')) {
+        while (!stream.includes('"eventType":"complete"')) {
             const {value, done} = await Promise.race([
                 reader.read(),
                 new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for formal SSE")), 10_000)),
             ]);
             if (done) break;
             stream += decoder.decode(value, {stream: true});
-            if (stream.includes('"eventType":"message"')) return stream;
+            if (stream.includes('"eventType":"complete"')) return stream;
         }
         return stream;
     } finally {
@@ -246,9 +246,9 @@ try {
     });
     const eventStream = await eventStreamPromise;
     if (!eventStream.includes('"eventType":"tool_call"') || !eventStream.includes('"eventType":"tool_result"')) {
-        throw new Error("Formal SSE did not contain ADK tool events");
+        throw new Error("Formal SSE did not contain SAA tool events");
     }
-    if (eventStream.includes('"rawJson":"{}"')) throw new Error("Native ADK raw event JSON was empty");
+    if (eventStream.includes('"rawJson":"{}"')) throw new Error("Native SAA raw event JSON was empty");
     if (modelRequests.length !== 2 || modelRequests.some((request) => request.stream !== true)) {
         throw new Error("Formal native path did not use streaming model requests");
     }
@@ -262,7 +262,7 @@ try {
         health,
         selfTest: selfTest.id,
         sqlite: "UP",
-        adk: "UP",
+        agent: "UP",
         tool: "UP",
         sse: "UP",
         formalPost: receipt.runId,

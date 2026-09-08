@@ -3,14 +3,15 @@ package com.example.agent.llm.infrastructure;
 import com.example.agent.learning.assessment.CodingAnswerEvaluator;
 import com.example.agent.learning.assessment.CodingEvaluationResult;
 import com.example.agent.learning.assessment.CodingQuestion;
-import com.google.adk.JsonBaseModel;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Set;
 import java.util.List;
 
 /**
@@ -21,6 +22,9 @@ import java.util.List;
 @Component
 public final class LlmCodingAnswerEvaluator implements CodingAnswerEvaluator {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Set<String> ALLOWED_FIELDS = Set.of(
+            "correctness", "languageUsage", "clarity", "feedback", "issues");
     private final ChatModel chatModel;
 
     public LlmCodingAnswerEvaluator(ChatModel chatModel) {
@@ -30,7 +34,7 @@ public final class LlmCodingAnswerEvaluator implements CodingAnswerEvaluator {
     @Override
     public CodingEvaluationResult evaluate(CodingQuestion question, String submittedCode) {
         String prompt = """
-                Evaluate this TypeScript learning answer. Return JSON only, with exactly these fields:
+                Evaluate this %s learning answer. Return JSON only, with exactly these fields:
                 {"correctness": integer 0..60, "languageUsage": integer 0..20,
                  "clarity": integer 0..20, "feedback": string, "issues": string[]}
                 Do not return a passed field. Judge the submitted code against the prompt and rubric.
@@ -42,11 +46,15 @@ public final class LlmCodingAnswerEvaluator implements CodingAnswerEvaluator {
                 Submitted code:
                 %s
                 """.formatted(
-                question.prompt(), question.referenceConceptsJson(), question.rubricJson(),
+                question.language() == null ? "programming" : question.language(), question.prompt(), question.referenceConceptsJson(), question.rubricJson(),
                 question.starterCode(), submittedCode == null ? "" : submittedCode);
         String text = chatModel.call(new Prompt(new UserMessage(prompt))).getResult().getOutput().getText();
         try {
-            JsonNode root = JsonBaseModel.getMapper().readTree(extractJson(text));
+            JsonNode root = MAPPER.readTree(extractJson(text));
+            if (root == null || !root.isObject()) throw new IllegalArgumentException("response must be an object");
+            root.fieldNames().forEachRemaining(field -> {
+                if (!ALLOWED_FIELDS.contains(field)) throw new IllegalArgumentException("unsupported evaluator field: " + field);
+            });
             int correctness = requiredInt(root, "correctness", 0, 60);
             int languageUsage = requiredInt(root, "languageUsage", 0, 20);
             int clarity = requiredInt(root, "clarity", 0, 20);
@@ -54,12 +62,10 @@ public final class LlmCodingAnswerEvaluator implements CodingAnswerEvaluator {
             if (feedbackNode == null || !feedbackNode.isTextual()) throw new IllegalArgumentException("missing feedback");
             List<String> issues = new ArrayList<>();
             JsonNode issuesNode = root.get("issues");
-            if (issuesNode != null) {
-                if (!issuesNode.isArray()) throw new IllegalArgumentException("issues must be an array");
-                for (JsonNode issue : issuesNode) {
-                    if (!issue.isTextual()) throw new IllegalArgumentException("issues must contain strings");
-                    issues.add(issue.textValue());
-                }
+            if (issuesNode == null || !issuesNode.isArray()) throw new IllegalArgumentException("issues must be an array");
+            for (JsonNode issue : issuesNode) {
+                if (!issue.isTextual()) throw new IllegalArgumentException("issues must contain strings");
+                issues.add(issue.textValue());
             }
             return new CodingEvaluationResult(correctness, languageUsage, clarity, feedbackNode.textValue(), issues);
         } catch (Exception error) {

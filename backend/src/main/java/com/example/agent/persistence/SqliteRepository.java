@@ -10,7 +10,7 @@ import java.util.Optional;
 /**
  * Phase 1 Tutor 数据的 SQLite 访问层。
  *
- * <p>使用 Spring {@link JdbcClient} 直接访问 schema.sql 创建的表；ADK 事件和消息都保留在数据库中，
+ * <p>使用 Spring {@link JdbcClient} 直接访问 schema.sql 创建的表；Agent 事件和消息都保留在数据库中，
  * 以支持应用重启后的会话恢复和 SSE 追踪。</p>
  */
 @Repository
@@ -137,7 +137,7 @@ public class SqliteRepository {
             .update();
   }
 
-  /** 持久化 ADK 事件，并依靠 sequence 保证读取顺序。 */
+  /** 持久化 Agent 事件，并依靠 sequence 保证读取顺序。 */
   public void insertEvent(PersistedEvent event) {
     jdbc.sql("""
                     INSERT OR IGNORE INTO "event"

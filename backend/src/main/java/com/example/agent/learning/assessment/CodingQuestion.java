@@ -4,7 +4,7 @@ package com.example.agent.learning.assessment;
  * 提供给 CodingAnswerEvaluator 的 Coding 题只读视图。
  *
  * @param id 题目主键
- * @param skillCode 题目所属技能
+ * @param learnUnitCode 题目所属 LearnUnit
  * @param prompt 题干
  * @param language 要求使用的编程语言
  * @param starterCode 起始代码
@@ -14,7 +14,7 @@ package com.example.agent.learning.assessment;
  */
 public record CodingQuestion(
         String id,
-        String skillCode,
+        String learnUnitCode,
         String prompt,
         String language,
         String starterCode,
@@ -28,7 +28,7 @@ public record CodingQuestion(
         }
         return new CodingQuestion(
                 question.id(),
-                question.skillCode(),
+                question.learnUnitCode(),
                 question.prompt(),
                 question.language(),
                 question.starterCode(),

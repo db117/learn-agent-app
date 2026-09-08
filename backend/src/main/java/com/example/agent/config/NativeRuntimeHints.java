@@ -1,7 +1,5 @@
 package com.example.agent.config;
 
-import com.openai.core.JsonValue;
-import com.openai.models.chat.completions.ChatCompletionChunk;
 import org.springframework.aot.hint.ExecutableMode;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
@@ -13,8 +11,6 @@ final class NativeRuntimeHints implements RuntimeHintsRegistrar {
 
     @Override
     public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
-        register(hints, ChatCompletionChunk.Choice.Delta.class, "putAdditionalProperty", String.class, JsonValue.class);
-        register(hints, ChatCompletionChunk.Choice.class, "putAdditionalProperty", String.class, JsonValue.class);
         register(hints, ThreadPoolExecutor.class, "shutdown");
     }
 

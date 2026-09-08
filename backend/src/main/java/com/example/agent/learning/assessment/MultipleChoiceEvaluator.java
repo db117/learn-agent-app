@@ -1,7 +1,7 @@
 package com.example.agent.learning.assessment;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.adk.JsonBaseModel;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.HashSet;
 import java.util.List;
@@ -10,12 +10,14 @@ import java.util.Set;
 /** 选择题的确定性全对得分判题器，不调用 LLM。 */
 public final class MultipleChoiceEvaluator {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     public Result evaluate(Question question, List<String> selectedOptionIds) {
         if (question.type() != QuestionType.MULTIPLE_CHOICE) {
             throw new IllegalArgumentException("Question is not multiple choice: " + question.id());
         }
         try {
-            JsonNode config = JsonBaseModel.getMapper().readTree(question.configJson());
+            JsonNode config = MAPPER.readTree(question.configJson());
             Set<String> expected = values(config.get("correctOptionIds"));
             Set<String> selected = new HashSet<>(selectedOptionIds == null ? List.of() : selectedOptionIds);
             boolean correct = !expected.isEmpty() && expected.equals(selected);

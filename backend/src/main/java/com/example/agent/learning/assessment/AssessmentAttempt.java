@@ -8,7 +8,7 @@ import java.time.Instant;
  * @param id Attempt 主键
  * @param assessmentId 所属 Assessment
  * @param journeyId 所属 Journey，便于按 Journey 查询历史
- * @param skillCode 被评估技能；诊断 Attempt 可为空
+ * @param learnUnitCode 被评估 LearnUnit；诊断 Attempt 可为空
  * @param attemptNumber 在同一 Assessment 下的递增序号
  * @param choiceScore 选择题百分比分数
  * @param codingScore Coding 百分比分数
@@ -21,7 +21,7 @@ public record AssessmentAttempt(
         String id,
         String assessmentId,
         String journeyId,
-        String skillCode,
+        String learnUnitCode,
         int attemptNumber,
         Integer choiceScore,
         Integer codingScore,

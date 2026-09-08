@@ -3,8 +3,7 @@ package com.example.agent.learning.assessment;
 /**
  * Coding 答案评分边界。
  *
- * <p>实现可以调用 LLM 或使用确定性 Fake，但必须只返回受限维度分数和反馈；
- * 总分及通过状态由 Learning Engine 负责。</p>
+ * <p>实现可以调用 LLM，但必须只返回受限维度分数和反馈；总分及通过状态由 Learning Engine 负责。</p>
  */
 public interface CodingAnswerEvaluator {
 

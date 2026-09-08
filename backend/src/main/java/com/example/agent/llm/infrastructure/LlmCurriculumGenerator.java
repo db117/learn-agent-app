@@ -2,9 +2,9 @@ package com.example.agent.llm.infrastructure;
 
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.LearningLanguage;
-import com.example.agent.learning.catalog.LearningSkill;
+import com.example.agent.learning.catalog.LearnUnit;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.adk.JsonBaseModel;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -17,7 +17,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * 使用 Spring AI 的 ChatModel 按用户指定的目标语言按需生成技能和 Lesson 内容。
+ * 使用 Spring AI 的 ChatModel 按用户指定的目标语言按需生成 LearnUnit 内容。
  *
  * <p>这里是唯一的提供商适配边界；生成结果进入领域校验和 SQLite 后，运行时不再
  * 依赖模型响应的临时状态。</p>
@@ -41,26 +41,26 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                 返回 JSON，不要返回 Markdown 或解释文字：
                 {
                   "languages":[{"code":"...","name":"...","description":"..."}],
-                  "skills":[{
+                  "learnUnits":[{
                     "languageCode":"...","code":"...","name":"...","description":"...",
-                    "sequence":1,"prerequisiteSkillCodes":[],"passScore":80,"minCodingScore":70,
+                    "sequence":1,"prerequisiteLearnUnitCodes":[],"passScore":80,"minCodingScore":70,
                     "learningObjectives":["..."],"lessonIntro":"...","keyConcepts":["..."],"examples":["..."]
                   }]
                 }
                 用户指定的目标编程语言是：%s
                 只生成这个目标语言，不要生成其他语言；languages 数组必须只有一个元素。
-                为该语言生成 4 到 8 个循序渐进的技能。
-                学习者的目标和背景如下，请让技能顺序和 Lesson 内容与其相关：%s
-                至少有一个无前置技能的起点；前置技能只能引用同一语言中已经生成的 code，不能循环。
-                code 使用稳定、简短、适合 URL 的英文标识；每个 skill 的 code 必须唯一。
+                为该语言生成 4 到 8 个循序渐进的 LearnUnit。
+                学习者的目标和背景如下，请让 LearnUnit 顺序和教学内容与其相关：%s
+                至少有一个无前置 LearnUnit 的起点；前置 LearnUnit 只能引用同一语言中已经生成的 code，不能循环。
+                code 使用稳定、简短、适合 URL 的英文标识；每个 LearnUnit 的 code 必须唯一。
                 name、description、learningObjectives、lessonIntro、keyConcepts、examples 使用中文，
-                但技术术语和语言名称可以保留英文。每个 skill 都要有可讲授的 Lesson 内容。
+                但技术术语和语言名称可以保留英文。每个 LearnUnit 都要有可讲授的内容。
                 passScore 和 minCodingScore 为 0 到 100 的整数。不要生成题目，不要生成答案，不要生成评分结果。
                 """.formatted(requestedLanguage.trim(), learningContext == null ? "" : learningContext.trim());
         try {
             String response = chatModel.call(new Prompt(new UserMessage(prompt)))
                     .getResult().getOutput().getText();
-            JsonNode root = JsonBaseModel.getMapper().readTree(extractJson(response));
+            JsonNode root = new ObjectMapper().readTree(extractJson(response));
             return parse(root);
         } catch (Exception error) {
             throw new IllegalArgumentException("Curriculum generator returned invalid JSON", error);
@@ -69,10 +69,10 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
 
     private GeneratedCurriculum parse(JsonNode root) {
         JsonNode languageNodes = root == null ? null : root.get("languages");
-        JsonNode skillNodes = root == null ? null : root.get("skills");
+        JsonNode learnUnitNodes = root == null ? null : root.get("learnUnits");
         if (languageNodes == null || !languageNodes.isArray() || languageNodes.isEmpty()
-                || skillNodes == null || !skillNodes.isArray() || skillNodes.isEmpty()) {
-            throw new IllegalArgumentException("languages and skills must be non-empty arrays");
+                || learnUnitNodes == null || !learnUnitNodes.isArray() || learnUnitNodes.isEmpty()) {
+            throw new IllegalArgumentException("languages and learnUnits must be non-empty arrays");
         }
 
         List<LearningLanguage> languages = new ArrayList<>();
@@ -85,31 +85,31 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                     requiredText(node, "description"), true));
         }
 
-        List<LearningSkill> skills = new ArrayList<>();
-        Set<String> skillCodes = new HashSet<>();
-        for (JsonNode node : skillNodes) {
+        List<LearnUnit> learnUnits = new ArrayList<>();
+        Set<String> learnUnitCodes = new HashSet<>();
+        for (JsonNode node : learnUnitNodes) {
             String code = requiredText(node, "code");
             String languageCode = requiredText(node, "languageCode");
             if (!languageCodes.contains(languageCode)) {
-                throw new IllegalArgumentException("Skill belongs to unknown language: " + code);
+                throw new IllegalArgumentException("LearnUnit belongs to unknown language: " + code);
             }
-            if (!skillCodes.add(code)) throw new IllegalArgumentException("Duplicate skill code: " + code);
-            skills.add(new LearningSkill(
-                    "generated-skill-" + UUID.randomUUID(), languageCode, code, requiredText(node, "name"),
+            if (!learnUnitCodes.add(code)) throw new IllegalArgumentException("Duplicate LearnUnit code: " + code);
+            learnUnits.add(new LearnUnit(
+                    "generated-learn-unit-" + UUID.randomUUID(), languageCode, code, requiredText(node, "name"),
                     requiredText(node, "description"), boundedInt(node, "sequence", 1, 1, 1000),
-                    strings(node.get("prerequisiteSkillCodes")), boundedInt(node, "passScore", 80, 0, 100),
+                    strings(node.get("prerequisiteLearnUnitCodes")), boundedInt(node, "passScore", 80, 0, 100),
                     nullableBoundedInt(node, "minCodingScore", 0, 100), true,
                     strings(node.get("learningObjectives")), optionalText(node, "lessonIntro"),
                     strings(node.get("keyConcepts")), strings(node.get("examples")), true));
         }
-        for (LearningSkill skill : skills) {
-            for (String prerequisite : skill.prerequisiteSkillCodes()) {
-                if (!skillCodes.contains(prerequisite)) {
-                    throw new IllegalArgumentException("Unknown prerequisite skill: " + prerequisite);
+        for (LearnUnit learnUnit : learnUnits) {
+            for (String prerequisite : learnUnit.prerequisiteLearnUnitCodes()) {
+                if (!learnUnitCodes.contains(prerequisite)) {
+                    throw new IllegalArgumentException("Unknown prerequisite LearnUnit: " + prerequisite);
                 }
             }
         }
-        return new GeneratedCurriculum(languages, skills);
+        return new GeneratedCurriculum(languages, learnUnits);
     }
 
     private int boundedInt(JsonNode node, String field, int defaultValue, int min, int max) {

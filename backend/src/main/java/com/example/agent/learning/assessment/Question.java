@@ -7,7 +7,7 @@ package com.example.agent.learning.assessment;
  * 正确答案、分值或评分规则；历史 Assessment 因此可以继续读取原题。</p>
  *
  * @param id 题目稳定主键
- * @param skillCode 题目所属技能
+ * @param learnUnitCode 题目所属 LearnUnit
  * @param type 选择题或 Coding 题
  * @param difficulty 题目难度
  * @param prompt 题干
@@ -21,7 +21,7 @@ package com.example.agent.learning.assessment;
  */
 public record Question(
         String id,
-        String skillCode,
+        String learnUnitCode,
         QuestionType type,
         int difficulty,
         String prompt,
@@ -35,7 +35,7 @@ public record Question(
 
     public Question {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("Question id is required");
-        if (skillCode == null || skillCode.isBlank()) throw new IllegalArgumentException("Question skill is required");
+        if (learnUnitCode == null || learnUnitCode.isBlank()) throw new IllegalArgumentException("Question learnUnit is required");
         if (type == null) throw new IllegalArgumentException("Question type is required");
         if (prompt == null || prompt.isBlank()) throw new IllegalArgumentException("Question prompt is required");
         if (points <= 0) throw new IllegalArgumentException("Question points must be positive");

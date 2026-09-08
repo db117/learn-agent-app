@@ -46,6 +46,11 @@ class LlmCodingAnswerEvaluatorTest {
                 {"correctness":60,"languageUsage":20,"clarity":20,"issues":[]}
                 """));
         assertThrows(IllegalArgumentException.class, () -> missingFeedback.evaluate(question, "code"));
+
+        var decisionField = new LlmCodingAnswerEvaluator(model("""
+                {"correctness":60,"languageUsage":20,"clarity":20,"feedback":"bad","issues":[],"passed":true}
+                """));
+        assertThrows(IllegalArgumentException.class, () -> decisionField.evaluate(question, "code"));
     }
 
     private ChatModel model(String response) {

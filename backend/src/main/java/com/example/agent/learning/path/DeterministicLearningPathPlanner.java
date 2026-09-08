@@ -1,8 +1,8 @@
 package com.example.agent.learning.path;
 
-import com.example.agent.learning.catalog.LearningSkill;
-import com.example.agent.learning.journey.LearnerSkill;
-import com.example.agent.learning.journey.LearnerSkillStatus;
+import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.journey.LearnerLearnUnit;
+import com.example.agent.learning.journey.LearnerLearnUnitStatus;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -15,7 +15,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * 基于技能前置关系和课程顺序生成稳定学习路径的规划器。
+ * 基于 LearnUnit 前置关系和课程顺序生成稳定学习路径的规划器。
  *
  * <p>规划器只计算路径，不写数据库；调用方负责持久化并根据当前节点执行状态迁移。
  */
@@ -24,65 +24,65 @@ public class DeterministicLearningPathPlanner {
 
     public List<LearningPathItem> plan(
             String journeyId,
-            List<LearningSkill> skills,
-            Map<String, LearnerSkill> learnerSkills) {
-        List<LearningSkill> ordered = order(skills);
+            List<LearnUnit> learnUnits,
+            Map<String, LearnerLearnUnit> learnerLearnUnits) {
+        List<LearnUnit> ordered = order(learnUnits);
         List<LearningPathItem> result = new ArrayList<>();
         for (int index = 0; index < ordered.size(); index++) {
-            LearningSkill skill = ordered.get(index);
-            LearnerSkill learnerSkill = learnerSkills.get(skill.code());
-            LearningPathItemStatus status = learnerSkill != null && learnerSkill.status() == LearnerSkillStatus.PASSED
+            LearnUnit learnUnit = ordered.get(index);
+            LearnerLearnUnit learnerLearnUnit = learnerLearnUnits.get(learnUnit.code());
+            LearningPathItemStatus status = learnerLearnUnit != null && learnerLearnUnit.status() == LearnerLearnUnitStatus.PASSED
                     ? LearningPathItemStatus.COMPLETED
-                    : learnerSkill != null && learnerSkill.status() == LearnerSkillStatus.SKIPPED
+                    : learnerLearnUnit != null && learnerLearnUnit.status() == LearnerLearnUnitStatus.SKIPPED
                     ? LearningPathItemStatus.SKIPPED
                     : LearningPathItemStatus.PENDING;
-            result.add(new LearningPathItem(UUID.randomUUID().toString(), journeyId, skill.code(), index + 1, status));
+            result.add(new LearningPathItem(UUID.randomUUID().toString(), journeyId, learnUnit.code(), index + 1, status));
         }
         for (int index = 0; index < result.size(); index++) {
             if (result.get(index).status() == LearningPathItemStatus.PENDING) {
                 LearningPathItem item = result.get(index);
-                result.set(index, new LearningPathItem(item.id(), item.journeyId(), item.skillCode(), item.sequence(), LearningPathItemStatus.CURRENT));
+                result.set(index, new LearningPathItem(item.id(), item.journeyId(), item.learnUnitCode(), item.sequence(), LearningPathItemStatus.CURRENT));
                 break;
             }
         }
         return result;
     }
 
-    public List<LearningSkill> order(List<LearningSkill> skills) {
-        Map<String, LearningSkill> byCode = new HashMap<>();
-        for (LearningSkill skill : skills) byCode.put(skill.code(), skill);
+    public List<LearnUnit> order(List<LearnUnit> learnUnits) {
+        Map<String, LearnUnit> byCode = new HashMap<>();
+        for (LearnUnit learnUnit : learnUnits) byCode.put(learnUnit.code(), learnUnit);
         Map<String, Integer> incoming = new HashMap<>();
         Map<String, List<String>> outgoing = new HashMap<>();
-        for (LearningSkill skill : skills) {
+        for (LearnUnit learnUnit : learnUnits) {
             int count = 0;
-            for (String prerequisite : skill.prerequisiteSkillCodes()) {
+            for (String prerequisite : learnUnit.prerequisiteLearnUnitCodes()) {
                 if (byCode.containsKey(prerequisite)) {
                     count++;
-                    outgoing.computeIfAbsent(prerequisite, ignored -> new ArrayList<>()).add(skill.code());
+                    outgoing.computeIfAbsent(prerequisite, ignored -> new ArrayList<>()).add(learnUnit.code());
                 }
             }
-            incoming.put(skill.code(), count);
+            incoming.put(learnUnit.code(), count);
         }
-        List<LearningSkill> ready = skills.stream()
-                .filter(skill -> incoming.get(skill.code()) == 0)
-                .sorted(Comparator.comparingInt(LearningSkill::sequence).thenComparing(LearningSkill::code))
+        List<LearnUnit> ready = learnUnits.stream()
+                .filter(learnUnit -> incoming.get(learnUnit.code()) == 0)
+                .sorted(Comparator.comparingInt(LearnUnit::sequence).thenComparing(LearnUnit::code))
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
-        List<LearningSkill> ordered = new ArrayList<>();
+        List<LearnUnit> ordered = new ArrayList<>();
         while (!ready.isEmpty()) {
-            LearningSkill skill = ready.remove(0);
-            ordered.add(skill);
-            for (String next : outgoing.getOrDefault(skill.code(), List.of())) {
+            LearnUnit learnUnit = ready.remove(0);
+            ordered.add(learnUnit);
+            for (String next : outgoing.getOrDefault(learnUnit.code(), List.of())) {
                 int count = incoming.merge(next, -1, Integer::sum);
                 if (count == 0) {
                     ready.add(byCode.get(next));
-                    ready.sort(Comparator.comparingInt(LearningSkill::sequence).thenComparing(LearningSkill::code));
+                    ready.sort(Comparator.comparingInt(LearnUnit::sequence).thenComparing(LearnUnit::code));
                 }
             }
         }
-        if (ordered.size() != skills.size()) {
-            Set<String> included = ordered.stream().map(LearningSkill::code).collect(java.util.stream.Collectors.toSet());
-            skills.stream().filter(skill -> !included.contains(skill.code()))
-                    .sorted(Comparator.comparingInt(LearningSkill::sequence).thenComparing(LearningSkill::code))
+        if (ordered.size() != learnUnits.size()) {
+            Set<String> included = ordered.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
+            learnUnits.stream().filter(learnUnit -> !included.contains(learnUnit.code()))
+                    .sorted(Comparator.comparingInt(LearnUnit::sequence).thenComparing(LearnUnit::code))
                     .forEach(ordered::add);
         }
         return ordered;

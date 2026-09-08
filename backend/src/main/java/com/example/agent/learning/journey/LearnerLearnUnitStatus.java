@@ -1,8 +1,8 @@
 package com.example.agent.learning.journey;
 
-/** 学习者在单个技能上的状态。 */
-public enum LearnerSkillStatus {
-    /** 前置技能尚未完成，暂不可学习。 */
+/** 学习者在单个 LearnUnit 上的状态。 */
+public enum LearnerLearnUnitStatus {
+    /** 前置 LearnUnit 尚未完成，暂不可学习。 */
     LOCKED,
     /** 尚未开始学习。 */
     READY,

@@ -3,11 +3,11 @@ package com.example.agent.llm.infrastructure;
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.LearningLanguage;
-import com.example.agent.learning.catalog.LearningSkill;
+import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.diagnostic.DiagnosticQuestionPlanner;
 import com.example.agent.learning.journey.LearnerProfile;
-import com.google.adk.JsonBaseModel;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -23,7 +23,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * 使用现有 Spring AI ChatModel 按需规划诊断或技能评估题集的适配器。
+ * 使用现有 Spring AI ChatModel 按需规划诊断或 LearnUnit 评估题集的适配器。
  *
  * <p>模型可以选择活动题目，也可以提出新题；但已有题目只能返回 ID，不能
  * 携带修改后的字段。最终题集仍由 AssessmentService 的 Java 规则校验并写入 SQLite。</p>
@@ -31,6 +31,7 @@ import java.util.UUID;
 @Component
 public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPlanner {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
     private final ChatModel chatModel;
 
     public LlmDiagnosticQuestionPlanner(ChatModel chatModel) {
@@ -40,44 +41,49 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
     @Override
     public List<Question> plan(
             LearningLanguage language,
-            List<LearningSkill> skills,
+            List<LearnUnit> learnUnits,
             List<Question> availableQuestions,
             LearnerProfile profile) {
         Map<String, Question> existing = new HashMap<>();
         for (Question question : availableQuestions) existing.put(question.id(), question);
-        Set<String> skillCodes = new HashSet<>();
-        for (LearningSkill skill : skills) skillCodes.add(skill.code());
+        Set<String> learnUnitCodes = new HashSet<>();
+        for (LearnUnit learnUnit : learnUnits) learnUnitCodes.add(learnUnit.code());
         String prompt = """
                 Choose an assessment question set for a programming learner. Return JSON only:
                 {"questions":[...]}.
                 The existing catalog may be empty. For an existing question return exactly
                 {"existingQuestionId":"..."} using one of the catalog ids.
-                You may also create a new question with skillCode, type (MULTIPLE_CHOICE or CODING), prompt,
+                You may also create a new question with learnUnitCode, type (MULTIPLE_CHOICE or CODING), prompt,
                 points, language, starterCode, rubric, referenceConcepts, and for multiple choice an options array
-                of {"id":"A","text":"..."} plus correctOptionIds. New questions must assess the listed skills.
+                of {"id":"A","text":"..."} plus correctOptionIds. New questions must assess the listed LearnUnits.
                 Never return changed fields alongside existingQuestionId. Do not return scores or passed decisions.
 
                 Language: %s
                 Learner profile: %s
-                Skills: %s
+                LearnUnits: %s
                 Existing catalog questions: %s
-                """.formatted(language.code(), profile, skills, availableQuestions);
-        String text = chatModel.call(new Prompt(new UserMessage(prompt))).getResult().getOutput().getText();
+                """.formatted(language.code(), profile, learnUnits, availableQuestions);
+        String text;
         try {
-            JsonNode root = JsonBaseModel.getMapper().readTree(extractJson(text));
+            text = chatModel.call(new Prompt(new UserMessage(prompt))).getResult().getOutput().getText();
+        } catch (RuntimeException error) {
+            throw new IllegalStateException("Assessment question planner is unavailable", error);
+        }
+        try {
+            JsonNode root = MAPPER.readTree(extractJson(text));
             JsonNode nodes = root.get("questions");
             if (nodes == null || !nodes.isArray() || nodes.isEmpty()) {
                 throw new IllegalArgumentException("questions must be a non-empty array");
             }
             List<Question> result = new ArrayList<>();
-            for (JsonNode node : nodes) result.add(parseQuestion(node, existing, skillCodes));
+            for (JsonNode node : nodes) result.add(parseQuestion(node, existing, learnUnitCodes));
             return result;
         } catch (Exception error) {
             throw new IllegalArgumentException("Assessment question planner returned invalid JSON", error);
         }
     }
 
-    private Question parseQuestion(JsonNode node, Map<String, Question> existing, Set<String> skillCodes) {
+    private Question parseQuestion(JsonNode node, Map<String, Question> existing, Set<String> learnUnitCodes) {
         JsonNode existingId = node.get("existingQuestionId");
         if (existingId != null) {
             if (!existingId.isTextual() || node.size() != 1) {
@@ -87,8 +93,8 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
             if (question == null) throw new IllegalArgumentException("Unknown existing question");
             return question;
         }
-        String skillCode = requiredText(node, "skillCode");
-        if (!skillCodes.contains(skillCode)) throw new IllegalArgumentException("Unknown assessment skill");
+        String learnUnitCode = requiredText(node, "learnUnitCode");
+        if (!learnUnitCodes.contains(learnUnitCode)) throw new IllegalArgumentException("Unknown assessment LearnUnit");
         QuestionType type = QuestionType.valueOf(requiredText(node, "type"));
         String prompt = requiredText(node, "prompt");
         int points = node.path("points").asInt(type == QuestionType.CODING ? 100 : 20);
@@ -101,7 +107,7 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
             if (options == null || !options.isArray() || correct == null || !correct.isArray()) {
                 throw new IllegalArgumentException("Multiple choice question needs options and correctOptionIds");
             }
-            ObjectNode configNode = JsonBaseModel.getMapper().createObjectNode();
+            ObjectNode configNode = MAPPER.createObjectNode();
             configNode.set("options", options);
             configNode.set("correctOptionIds", correct);
             configNode.put("multiple", node.path("multiple").asBoolean(false));
@@ -114,7 +120,7 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
         }
         JsonNode concepts = node.get("referenceConcepts");
         return new Question(
-                "generated-question-" + UUID.randomUUID(), skillCode, type, node.path("difficulty").asInt(2),
+                "generated-question-" + UUID.randomUUID(), learnUnitCode, type, node.path("difficulty").asInt(2),
                 prompt, points, config, rubric, nullableText(node, "language"), nullableText(node, "starterCode"),
                 concepts == null || concepts.isNull() ? "[]" : concepts.toString(), true);
     }

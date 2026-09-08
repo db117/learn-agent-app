@@ -1,6 +1,6 @@
 package com.example.agent.learning.assessment;
 
-import com.example.agent.learning.catalog.LearningSkill;
+import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.diagnostic.DiagnosticQuestionPlanner;
 import com.example.agent.learning.journey.LearningJourney;
@@ -8,7 +8,7 @@ import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
 import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.learning.scoring.AssessmentScoreEngine;
-import com.example.agent.learning.scoring.SkillPassPolicy;
+import com.example.agent.learning.scoring.LearnUnitPassPolicy;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -17,8 +17,10 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
@@ -31,22 +33,25 @@ class AssessmentServiceTest {
     private final ProgressService progress = mock(ProgressService.class);
     private final DiagnosticQuestionPlanner planner = mock(DiagnosticQuestionPlanner.class);
     private final AssessmentService service = new AssessmentService(
-            repository, progress, new AssessmentScoreEngine(), new SkillPassPolicy(),
-            new FakeCodingAnswerEvaluator(), planner);
+            repository, progress, new AssessmentScoreEngine(), new LearnUnitPassPolicy(),
+            (question, submittedCode) -> submittedCode == null || submittedCode.isBlank()
+                    ? new CodingEvaluationResult(0, 0, 0, "Submit an implementation to receive feedback.", List.of("Code is empty"))
+                    : new CodingEvaluationResult(60, 20, 20, "Deterministic test evaluation passed.", List.of()),
+            planner);
 
     @Test
-    void failedSkillAssessmentCanRetryWithoutOverwritingTheFirstAttempt() {
+    void failedLearnUnitAssessmentCanRetryWithoutOverwritingTheFirstAttempt() {
         Assessment assessment = new Assessment(
-                "assessment", "journey", "skill-a", AssessmentType.SKILL,
+                "assessment", "journey", "learnUnit-a", AssessmentType.LEARN_UNIT,
                 AssessmentStatus.IN_PROGRESS, Instant.EPOCH, null);
-        LearningSkill skill = new LearningSkill(
-                "skill-a", "typescript", "skill-a", "Skill A", "description", 1, List.of(),
+        LearnUnit learnUnit = new LearnUnit(
+                "learnUnit-a", "typescript", "learnUnit-a", "LearnUnit A", "description", 1, List.of(),
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), true);
         Question choice = new Question(
-                "choice", "skill-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
+                "choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
                 "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
         Question coding = new Question(
-                "coding", "skill-a", QuestionType.CODING, 1, "Implement", 100,
+                "coding", "learnUnit-a", QuestionType.CODING, 1, "Implement", 100,
                 null, "{\"correctness\":60,\"languageUsage\":20,\"clarity\":20}",
                 "typescript", "", "[]", false);
         AssessmentAttempt first = attempt("attempt-1");
@@ -54,7 +59,7 @@ class AssessmentServiceTest {
         when(repository.findAssessment("assessment")).thenReturn(Optional.of(assessment));
         when(repository.findOpenAttempt("assessment")).thenReturn(Optional.of(first), Optional.of(second));
         when(repository.listQuestionsForAssessment("assessment")).thenReturn(List.of(choice, coding));
-        when(repository.findSkill("skill-a")).thenReturn(Optional.of(skill));
+        when(repository.findLearnUnit("learnUnit-a")).thenReturn(Optional.of(learnUnit));
         when(repository.listQuestionAttempts("attempt-1")).thenReturn(List.of(
                 new QuestionAttempt("choice", "attempt-1", "{}", 0, 20, "wrong", false, null, null, "[]"),
                 new QuestionAttempt("coding", "attempt-1", "{}", null, 100, null, null, "answer", null, null)));
@@ -73,46 +78,72 @@ class AssessmentServiceTest {
         assertEquals(100, passed.score().totalScore());
         verify(repository).updateAttempt(eq("attempt-1"), eq(0), eq(100), eq(60), eq(false), any(Instant.class));
         verify(repository).updateAttempt(eq("attempt-2"), eq(100), eq(100), eq(100), eq(true), any(Instant.class));
-        verify(progress).recordSkillAssessment(
-                "journey", "skill-a", new AssessmentScore(0, 100, 60, true, true), false);
-        verify(progress).recordSkillAssessment(
-                "journey", "skill-a", new AssessmentScore(100, 100, 100, true, true), true);
+        verify(progress).recordLearnUnitAssessment(
+                "journey", "learnUnit-a", new AssessmentScore(0, 100, 60, true, true), false);
+        verify(progress).recordLearnUnitAssessment(
+                "journey", "learnUnit-a", new AssessmentScore(100, 100, 100, true, true), true);
     }
 
     @Test
-    void skillAssessmentGeneratesQuestionsWhenDatabaseHasNone() {
+    void codingEvaluationFailureKeepsDraftAndReturnsLearnUnitToLearning() {
+        AssessmentService failingService = new AssessmentService(
+                repository, progress, new AssessmentScoreEngine(), new LearnUnitPassPolicy(),
+                (question, submittedCode) -> {
+                    throw new IllegalStateException("provider unavailable");
+                }, planner);
+        Assessment assessment = new Assessment(
+                "assessment", "journey", "learnUnit-a", AssessmentType.LEARN_UNIT,
+                AssessmentStatus.IN_PROGRESS, Instant.EPOCH, null);
+        AssessmentAttempt openAttempt = attempt("attempt-1");
+        Question coding = new Question(
+                "coding", "learnUnit-a", QuestionType.CODING, 1, "Implement", 100,
+                null, "{\"correctness\":60}", "typescript", "", "[]", false);
+        when(repository.findAssessment("assessment")).thenReturn(Optional.of(assessment));
+        when(repository.findOpenAttempt("assessment")).thenReturn(Optional.of(openAttempt));
+        when(repository.listQuestionsForAssessment("assessment")).thenReturn(List.of(coding));
+        when(repository.listQuestionAttempts("attempt-1")).thenReturn(List.of());
+
+        assertThrows(AssessmentService.AssessmentEvaluationException.class,
+                () -> failingService.submit("assessment"));
+
+        verify(progress).markAssessmentFailed("journey", "learnUnit-a");
+        verify(repository, atLeastOnce()).saveQuestionAttempt(any(QuestionAttempt.class));
+    }
+
+    @Test
+    void learnUnitAssessmentGeneratesQuestionsWhenDatabaseHasNone() {
         LearningJourney journey = new LearningJourney(
                 "journey", "user", "typescript", "learn", com.example.agent.learning.journey.JourneyStatus.ACTIVE,
                 Instant.EPOCH, Instant.EPOCH, null);
         LearningLanguage language = new LearningLanguage(
                 "language", "typescript", "TypeScript", "typed JavaScript", true);
-        LearningSkill skill = new LearningSkill(
-                "skill-a", "typescript", "skill-a", "Skill A", "description", 1, List.of(),
+        LearnUnit learnUnit = new LearnUnit(
+                "learnUnit-a", "typescript", "learnUnit-a", "LearnUnit A", "description", 1, List.of(),
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), false);
         Question choice = new Question(
-                "generated-choice", "skill-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
+                "generated-choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
                 "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", true);
         Question coding = new Question(
-                "generated-coding", "skill-a", QuestionType.CODING, 2, "Implement", 100,
+                "generated-coding", "learnUnit-a", QuestionType.CODING, 2, "Implement", 100,
                 null, "{\"correctness\":60,\"languageUsage\":20,\"clarity\":20}",
                 "typescript", "", "[]", true);
         when(repository.findJourney("journey")).thenReturn(Optional.of(journey));
-        when(repository.findSkill("skill-a")).thenReturn(Optional.of(skill));
-        when(repository.listSkillsForJourney("journey")).thenReturn(List.of(skill));
-        when(repository.findLatestSkillAssessment("journey", "skill-a")).thenReturn(Optional.empty());
+        when(repository.findLearnUnit("learnUnit-a")).thenReturn(Optional.of(learnUnit));
+        when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(learnUnit));
+        when(repository.findLatestLearnUnitAssessment("journey", "learnUnit-a")).thenReturn(Optional.empty());
         when(repository.findLanguage("typescript")).thenReturn(Optional.of(language));
         when(repository.findProfile("journey")).thenReturn(Optional.empty());
-        when(repository.listQuestionsForSkill("skill-a")).thenReturn(List.of());
+        when(repository.listQuestionsForLearnUnit("learnUnit-a")).thenReturn(List.of());
         when(planner.plan(any(), any(), any(), any())).thenReturn(List.of(choice, coding));
         when(repository.findOpenAttempt(anyString())).thenReturn(Optional.empty());
         when(repository.listQuestionsForAssessment(anyString())).thenReturn(List.of(choice, coding));
         when(repository.listAttemptsForAssessment(anyString())).thenReturn(List.of());
 
-        AssessmentService.AssessmentState state = service.createSkillAssessment("journey", "skill-a");
+        AssessmentService.AssessmentState state = service.createLearnUnitAssessment("journey", "learnUnit-a");
 
         assertEquals("journey", state.assessment().journeyId());
-        assertEquals("skill-a", state.assessment().skillCode());
-        assertEquals(AssessmentType.SKILL, state.assessment().type());
+        assertEquals("learnUnit-a", state.assessment().learnUnitCode());
+        assertEquals(AssessmentType.LEARN_UNIT, state.assessment().type());
         assertEquals(AssessmentStatus.CREATED, state.assessment().status());
         assertEquals(List.of(choice, coding), state.questions());
         verify(repository).insertGeneratedQuestion(choice);
@@ -123,7 +154,7 @@ class AssessmentServiceTest {
     }
 
     private AssessmentAttempt attempt(String id) {
-        return new AssessmentAttempt(id, "assessment", "journey", "skill-a", id.endsWith("1") ? 1 : 2,
+        return new AssessmentAttempt(id, "assessment", "journey", "learnUnit-a", id.endsWith("1") ? 1 : 2,
                 null, null, null, null, Instant.EPOCH, null);
     }
 }

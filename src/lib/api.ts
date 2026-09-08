@@ -1,7 +1,7 @@
 export type BackendHealth = {
   status: string;
   sqlite: string;
-  adk: string;
+  agent: string;
   llm: string;
 };
 
@@ -25,7 +25,7 @@ export type AgentEvent = {
   sessionId: string;
   runId: string;
   author: string;
-  eventType: "message" | "tool_call" | "tool_result" | "error";
+  eventType: "message" | "tool_call" | "tool_result" | "error" | "complete";
   content: string;
   toolCall?: string;
   toolResult?: string;
@@ -37,10 +37,10 @@ export type SessionDetail = SessionSummary & {
 };
 
 export type JourneyStatus = "ACTIVE" | "COMPLETED" | "ARCHIVED";
-export type LearnerSkillStatus = "LOCKED" | "READY" | "LEARNING" | "ASSESSING" | "PASSED" | "SKIPPED";
+export type LearnerLearnUnitStatus = "LOCKED" | "READY" | "LEARNING" | "ASSESSING" | "PASSED" | "SKIPPED";
 export type LearningPathItemStatus = "PENDING" | "CURRENT" | "COMPLETED" | "SKIPPED";
 export type QuestionType = "MULTIPLE_CHOICE" | "CODING";
-export type AssessmentType = "DIAGNOSTIC" | "SKILL";
+export type AssessmentType = "DIAGNOSTIC" | "LEARN_UNIT";
 export type AssessmentStatus = "CREATED" | "IN_PROGRESS" | "COMPLETED";
 
 export type LearningLanguage = {
@@ -51,16 +51,16 @@ export type LearningLanguage = {
   enabled: boolean;
 };
 
-export type LearningSkill = {
+export type LearnUnit = {
   id: string;
   languageCode: string;
   code: string;
   name: string;
   description: string;
   sequence: number;
-  prerequisiteSkillCodes: string[];
+  prerequisiteLearnUnitCodes: string[];
   passScore: number;
-  minCodingScore: number;
+  minCodingScore: number | null;
   enabled: boolean;
   learningObjectives: string[];
   lessonIntro: string;
@@ -77,7 +77,7 @@ export type LearningJourney = {
   status: JourneyStatus;
   createdAt: string;
   updatedAt: string;
-  currentLearningSkillId: string | null;
+  currentLearnUnitCode: string | null;
 };
 
 export type LearnerProfile = {
@@ -88,10 +88,10 @@ export type LearnerProfile = {
   learningGoal: string;
 };
 
-export type LearnerSkill = {
+export type LearnerLearnUnit = {
   journeyId: string;
-  skillCode: string;
-  status: LearnerSkillStatus;
+  learnUnitCode: string;
+  status: LearnerLearnUnitStatus;
   masteryScore: number;
   bestAssessmentScore: number;
   attemptCount: number;
@@ -104,23 +104,14 @@ export type LearnerSkill = {
 export type LearningPathItem = {
   id: string;
   journeyId: string;
-  skillCode: string;
+  learnUnitCode: string;
   sequence: number;
   status: LearningPathItemStatus;
 };
 
-export type LearningLesson = {
-  skillCode: string;
-  title: string;
-  learningObjectives: string[];
-  introContent: string;
-  keyConcepts: string[];
-  examples: string[];
-};
-
 export type Question = {
   id: string;
-  skillCode: string;
+  learnUnitCode: string;
   type: QuestionType;
   difficulty: number;
   prompt: string;
@@ -135,7 +126,7 @@ export type Question = {
 export type Assessment = {
   id: string;
   journeyId: string;
-  skillCode: string | null;
+  learnUnitCode: string | null;
   type: AssessmentType;
   status: AssessmentStatus;
   createdAt: string;
@@ -146,7 +137,7 @@ export type AssessmentAttempt = {
   id: string;
   assessmentId: string;
   journeyId: string;
-  skillCode: string | null;
+  learnUnitCode: string | null;
   attemptNumber: number;
   choiceScore: number | null;
   codingScore: number | null;
@@ -177,8 +168,8 @@ export type AssessmentScore = {
   hasCodingQuestions: boolean;
 };
 
-export type DiagnosticSkillResult = {
-  skillCode: string;
+export type DiagnosticLearnUnitResult = {
+  learnUnitCode: string;
   score: AssessmentScore;
   passed: boolean;
   evidenceCount: number;
@@ -197,30 +188,30 @@ export type AssessmentResultResponse = {
   attempt: AssessmentAttempt;
   score: AssessmentScore;
   passed: boolean;
-  skillResults: DiagnosticSkillResult[];
+  learnUnitResults: DiagnosticLearnUnitResult[];
   questionAttempts: QuestionAttempt[];
 };
 
-export type SkillResponse = {
+export type LearnUnitResponse = {
   journeyId: string;
-  skill: LearningSkill;
-  learnerSkill: LearnerSkill | null;
+  learnUnit: LearnUnit;
+  learnerLearnUnit: LearnerLearnUnit | null;
   pathItem: LearningPathItem | null;
-  lesson: LearningLesson;
   attempts: AssessmentAttempt[];
+  questionAttempts: QuestionAttempt[];
 };
 
 export type JourneyDetail = {
   journey: LearningJourney;
   profile: LearnerProfile | null;
   path: LearningPathItem[];
-  learnerSkills: LearnerSkill[];
+  learnerLearnUnits: LearnerLearnUnit[];
 };
 
 export type TutorSessionResponse = {
   session: SessionSummary;
   journeyId: string;
-  skillCode: string;
+  learnUnitCode: string;
 };
 
 export type CreateJourneyInput = {
@@ -255,7 +246,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<BackendHealth>("/health"),
   languages: () => request<LearningLanguage[]>("/learning/languages"),
-  journeySkills: (journeyId: string) => request<LearningSkill[]>(`/learning/journeys/${encodeURIComponent(journeyId)}/skills`),
+  journeyLearnUnits: (journeyId: string) => request<LearnUnit[]>(`/learning/journeys/${encodeURIComponent(journeyId)}/learn-units`),
   journeys: () => request<LearningJourney[]>("/learning/journeys"),
   journey: (id: string) => request<JourneyDetail>(`/learning/journeys/${id}`),
   createJourney: (input: CreateJourneyInput) => request<LearningJourney>("/learning/journeys", {
@@ -271,16 +262,16 @@ export const api = {
       body: JSON.stringify(answer),
     }),
   submit: (id: string) => request<AssessmentResultResponse>(`/learning/assessments/${id}/submit`, {method: "POST"}),
-  startSkill: (journeyId: string, skillCode: string) =>
-    request<SkillResponse>(`/learning/journeys/${journeyId}/skills/${encodeURIComponent(skillCode)}/start`, {method: "POST"}),
-  skillAssessment: (journeyId: string, skillCode: string) =>
-    request<AssessmentResponse>(`/learning/journeys/${journeyId}/skills/${encodeURIComponent(skillCode)}/assessment`, {method: "POST"}),
-  skill: (journeyId: string, skillCode: string) =>
-    request<SkillResponse>(`/learning/journeys/${journeyId}/skills/${encodeURIComponent(skillCode)}`),
-  skipSkill: (journeyId: string, skillCode: string) =>
-    request<SkillResponse>(`/learning/journeys/${journeyId}/skills/${encodeURIComponent(skillCode)}/skip`, {method: "POST"}),
-  tutor: (journeyId: string, skillCode: string) =>
-    request<TutorSessionResponse>(`/learning/journeys/${journeyId}/skills/${encodeURIComponent(skillCode)}/tutor`, {method: "POST"}),
+  startLearnUnit: (journeyId: string, learnUnitCode: string) =>
+    request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/start`, {method: "POST"}),
+  learnUnitAssessment: (journeyId: string, learnUnitCode: string) =>
+    request<AssessmentResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/assessment`, {method: "POST"}),
+  learnUnit: (journeyId: string, learnUnitCode: string) =>
+    request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}`),
+  skipLearnUnit: (journeyId: string, learnUnitCode: string) =>
+    request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/skip`, {method: "POST"}),
+  tutor: (journeyId: string, learnUnitCode: string) =>
+    request<TutorSessionResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/tutor`, {method: "POST"}),
   session: (id: string) => request<SessionDetail>(`/sessions/${id}`),
   sendMessage: (id: string, content: string) =>
     request<{ runId: string; messageId: string }>(`/sessions/${id}/messages`, {

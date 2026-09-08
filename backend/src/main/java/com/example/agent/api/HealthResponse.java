@@ -7,10 +7,10 @@ import java.time.Instant;
  *
  * @param status 总体状态
  * @param sqlite SQLite 可用性
- * @param adk ADK 运行时可用性
+ * @param agent Agent 运行时可用性
  * @param llm LLM 提供商可用性
  * @param checkedAt 检查时间
  */
 public record HealthResponse(
-        String status, String sqlite, String adk, String llm, Instant checkedAt) {
+        String status, String sqlite, String agent, String llm, Instant checkedAt) {
 }

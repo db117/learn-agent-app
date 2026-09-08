@@ -1,20 +1,20 @@
 package com.example.agent.learning.scoring;
 
-import com.example.agent.learning.catalog.LearningSkill;
+import com.example.agent.learning.catalog.LearnUnit;
 import org.springframework.stereotype.Component;
 
 /**
- * 技能和诊断评估的通过规则。
+ * LearnUnit 和诊断评估的通过规则。
  *
  * <p>规则集中在此处，避免控制器、评分器或前端重复判断通过条件。
  */
 @Component
-public class SkillPassPolicy {
+public class LearnUnitPassPolicy {
 
     public static final int DIAGNOSTIC_PASS_SCORE = 85;
 
-    public boolean passed(AssessmentScore score, LearningSkill skill) {
-        return passed(score, skill.passScore(), skill.minCodingScore());
+    public boolean passed(AssessmentScore score, LearnUnit learnUnit) {
+        return passed(score, learnUnit.passScore(), learnUnit.minCodingScore());
     }
 
     public boolean passed(AssessmentScore score, int passScore, Integer minCodingScore) {

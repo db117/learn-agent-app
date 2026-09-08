@@ -1,176 +1,176 @@
 package com.example.agent.agent;
 
-import com.example.agent.config.AppProperties;
+import com.alibaba.cloud.ai.graph.RunnableConfig;
+import com.alibaba.cloud.ai.graph.agent.ReactAgent;
+import com.example.agent.learning.tutor.TutorContextService;
 import com.example.agent.persistence.MessageRecord;
 import com.example.agent.persistence.PersistedEvent;
 import com.example.agent.persistence.RunRecord;
 import com.example.agent.persistence.SessionRecord;
 import com.example.agent.persistence.SqliteRepository;
-import com.google.adk.agents.RunConfig;
-import com.google.adk.events.Event;
-import com.google.adk.runner.Runner;
-import com.google.adk.sessions.InMemorySessionService;
-import com.google.adk.sessions.Session;
-import com.google.genai.types.Content;
-import com.google.genai.types.Part;
-import io.reactivex.rxjava3.core.Flowable;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.stream.Collectors;
 
+/** Runs the single SAA TutorAgent and projects its framework-neutral events to SQLite/SSE. */
 @Service
 public class TutorAgentService {
 
-  private final Runner runner;
-  private final InMemorySessionService adkSessions;
-  private final SqliteRepository repository;
-  private final EventHub eventHub;
-  private final AppProperties properties;
-  private final ExecutorService executor;
-  private final ConcurrentHashMap<String, Boolean> activeSessions = new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<String, StringBuilder> responseText = new ConcurrentHashMap<>();
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
-  public TutorAgentService(
-          Runner runner,
-          InMemorySessionService adkSessions,
-          SqliteRepository repository,
-          EventHub eventHub,
-          AppProperties properties,
-          ExecutorService executor) {
-    this.runner = runner;
-    this.adkSessions = adkSessions;
-    this.repository = repository;
-    this.eventHub = eventHub;
-    this.properties = properties;
-    this.executor = executor;
-  }
+    private final ReactAgent tutorAgent;
+    private final TutorContextService context;
+    private final SqliteRepository repository;
+    private final EventHub eventHub;
+    private final ExecutorService executor;
+    private final ConcurrentHashMap<String, Boolean> activeSessions = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, StringBuilder> responseText = new ConcurrentHashMap<>();
 
-  public synchronized void ensureAdkSession(SessionRecord session) {
-    Session adkSession =
-            adkSessions
-                    .getSession(properties.appName(), session.userId(), session.id(), Optional.empty())
-                    .blockingGet();
-    if (adkSession == null) {
-      adkSession =
-              adkSessions
-                      .createSession(properties.appName(), session.userId(), Map.of(), session.id())
-                      .blockingGet();
-      for (MessageRecord message : repository.listMessages(session.id())) {
-        String author = "user".equals(message.role()) ? "user" : "tutor_agent";
-        adkSessions
-                .appendEvent(
-                        adkSession,
-                        Event.builder()
-                                .id(message.id())
-                                .invocationId("restored-" + message.id())
-                                .author(author)
-                                .content(
-                                        Content.builder()
-                                                .role("user".equals(author) ? "user" : "model")
-                                                .parts(Part.fromText(message.content()))
-                                                .build())
-                                .timestamp(message.createdAt().toEpochMilli())
-                                .build())
-                .blockingGet();
-      }
+    public TutorAgentService(
+            ReactAgent tutorAgent,
+            TutorContextService context,
+            SqliteRepository repository,
+            EventHub eventHub,
+            ExecutorService executor) {
+        this.tutorAgent = tutorAgent;
+        this.context = context;
+        this.repository = repository;
+        this.eventHub = eventHub;
+        this.executor = executor;
     }
-  }
 
-  public RunReceipt start(SessionRecord session, String content) {
-    ensureAdkSession(session);
-    String messageId = UUID.randomUUID().toString();
-    String runId = UUID.randomUUID().toString();
-    Instant now = Instant.now();
-    repository.insertMessage(new MessageRecord(messageId, session.id(), "user", content, now));
-    repository.insertRun(new RunRecord(runId, session.id(), "RUNNING", null, now, null));
-    activeSessions.put(session.id(), Boolean.TRUE);
-    executor.submit(() -> execute(session, runId, content));
-    return new RunReceipt(runId, messageId);
-  }
-
-  public boolean active(String sessionId) {
-    return activeSessions.containsKey(sessionId);
-  }
-
-  private void execute(SessionRecord session, String runId, String content) {
-    try {
-      Flowable<Event> events =
-              runner.runAsync(
-                      session.userId(),
-                      session.id(),
-                      Content.fromParts(Part.fromText(content)),
-                      RunConfig.builder()
-                              .streamingMode(RunConfig.StreamingMode.SSE)
-                              .toolExecutionMode(RunConfig.ToolExecutionMode.SEQUENTIAL)
-                              .build());
-      events.blockingSubscribe(
-              event -> persistEvent(session, runId, event),
-              error -> finishFailed(session.id(), runId, error),
-              () -> finishCompleted(session.id(), runId));
-    } catch (Throwable error) {
-      finishFailed(session.id(), runId, error);
+    /** SAA uses the durable message history as its session state; no in-memory session restore is needed. */
+    public void ensureSession(SessionRecord session) {
+        repository.findSession(session.id())
+                .orElseThrow(() -> new IllegalArgumentException("session not found: " + session.id()));
     }
-  }
 
-  private void persistEvent(SessionRecord session, String runId, Event event) {
-    PersistedEvent persisted = PersistedEvent.from(session.id(), runId, event);
-    repository.insertEvent(persisted);
-    eventHub.publish(persisted);
-    if (event.author() != null
-            && !"user".equals(event.author())
-            && event.functionCalls().isEmpty()
-            && event.functionResponses().isEmpty()) {
-      String text = textOf(event);
-      if (!text.isBlank()) {
-        responseText.computeIfAbsent(runId, ignored -> new StringBuilder()).append(text);
-      }
-      if (event.finalResponse()) {
+    public RunReceipt start(SessionRecord session, String content) {
+        ensureSession(session);
+        String messageId = UUID.randomUUID().toString();
+        String runId = UUID.randomUUID().toString();
+        Instant now = Instant.now();
+        repository.insertMessage(new MessageRecord(messageId, session.id(), "user", content, now));
+        repository.insertRun(new RunRecord(runId, session.id(), "RUNNING", null, now, null));
+        activeSessions.put(session.id(), Boolean.TRUE);
+        executor.submit(() -> execute(session, runId));
+        return new RunReceipt(runId, messageId);
+    }
+
+    public boolean active(String sessionId) {
+        return activeSessions.containsKey(sessionId);
+    }
+
+    private void execute(SessionRecord session, String runId) {
+        try {
+            List<Message> messages = new ArrayList<>();
+            messages.add(new SystemMessage(context.forSession(session.id())));
+            for (MessageRecord message : repository.listMessages(session.id())) {
+                messages.add("user".equals(message.role())
+                        ? new UserMessage(message.content())
+                        : new AssistantMessage(message.content()));
+            }
+            tutorAgent.streamMessages(
+                            messages,
+                            RunnableConfig.builder().threadId(session.id()).build())
+                    .doOnNext(message -> persistMessage(session, runId, message))
+                    .doOnComplete(() -> finishCompleted(session.id(), runId))
+                    .blockLast();
+        } catch (Throwable error) {
+            finishFailed(session.id(), runId, error);
+        }
+    }
+
+    private void persistMessage(SessionRecord session, String runId, Message message) {
+        Instant timestamp = Instant.now();
+        if (message instanceof AssistantMessage assistant) {
+            if (!assistant.getToolCalls().isEmpty()) {
+                publish(PersistedEvent.toolCall(
+                        session.id(), runId, "tutor_agent", assistant.getText(), toolCalls(assistant), timestamp));
+                return;
+            }
+            String text = assistant.getText() == null ? "" : assistant.getText();
+            if (!text.isBlank()) responseText.computeIfAbsent(runId, ignored -> new StringBuilder()).append(text);
+            publish(PersistedEvent.message(session.id(), runId, "tutor_agent", text, timestamp));
+            return;
+        }
+        if (message instanceof ToolResponseMessage tool) {
+            publish(PersistedEvent.toolResult(
+                    session.id(), runId, "tool", toolText(tool), toolResults(tool), timestamp));
+        }
+    }
+
+    private void publish(PersistedEvent event) {
+        repository.insertEvent(event);
+        eventHub.publish(event);
+    }
+
+    private String toolCalls(AssistantMessage assistant) {
+        return write(assistant.getToolCalls().stream().map(call -> {
+            Map<String, Object> value = new LinkedHashMap<>();
+            value.put("id", call.id());
+            value.put("name", call.name());
+            value.put("arguments", call.arguments());
+            return value;
+        }).toList());
+    }
+
+    private String toolResults(ToolResponseMessage message) {
+        return write(message.getResponses().stream().map(response -> {
+            Map<String, Object> value = new LinkedHashMap<>();
+            value.put("id", response.id());
+            value.put("name", response.name());
+            value.put("response", response.responseData());
+            return value;
+        }).toList());
+    }
+
+    private String toolText(ToolResponseMessage message) {
+        return message.getResponses().stream().map(ToolResponseMessage.ToolResponse::responseData)
+                .reduce("", (left, right) -> left + right);
+    }
+
+    private String write(Object value) {
+        try {
+            return MAPPER.writeValueAsString(value);
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to serialize Tutor tool event", error);
+        }
+    }
+
+    private void finishCompleted(String sessionId, String runId) {
         StringBuilder accumulated = responseText.remove(runId);
         String finalText = accumulated == null ? "" : accumulated.toString();
         if (!finalText.isBlank()) {
-          repository.insertMessage(
-                  new MessageRecord(event.id(), session.id(), "assistant", finalText, persisted.timestamp()));
+            repository.insertMessage(new MessageRecord(
+                    UUID.randomUUID().toString(), sessionId, "assistant", finalText, Instant.now()));
         }
-      }
+        publish(PersistedEvent.complete(sessionId, runId, Instant.now()));
+        repository.finishRun(runId, "COMPLETED", null, Instant.now());
+        activeSessions.remove(sessionId);
     }
-  }
 
-  private String textOf(Event event) {
-    return event.content()
-            .flatMap(Content::parts)
-            .orElseGet(java.util.List::of)
-            .stream()
-            .flatMap(part -> part.text().stream())
-            .collect(Collectors.joining());
-  }
+    private void finishFailed(String sessionId, String runId, Throwable error) {
+        PersistedEvent persisted = PersistedEvent.error(sessionId, runId, error);
+        publish(persisted);
+        repository.finishRun(runId, "FAILED", persisted.content(), Instant.now());
+        responseText.remove(runId);
+        activeSessions.remove(sessionId);
+    }
 
-  private void finishCompleted(String sessionId, String runId) {
-    repository.finishRun(runId, "COMPLETED", null, Instant.now());
-    responseText.remove(runId);
-    activeSessions.remove(sessionId);
-  }
-
-  private void finishFailed(String sessionId, String runId, Throwable error) {
-    PersistedEvent persisted = PersistedEvent.error(sessionId, runId, error);
-    repository.insertEvent(persisted);
-    eventHub.publish(persisted);
-    repository.finishRun(runId, "FAILED", persisted.content(), Instant.now());
-    responseText.remove(runId);
-    activeSessions.remove(sessionId);
-  }
-
-  /**
-   * 启动异步 Agent 运行后交给 HTTP 层的回执。
-   *
-   * @param runId 运行标识，用于查询运行状态和事件流
-   * @param messageId 已写入数据库的用户消息标识
-   */
-  public record RunReceipt(String runId, String messageId) {
-  }
+    public record RunReceipt(String runId, String messageId) {
+    }
 }

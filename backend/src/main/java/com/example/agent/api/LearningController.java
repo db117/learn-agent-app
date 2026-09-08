@@ -10,13 +10,12 @@ import com.example.agent.learning.assessment.QuestionAnswer;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.LearningLanguage;
-import com.example.agent.learning.catalog.LearningSkill;
+import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.journey.LearnerProfile;
-import com.example.agent.learning.journey.LearnerSkill;
+import com.example.agent.learning.journey.LearnerLearnUnit;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
-import com.example.agent.learning.lesson.LearningLesson;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
@@ -24,7 +23,7 @@ import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.persistence.SessionRecord;
 import com.example.agent.persistence.SqliteRepository;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.google.adk.JsonBaseModel;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -49,6 +48,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/learning")
 public class LearningController {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final LearningRepository learning;
     private final CurriculumService curriculum;
@@ -84,11 +85,11 @@ public class LearningController {
         return curriculum.listLanguages();
     }
 
-    /** 查询当前 Journey 专属课程的技能目录。 */
-    @GetMapping("/journeys/{id}/skills")
-    public List<LearningSkill> journeySkills(@PathVariable String id) {
+    /** 查询当前 Journey 专属的 LearnUnit 目录。 */
+    @GetMapping("/journeys/{id}/learn-units")
+    public List<LearnUnit> journeyLearnUnits(@PathVariable String id) {
         journeys.get(id);
-        return learning.listSkillsForJourney(id);
+        return learning.listLearnUnitsForJourney(id);
     }
 
     /** 创建 Journey 和学习者画像。 */
@@ -105,12 +106,12 @@ public class LearningController {
         return journeys.list(properties.userId());
     }
 
-    /** 查询 Journey、画像、完整 Path 和技能状态。 */
+    /** 查询 Journey、画像、完整 Path 和 LearnUnit 状态。 */
     @GetMapping("/journeys/{id}")
     public JourneyDetailResponse journey(@PathVariable String id) {
         LearningJourney journey = journeys.get(id);
         return new JourneyDetailResponse(
-                journey, learning.findProfile(id).orElse(null), learning.listPath(id), learning.listLearnerSkills(id));
+                journey, learning.findProfile(id).orElse(null), learning.listPath(id), learning.listLearnerLearnUnits(id));
     }
 
     /** 查询 Journey 的完整学习路径，包括历史节点。 */
@@ -120,13 +121,13 @@ public class LearningController {
         return learning.listPath(id);
     }
 
-    /** 查询当前唯一可操作的技能节点。 */
+    /** 查询当前唯一可操作的 LearnUnit 节点。 */
     @GetMapping("/journeys/{id}/current")
-    public SkillResponse current(@PathVariable String id) {
+    public LearnUnitResponse current(@PathVariable String id) {
         LearningJourney journey = journeys.get(id);
-        String skillCode = journey.currentLearningSkillId();
-        if (skillCode == null) throw new IllegalStateException("journey has no current skill");
-        return skill(id, skillCode);
+        String learnUnitCode = journey.currentLearnUnitCode();
+        if (learnUnitCode == null) throw new IllegalStateException("journey has no current LearnUnit");
+        return learnUnit(id, learnUnitCode);
     }
 
     /** 归档 Journey，使其不再作为进行中的学习旅程。 */
@@ -165,70 +166,71 @@ public class LearningController {
                 assessmentId, new QuestionAnswer(request.questionId(), request.selectedOptionIds(), request.submittedCode())));
     }
 
-    /** 提交评估，计算分数并更新技能进度。 */
+    /** 提交评估，计算分数并更新 LearnUnit 进度。 */
     @PostMapping("/assessments/{assessmentId}/submit")
     public AssessmentResultResponse submit(@PathVariable String assessmentId) {
         return AssessmentResultResponse.from(assessments.submit(assessmentId));
     }
 
     /** 将当前 Path 节点置为学习中。 */
-    @PostMapping("/journeys/{journeyId}/skills/{skillCode}/start")
-    public SkillResponse startSkill(@PathVariable String journeyId, @PathVariable String skillCode) {
-        progress.startSkill(journeyId, skillCode);
-        return skill(journeyId, skillCode);
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/start")
+    public LearnUnitResponse startLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        progress.startLearnUnit(journeyId, learnUnitCode);
+        return learnUnit(journeyId, learnUnitCode);
     }
 
-    /** 创建或恢复指定技能的固定题集评估。 */
-    @PostMapping("/journeys/{journeyId}/skills/{skillCode}/assessment")
-    public AssessmentResponse skillAssessment(@PathVariable String journeyId, @PathVariable String skillCode) {
-        return AssessmentResponse.from(assessments.createSkillAssessment(journeyId, skillCode));
+    /** 创建或恢复指定 LearnUnit 的固定题集评估。 */
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/assessment")
+    public AssessmentResponse learnUnitAssessment(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        return AssessmentResponse.from(assessments.createLearnUnitAssessment(journeyId, learnUnitCode));
     }
 
     /** 跳过当前 Path 节点，并保留跳过历史。 */
-    @PostMapping("/journeys/{journeyId}/skills/{skillCode}/skip")
-    public SkillResponse skipSkill(@PathVariable String journeyId, @PathVariable String skillCode) {
-        progress.skipSkill(journeyId, skillCode);
-        return skill(journeyId, skillCode);
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/skip")
+    public LearnUnitResponse skipLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        progress.skipLearnUnit(journeyId, learnUnitCode);
+        return learnUnit(journeyId, learnUnitCode);
     }
 
-    /** 查询技能目录、Lesson、进度和历史评估。 */
-    @GetMapping("/journeys/{journeyId}/skills/{skillCode}")
-    public SkillResponse skill(
-            @PathVariable String journeyId, @PathVariable String skillCode) {
+    /** 查询 LearnUnit 内容、进度和历史评估。 */
+    @GetMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}")
+    public LearnUnitResponse learnUnit(
+            @PathVariable String journeyId, @PathVariable String learnUnitCode) {
         LearningJourney journey = journeys.get(journeyId);
-        LearningSkill skill = learning.listSkillsForJourney(journeyId).stream()
-                .filter(value -> value.code().equals(skillCode))
+        LearnUnit learnUnit = learning.listLearnUnitsForJourney(journeyId).stream()
+                .filter(value -> value.code().equals(learnUnitCode))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("skill not found: " + skillCode));
-        return new SkillResponse(
-                journeyId, skill, learning.findLearnerSkill(journeyId, skillCode).orElse(null),
-                learning.findPathItem(journeyId, skillCode).orElse(null), LearningLesson.from(skill),
-                learning.listAttemptsForSkill(journeyId, skillCode));
+                .orElseThrow(() -> new IllegalArgumentException("LearnUnit not found: " + learnUnitCode));
+        return new LearnUnitResponse(
+                journeyId, learnUnit, learning.findLearnerLearnUnit(journeyId, learnUnitCode).orElse(null),
+                learning.findPathItem(journeyId, learnUnitCode).orElse(null),
+                learning.listAttemptsForLearnUnit(journeyId, learnUnitCode),
+                learning.listQuestionAttemptsForLearnUnit(journeyId, learnUnitCode));
     }
 
-    /** 查询指定技能的全部评估尝试。 */
-    @GetMapping("/journeys/{journeyId}/skills/{skillCode}/attempts")
-    public List<AssessmentAttempt> attempts(@PathVariable String journeyId, @PathVariable String skillCode) {
+    /** 查询指定 LearnUnit 的全部评估尝试。 */
+    @GetMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/attempts")
+    public List<AssessmentAttempt> attempts(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
         journeys.get(journeyId);
-        return learning.listAttemptsForSkill(journeyId, skillCode);
+        return learning.listAttemptsForLearnUnit(journeyId, learnUnitCode);
     }
 
-    /** 为 Journey 技能创建或复用 Tutor Session。 */
-    @PostMapping("/journeys/{journeyId}/skills/{skillCode}/tutor")
-    public TutorSessionResponse tutorSession(@PathVariable String journeyId, @PathVariable String skillCode) {
-        skill(journeyId, skillCode);
-        String sessionId = learning.findTutorSessionId(journeyId, skillCode).orElse(null);
+    /** 为 Journey LearnUnit 创建或复用 Tutor Session。 */
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/tutor")
+    public TutorSessionResponse tutorSession(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        learnUnit(journeyId, learnUnitCode);
+        String sessionId = learning.findTutorSessionId(journeyId, learnUnitCode).orElse(null);
         if (sessionId == null) {
             Instant now = Instant.now();
             SessionRecord session = new SessionRecord(
-                    UUID.randomUUID().toString(), properties.userId(), "Tutor · " + skillCode, now, now);
+                    UUID.randomUUID().toString(), properties.userId(), "Tutor · " + learnUnitCode, now, now);
             sessions.insertSession(session);
-            tutor.ensureAdkSession(session);
-            learning.linkTutorSession(journeyId, skillCode, session.id());
+            tutor.ensureSession(session);
+            learning.linkTutorSession(journeyId, learnUnitCode, session.id());
             sessionId = session.id();
         }
         SessionRecord session = sessions.findSession(sessionId).orElseThrow();
-        return new TutorSessionResponse(SessionResponse.from(session), journeyId, skillCode);
+        return new TutorSessionResponse(SessionResponse.from(session), journeyId, learnUnitCode);
     }
 
     /** 将 Coding 评分失败转换为 422，保留可重试的答案草稿。 */
@@ -282,37 +284,37 @@ public class LearningController {
     }
 
     /**
-     * Journey 详情及其可恢复的 Profile、Path 和技能状态。
+     * Journey 详情及其可恢复的 Profile、Path 和 LearnUnit 状态。
      *
      * @param journey Journey 基本信息
      * @param profile 学习者背景
      * @param path 完整 Path，包括已完成和已跳过历史
-     * @param learnerSkills 各技能当前状态
+     * @param learnerLearnUnits 各 LearnUnit 当前状态
      */
     public record JourneyDetailResponse(
             LearningJourney journey,
             LearnerProfile profile,
             List<LearningPathItem> path,
-            List<LearnerSkill> learnerSkills) {
+            List<LearnerLearnUnit> learnerLearnUnits) {
     }
 
     /**
-     * 技能页面所需的 Lesson、Path 状态和历史评估。
+     * LearnUnit 页面所需的教学内容、Path 状态和历史评估。
      *
      * @param journeyId 所属 Journey
-     * @param skill 技能目录信息
-     * @param learnerSkill 学习者对该技能的状态
-     * @param pathItem 该技能在 Path 中的节点
-     * @param lesson 只读 Lesson 展示内容
-     * @param attempts 该技能的历史评估尝试
+     * @param learnUnit Journey 专属的教学内容
+     * @param learnerLearnUnit 学习者对该 LearnUnit 的状态
+     * @param pathItem 该 LearnUnit 在 Path 中的节点
+     * @param attempts 该 LearnUnit 的历史评估尝试
+     * @param questionAttempts 已完成 Attempt 的逐题反馈
      */
-    public record SkillResponse(
+    public record LearnUnitResponse(
             String journeyId,
-            LearningSkill skill,
-            LearnerSkill learnerSkill,
+            LearnUnit learnUnit,
+            LearnerLearnUnit learnerLearnUnit,
             LearningPathItem pathItem,
-            LearningLesson lesson,
-            List<AssessmentAttempt> attempts) {
+            List<AssessmentAttempt> attempts,
+            List<QuestionAttempt> questionAttempts) {
     }
 
     /**
@@ -342,7 +344,7 @@ public class LearningController {
      * 对外公开的题目 DTO，不泄露选择题正确答案。
      *
      * @param id 题目编码
-     * @param skillCode 所属技能
+     * @param learnUnitCode 所属 LearnUnit
      * @param type 题型
      * @param difficulty 难度
      * @param prompt 题干
@@ -355,7 +357,7 @@ public class LearningController {
      */
     public record QuestionResponse(
             String id,
-            String skillCode,
+            String learnUnitCode,
             QuestionType type,
             int difficulty,
             String prompt,
@@ -368,7 +370,7 @@ public class LearningController {
 
         static QuestionResponse from(Question question) {
             return new QuestionResponse(
-                    question.id(), question.skillCode(), question.type(), question.difficulty(), question.prompt(),
+                    question.id(), question.learnUnitCode(), question.type(), question.difficulty(), question.prompt(),
                     question.points(), publicConfig(question.configJson()), question.rubricJson(), question.language(),
                     question.starterCode(), question.referenceConceptsJson());
         }
@@ -376,7 +378,7 @@ public class LearningController {
         private static String publicConfig(String configJson) {
             if (configJson == null) return null;
             try {
-                JsonNode config = JsonBaseModel.getMapper().readTree(configJson);
+                JsonNode config = MAPPER.readTree(configJson);
                 if (config.isObject()) ((com.fasterxml.jackson.databind.node.ObjectNode) config).remove("correctOptionIds");
                 return config.toString();
             } catch (Exception error) {
@@ -386,13 +388,13 @@ public class LearningController {
     }
 
     /**
-     * Assessment 提交结果，返回总体分数和诊断分技能结果。
+     * Assessment 提交结果，返回总体分数和诊断分 LearnUnit 结果。
      *
      * @param assessment 已完成的 Assessment
      * @param attempt 本次 Attempt
      * @param score 总分摘要
      * @param passed 是否通过
-     * @param skillResults Diagnostic 的分技能结果
+     * @param learnUnitResults Diagnostic 的分 LearnUnit 结果
      * @param questionAttempts 本次逐题评分结果
      */
     public record AssessmentResultResponse(
@@ -400,24 +402,24 @@ public class LearningController {
             AssessmentAttempt attempt,
             AssessmentScore score,
             boolean passed,
-            List<AssessmentService.DiagnosticSkillResult> skillResults,
+            List<AssessmentService.DiagnosticLearnUnitResult> learnUnitResults,
             List<QuestionAttempt> questionAttempts) {
 
         static AssessmentResultResponse from(AssessmentService.AssessmentSubmission submission) {
             return new AssessmentResultResponse(
                     submission.assessment(), submission.attempt(), submission.score(), submission.passed(),
-                    submission.skillResults(), submission.questionAttempts());
+                    submission.learnUnitResults(), submission.questionAttempts());
         }
     }
 
     /**
-     * Learning 技能与既有 Tutor Session 的关联响应。
+     * Learning LearnUnit 与既有 Tutor Session 的关联响应。
      *
      * @param session 可继续使用的 Phase 1 Session
      * @param journeyId Journey 编码
-     * @param skillCode 当前技能编码
+     * @param learnUnitCode 当前 LearnUnit 编码
      */
-    public record TutorSessionResponse(SessionResponse session, String journeyId, String skillCode) {
+    public record TutorSessionResponse(SessionResponse session, String journeyId, String learnUnitCode) {
     }
 
 }

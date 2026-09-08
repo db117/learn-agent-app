@@ -8,10 +8,10 @@ import {
   type BackendHealth,
   type CreateJourneyInput,
   type JourneyDetail,
-  type LearningSkill,
+  type LearnUnit,
   type Message,
   type SessionDetail,
-  type SkillResponse,
+  type LearnUnitResponse,
 } from "./lib/api";
 
 type BackendStatus = { status: string; detail?: string };
@@ -68,8 +68,8 @@ function firstUnanswered(response: AssessmentResponse) {
   return index < 0 ? 0 : index;
 }
 
-function skillLabel(skills: LearningSkill[], code: string) {
-  return skills.find((skill) => skill.code === code)?.name ?? code.split(".").pop() ?? code;
+function learnUnitLabel(learnUnits: LearnUnit[], code: string) {
+  return learnUnits.find((learnUnit) => learnUnit.code === code)?.name ?? code.split(".").pop() ?? code;
 }
 
 function statusLabel(status: string) {
@@ -79,9 +79,9 @@ function statusLabel(status: string) {
 export default function App() {
   const [health, setHealth] = useState<BackendHealth | null>(null);
   const [backend, setBackend] = useState<BackendStatus>({status: "checking"});
-  const [skills, setSkills] = useState<LearningSkill[]>([]);
+  const [learnUnits, setLearnUnits] = useState<LearnUnit[]>([]);
   const [journey, setJourney] = useState<JourneyDetail | null>(null);
-  const [skill, setSkill] = useState<SkillResponse | null>(null);
+  const [learnUnit, setLearnUnit] = useState<LearnUnitResponse | null>(null);
   const [assessment, setAssessment] = useState<AssessmentResponse | null>(null);
   const [assessmentResult, setAssessmentResult] = useState<AssessmentResultResponse | null>(null);
   const [answers, setAnswers] = useState<Record<string, AnswerDraft>>({});
@@ -126,8 +126,8 @@ export default function App() {
           setJourney(detail);
           if (detail.path.length > 0) {
             setView("dashboard");
-            if (detail.journey.currentLearningSkillId) {
-              setSkill(await api.skill(detail.journey.id, detail.journey.currentLearningSkillId));
+            if (detail.journey.currentLearnUnitCode) {
+              setLearnUnit(await api.learnUnit(detail.journey.id, detail.journey.currentLearnUnitCode));
             }
           }
         }
@@ -151,7 +151,7 @@ export default function App() {
 
   useEffect(() => {
     if (!journey?.journey.id) return;
-    void api.journeySkills(journey.journey.id).then(setSkills).catch(() => undefined);
+    void api.journeyLearnUnits(journey.journey.id).then(setLearnUnits).catch(() => undefined);
   }, [journey?.journey.id]);
 
   useEffect(() => {
@@ -165,7 +165,7 @@ export default function App() {
     source.onmessage = (event) => {
       const next = JSON.parse(event.data) as AgentEvent;
       setEvents((current) => current.some((item) => item.id === next.id) ? current : [...current, next]);
-      if (next.eventType === "message" && next.author !== "user") {
+      if (next.eventType === "complete" || (next.eventType === "message" && next.author !== "user")) {
         void api.session(tutor.id).then(setTutor).catch(() => undefined);
       }
     };
@@ -179,10 +179,10 @@ export default function App() {
   async function refreshJourney(id: string) {
     const detail = await api.journey(id);
     setJourney(detail);
-    if (detail.journey.currentLearningSkillId) {
-      setSkill(await api.skill(id, detail.journey.currentLearningSkillId));
+    if (detail.journey.currentLearnUnitCode) {
+      setLearnUnit(await api.learnUnit(id, detail.journey.currentLearnUnitCode));
     } else {
-      setSkill(null);
+      setLearnUnit(null);
     }
     return detail;
   }
@@ -285,51 +285,51 @@ export default function App() {
     if (await saveCurrentAnswer()) setQuestionIndex((current) => current - 1);
   }
 
-  async function openSkill(code: string) {
+  async function openLearnUnit(code: string) {
     if (!journeyId) return;
     setBusy(true);
     setError(null);
     try {
-      const opened = await api.startSkill(journeyId, code);
-      setSkill(opened);
+      const opened = await api.startLearnUnit(journeyId, code);
+      setLearnUnit(opened);
       setTutor(null);
       await refreshJourney(journeyId);
       setView("dashboard");
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to open skill"));
+      setError(errorMessage(cause, "Unable to open LearnUnit"));
     } finally {
       setBusy(false);
     }
   }
 
-  async function startSkillAssessment() {
-    if (!journeyId || !skill) return;
+  async function startLearnUnitAssessment() {
+    if (!journeyId || !learnUnit) return;
     setBusy(true);
     setError(null);
     try {
-      const created = await api.skillAssessment(journeyId, skill.skill.code);
+      const created = await api.learnUnitAssessment(journeyId, learnUnit.learnUnit.code);
       const started = created.openAttempt ? created : await api.startAssessment(created.assessment.id);
       hydrateAssessment(started);
       setAssessmentResult(null);
       setQuestionIndex(firstUnanswered(started));
       setView("assessment");
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to start skill assessment"));
+      setError(errorMessage(cause, "Unable to start LearnUnit assessment"));
     } finally {
       setBusy(false);
     }
   }
 
-  async function skipCurrentSkill() {
-    if (!journeyId || !skill || !window.confirm("Skip this skill? It will remain in your history and will not count as mastered.")) return;
+  async function skipCurrentLearnUnit() {
+    if (!journeyId || !learnUnit || !window.confirm("Skip this LearnUnit? It will remain in your history and will not count as mastered.")) return;
     setBusy(true);
     setError(null);
     try {
       setTutor(null);
-      await api.skipSkill(journeyId, skill.skill.code);
+      await api.skipLearnUnit(journeyId, learnUnit.learnUnit.code);
       await refreshJourney(journeyId);
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to skip skill"));
+      setError(errorMessage(cause, "Unable to skip LearnUnit"));
     } finally {
       setBusy(false);
     }
@@ -349,11 +349,11 @@ export default function App() {
   }
 
   async function openTutor() {
-    if (!journeyId || !skill) return;
+    if (!journeyId || !learnUnit) return;
     setBusy(true);
     setError(null);
     try {
-      const linked = await api.tutor(journeyId, skill.skill.code);
+      const linked = await api.tutor(journeyId, learnUnit.learnUnit.code);
       setTutor(await api.session(linked.session.id));
     } catch (cause) {
       setError(errorMessage(cause, "Unable to open tutor"));
@@ -384,7 +384,7 @@ export default function App() {
 
   function newJourney() {
     setJourney(null);
-    setSkill(null);
+    setLearnUnit(null);
     setAssessment(null);
     setAssessmentResult(null);
     setTutor(null);
@@ -397,7 +397,7 @@ export default function App() {
         <section className="onboarding panel">
           <div className="section-kicker">RESUME JOURNEY</div>
           <h2>{journey.journey.goal}</h2>
-          <p className="lead">你的 {journey.journey.languageCode} 学习 Journey 已保存。完成一次诊断后，系统会按技能前置关系生成路径。</p>
+          <p className="lead">你的 {journey.journey.languageCode} 学习 Journey 已保存。完成一次诊断后，系统会按 LearnUnit 前置关系生成路径。</p>
           <div className="resume-meta">
             <span className="status-pill">{statusLabel(journey.journey.status)}</span>
             <span>{journey.profile?.learningGoal || "尚未开始诊断"}</span>
@@ -413,7 +413,7 @@ export default function App() {
       <section className="onboarding panel">
         <div className="section-kicker">LEARNING JOURNEY · PHASE 2</div>
         <h2>从目标开始，走一条真正属于你的学习路径。</h2>
-        <p className="lead">先提出你想学习的语言并填写背景。Agent 会按目标生成课程、Lesson 和题目；诊断题集会固定保存，评分和路径由后端确定性规则负责。</p>
+        <p className="lead">先提出你想学习的语言并填写背景。Agent 会按目标生成 LearnUnit 教学内容和题目；诊断题集会固定保存，评分和路径由后端确定性规则负责。</p>
         <form onSubmit={(event) => void createJourney(event)}>
           <div className="form-grid">
             <label>学习语言
@@ -448,14 +448,14 @@ export default function App() {
       <section className="assessment panel">
         <div className="assessment-header">
           <div>
-            <div className="section-kicker">{diagnostic ? "DIAGNOSTIC" : "SKILL CHECK"}</div>
-            <h2>{diagnostic ? "了解你的起点" : skill?.skill.name ?? "技能评估"}</h2>
+            <div className="section-kicker">{diagnostic ? "DIAGNOSTIC" : "LEARN UNIT CHECK"}</div>
+            <h2>{diagnostic ? "了解你的起点" : learnUnit?.learnUnit.name ?? "LearnUnit 评估"}</h2>
           </div>
           <span className="muted">{questionIndex + 1} / {assessment.questions.length}</span>
         </div>
         <div className="progress-bar"><span style={{width: `${((questionIndex + 1) / assessment.questions.length) * 100}%`}} /></div>
         <div className="question-card">
-          <div className="question-meta"><span>{currentQuestion.type === "CODING" ? "CODING" : "MULTIPLE CHOICE"}</span><span>{skillLabel(skills, currentQuestion.skillCode)} · {currentQuestion.points} pts</span></div>
+          <div className="question-meta"><span>{currentQuestion.type === "CODING" ? "CODING" : "MULTIPLE CHOICE"}</span><span>{learnUnitLabel(learnUnits, currentQuestion.learnUnitCode)} · {currentQuestion.points} pts</span></div>
           <h3>{currentQuestion.prompt}</h3>
           {currentQuestion.type === "MULTIPLE_CHOICE" && (
             <div className="options">
@@ -511,34 +511,39 @@ export default function App() {
     return (
       <section className="result panel">
         <div className="section-kicker">ASSESSMENT COMPLETE</div>
-        <h2>{assessmentResult.assessment.type === "DIAGNOSTIC" ? "你的学习路径已经准备好了" : "技能评估完成"}</h2>
+        <h2>{assessmentResult.assessment.type === "DIAGNOSTIC" ? "你的学习路径已经准备好了" : "LearnUnit 评估完成"}</h2>
         <div className="score-summary">
           <strong>{assessmentResult.score.totalScore}</strong><span>/ 100</span>
           <p className={assessmentResult.passed ? "success" : "warning"}>{assessmentResult.passed ? "通过" : "需要继续练习"}</p>
         </div>
-        {assessmentResult.skillResults.length > 0 && (
+        {assessmentResult.learnUnitResults.length > 0 && (
           <div className="result-list">
-            {assessmentResult.skillResults.map((item) => (
-              <div className="result-row" key={item.skillCode}>
-                <span>{skillLabel(skills, item.skillCode)}</span>
+            {assessmentResult.learnUnitResults.map((item) => (
+              <div className="result-row" key={item.learnUnitCode}>
+                <span>{learnUnitLabel(learnUnits, item.learnUnitCode)}</span>
                 <span>{item.score.totalScore} · {item.passed ? "已掌握" : "进入路径"}</span>
               </div>
             ))}
           </div>
         )}
-        <button className="primary" onClick={() => void continueToDashboard()} disabled={busy}>{busy ? "加载路径…" : "进入学习路径"}</button>
+        <div className="button-row result-actions">
+          <button className="primary" onClick={() => void continueToDashboard()} disabled={busy}>{busy ? "加载路径…" : "进入学习路径"}</button>
+          {!assessmentResult.passed && assessmentResult.assessment.type === "LEARN_UNIT" && (
+            <button className="secondary" onClick={() => void startLearnUnitAssessment()} disabled={busy}>Retry LearnUnit</button>
+          )}
+        </div>
       </section>
     );
   }
 
   function renderTutorPanel() {
-    if (!skill) return <aside className="tutor panel"><div className="panel-title">Tutor</div><p className="empty">选择当前技能后，Tutor 会在这里出现。</p></aside>;
+    if (!learnUnit) return <aside className="tutor panel"><div className="panel-title">Tutor</div><p className="empty">选择当前 LearnUnit 后，Tutor 会在这里出现。</p></aside>;
     return (
       <aside className="tutor panel">
         <div className="panel-title"><span>Tutor</span><span className="muted">{tutor ? "linked" : "ready"}</span></div>
         {!tutor ? (
           <div className="tutor-empty">
-            <p>围绕当前技能提问。Tutor 会读取你的目标、掌握度和最近答题反馈。</p>
+            <p>围绕当前 LearnUnit 提问。Tutor 会读取你的目标、掌握度和最近答题反馈。</p>
             <button className="secondary wide" onClick={() => void openTutor()} disabled={busy}>打开 Tutor</button>
           </div>
         ) : (
@@ -548,7 +553,7 @@ export default function App() {
                 <span className="message-role">{message.role === "user" ? "你" : "Tutor"}</span>
                 <p>{message.content}</p>
               </article>)}
-              {!tutor.messages.length && <p className="empty">问一个关于当前技能的问题。</p>}
+              {!tutor.messages.length && <p className="empty">问一个关于当前 LearnUnit 的问题。</p>}
             </div>
             <form className="composer" onSubmit={(event) => void sendTutorMessage(event)}>
               <textarea value={tutorInput} onChange={(event) => setTutorInput(event.target.value)} placeholder="例如：如何理解这个概念？" rows={3} />
@@ -566,7 +571,7 @@ export default function App() {
   function renderDashboard() {
     const path = journey?.path ?? [];
     const completed = path.filter((item) => item.status === "COMPLETED" || item.status === "SKIPPED").length;
-    const current = skill;
+    const current = learnUnit;
     return (
       <section className="journey-grid">
         <aside className="path panel">
@@ -574,9 +579,9 @@ export default function App() {
           <div className="path-list">
             {path.map((item) => {
               const actionable = item.status === "CURRENT";
-              return <button className={`path-item ${item.status.toLowerCase()}`} key={item.skillCode} onClick={() => actionable && void openSkill(item.skillCode)} disabled={!actionable || busy}>
+              return <button className={`path-item ${item.status.toLowerCase()}`} key={item.learnUnitCode} onClick={() => actionable && void openLearnUnit(item.learnUnitCode)} disabled={!actionable || busy}>
                 <span className="path-number">{item.sequence}</span>
-                <span><strong>{skillLabel(skills, item.skillCode)}</strong><small>{statusLabel(item.status)}</small></span>
+                <span><strong>{learnUnitLabel(learnUnits, item.learnUnitCode)}</strong><small>{statusLabel(item.status)}</small></span>
                 <span className="path-mark">{item.status === "COMPLETED" ? "✓" : item.status === "SKIPPED" ? "–" : item.status === "CURRENT" ? "→" : "·"}</span>
               </button>;
             })}
@@ -585,19 +590,27 @@ export default function App() {
         </aside>
         <section className="lesson panel">
           {!current ? (
-            <div className="empty">{journey?.journey.status === "COMPLETED" ? "恭喜，你已完成这条学习路径。" : "正在加载当前技能…"}</div>
+            <div className="empty">{journey?.journey.status === "COMPLETED" ? "恭喜，你已完成这条学习路径。" : "正在加载当前 LearnUnit…"}</div>
           ) : (
             <>
-              <div className="lesson-header"><div><div className="section-kicker">CURRENT SKILL</div><h2>{current.lesson.title}</h2></div><span className="status-pill">{statusLabel(current.pathItem?.status ?? "CURRENT")}</span></div>
-              <p className="lead">{current.lesson.introContent}</p>
-              <div className="lesson-columns">
-                <div><h3>学习目标</h3><ul>{current.lesson.learningObjectives.map((item) => <li key={item}>{item}</li>)}</ul></div>
-                <div><h3>关键概念</h3><div className="tag-list">{current.lesson.keyConcepts.map((item) => <span key={item}>{item}</span>)}</div></div>
+              <div className="lesson-header"><div><div className="section-kicker">CURRENT LEARN UNIT</div><h2>{current.learnUnit.name}</h2></div><span className="status-pill">{statusLabel(current.pathItem?.status ?? "CURRENT")}</span></div>
+              <p className="lead">{current.learnUnit.lessonIntro}</p>
+              <div className="lesson-stats">
+                <span>掌握度 {current.learnerLearnUnit?.masteryScore ?? 0}</span>
+                <span>最佳成绩 {current.learnerLearnUnit?.bestAssessmentScore ?? 0}</span>
+                <span>评估次数 {current.learnerLearnUnit?.attemptCount ?? 0}</span>
               </div>
-              <div className="example-block"><h3>Example</h3>{current.lesson.examples.map((item) => <p key={item}>{item}</p>)}</div>
+              <div className="lesson-columns">
+                <div><h3>学习目标</h3><ul>{current.learnUnit.learningObjectives.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                <div><h3>关键概念</h3><div className="tag-list">{current.learnUnit.keyConcepts.map((item) => <span key={item}>{item}</span>)}</div></div>
+              </div>
+              <div className="example-block"><h3>Example</h3>{current.learnUnit.examples.map((item) => <p key={item}>{item}</p>)}</div>
+              {current.questionAttempts.filter((item) => item.feedback?.trim()).slice(0, 3).length > 0 && (
+                <div className="feedback-block"><h3>最近反馈</h3>{current.questionAttempts.filter((item) => item.feedback?.trim()).slice(0, 3).map((item) => <p key={`${item.assessmentAttemptId}-${item.questionId}`}>{item.feedback}</p>)}</div>
+              )}
               <div className="button-row">
-                <button className="primary" onClick={() => void startSkillAssessment()} disabled={busy || current.pathItem?.status !== "CURRENT"}>开始技能评估</button>
-                <button className="secondary" onClick={() => void skipCurrentSkill()} disabled={busy || current.pathItem?.status !== "CURRENT"}>跳过</button>
+                <button className="primary" onClick={() => void startLearnUnitAssessment()} disabled={busy || current.pathItem?.status !== "CURRENT"}>开始 LearnUnit 评估</button>
+                <button className="secondary" onClick={() => void skipCurrentLearnUnit()} disabled={busy || current.pathItem?.status !== "CURRENT"}>跳过</button>
               </div>
             </>
           )}

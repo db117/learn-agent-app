@@ -31,9 +31,9 @@ class CurriculumServiceTest {
     @Test
     void generatesIndependentCurriculumForEachJourney() {
         LearningLanguage language = language("python");
-        LearningSkill skill = skill("python.basics", "python");
+        LearnUnit learnUnit = learnUnit("python.basics", "python");
         CurriculumGenerator.GeneratedCurriculum generated = new CurriculumGenerator.GeneratedCurriculum(
-                List.of(language), List.of(skill));
+                List.of(language), List.of(learnUnit));
         when(generator.generate("python", "learn backend APIs")).thenReturn(generated);
 
         CurriculumGenerator.GeneratedCurriculum first = service.generateForJourney(
@@ -42,15 +42,15 @@ class CurriculumServiceTest {
                 "journey-2", "python", "learn backend APIs");
 
         assertEquals(language, first.languages().get(0));
-        assertEquals("journey-1.python.basics", first.skills().get(0).code());
-        assertEquals("journey-2.python.basics", second.skills().get(0).code());
-        assertNotEquals(first.skills().get(0).code(), second.skills().get(0).code());
+        assertEquals("journey-1.python.basics", first.learnUnits().get(0).code());
+        assertEquals("journey-2.python.basics", second.learnUnits().get(0).code());
+        assertNotEquals(first.learnUnits().get(0).code(), second.learnUnits().get(0).code());
         verify(generator, times(2)).generate("python", "learn backend APIs");
 
         service.persistLanguages(first);
         service.persistJourneyCurriculum("journey-1", first);
         verify(repository).insertGeneratedCatalog(List.of(language), List.of());
-        verify(repository).insertGeneratedCatalogForJourney("journey-1", List.of(language), first.skills());
+        verify(repository).insertGeneratedCatalogForJourney("journey-1", List.of(language), first.learnUnits());
     }
 
     @Test
@@ -66,9 +66,9 @@ class CurriculumServiceTest {
         return new LearningLanguage("language-" + code, code, code, "description", true);
     }
 
-    private LearningSkill skill(String code, String languageCode) {
-        return new LearningSkill(
-                "skill-" + code, languageCode, code, code, "description", 1, List.of(),
+    private LearnUnit learnUnit(String code, String languageCode) {
+        return new LearnUnit(
+                "learnUnit-" + code, languageCode, code, code, "description", 1, List.of(),
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), true);
     }
 }

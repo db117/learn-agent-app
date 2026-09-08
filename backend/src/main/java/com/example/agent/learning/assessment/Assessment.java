@@ -10,8 +10,8 @@ import java.time.Instant;
  *
  * @param id Assessment 主键
  * @param journeyId 所属 Journey
- * @param skillCode 技能评估对应的技能；诊断评估时为空
- * @param type 诊断评估或技能评估
+     * @param learnUnitCode 评估对应的 LearnUnit；诊断评估时为空
+     * @param type 诊断评估或 LearnUnit 评估
  * @param status 当前评估状态
  * @param createdAt 创建时间
  * @param completedAt 完成时间；未完成时为空
@@ -19,7 +19,7 @@ import java.time.Instant;
 public record Assessment(
         String id,
         String journeyId,
-        String skillCode,
+        String learnUnitCode,
         AssessmentType type,
         AssessmentStatus status,
         Instant createdAt,
