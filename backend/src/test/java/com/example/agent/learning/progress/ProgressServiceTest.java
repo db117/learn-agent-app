@@ -1,17 +1,15 @@
 package com.example.agent.learning.progress;
 
 import com.example.agent.learning.journey.JourneyStatus;
-import com.example.agent.learning.journey.LearnerLearnUnit;
-import com.example.agent.learning.journey.LearnerLearnUnitStatus;
-import com.example.agent.learning.journey.PassReason;
 import com.example.agent.learning.journey.LearningJourney;
+import com.example.agent.learning.journey.PassReason;
+import com.example.agent.learning.path.DeterministicLearningPathPlanner;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.scoring.AssessmentScore;
-import com.example.agent.learning.path.DeterministicLearningPathPlanner;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
@@ -23,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,36 +34,36 @@ class ProgressServiceTest {
     void journeyExists() {
         when(repository.findJourney("journey")).thenReturn(Optional.of(new LearningJourney(
                 "journey", "user", "typescript", "goal", JourneyStatus.ACTIVE,
-                Instant.EPOCH, Instant.EPOCH, "learnUnit-a")));
+                Instant.EPOCH, Instant.EPOCH)));
     }
 
     @Test
-    void skipKeepsMasteryAndMovesToTheNextLearnUnit() {
-        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT);
-        LearningPathItem next = item("learnUnit-b", 2, LearningPathItemStatus.PENDING);
-        LearnerLearnUnit existing = new LearnerLearnUnit(
-                "journey", "learnUnit-a", LearnerLearnUnitStatus.LEARNING, 72, 78, 2, null, Instant.EPOCH, null, null);
+    void skipKeepsMasteryAndMovesToTheNextLearnUnitInTheSamePath() {
+        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 72, 78, 2);
+        LearningPathItem next = item("learnUnit-b", 2, LearningPathItemStatus.PENDING, 0, 0, 0);
         when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
-        when(repository.findLearnerLearnUnit("journey", "learnUnit-a")).thenReturn(Optional.of(existing));
         when(repository.listPath("journey")).thenReturn(List.of(current, next));
 
         service.skipLearnUnit("journey", "learnUnit-a");
 
-        ArgumentCaptor<LearnerLearnUnit> learnerLearnUnit = ArgumentCaptor.forClass(LearnerLearnUnit.class);
-        verify(repository).upsertLearnerLearnUnit(learnerLearnUnit.capture());
-        assertEquals(LearnerLearnUnitStatus.SKIPPED, learnerLearnUnit.getValue().status());
-        assertEquals(72, learnerLearnUnit.getValue().masteryScore());
-        assertEquals(78, learnerLearnUnit.getValue().bestAssessmentScore());
-        assertEquals(2, learnerLearnUnit.getValue().attemptCount());
-        assertEquals(null, learnerLearnUnit.getValue().passReason());
-        verify(repository).updatePathItem("journey", "learnUnit-a", LearningPathItemStatus.SKIPPED);
-        verify(repository).updatePathItem("journey", "learnUnit-b", LearningPathItemStatus.CURRENT);
-        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.ACTIVE), eq("learnUnit-b"), any(Instant.class));
+        ArgumentCaptor<LearningPathItem> updates = ArgumentCaptor.forClass(LearningPathItem.class);
+        verify(repository, times(2)).updatePathItem(updates.capture());
+        LearningPathItem skipped = updates.getAllValues().stream()
+                .filter(item -> item.learnUnitCode().equals("learnUnit-a")).findFirst().orElseThrow();
+        LearningPathItem advanced = updates.getAllValues().stream()
+                .filter(item -> item.learnUnitCode().equals("learnUnit-b")).findFirst().orElseThrow();
+        assertEquals(LearningPathItemStatus.SKIPPED, skipped.status());
+        assertEquals(72, skipped.masteryScore());
+        assertEquals(78, skipped.bestAssessmentScore());
+        assertEquals(2, skipped.attemptCount());
+        assertEquals(null, skipped.passReason());
+        assertEquals(LearningPathItemStatus.CURRENT, advanced.status());
+        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.ACTIVE), any(Instant.class));
     }
 
     @Test
     void cannotSkipOrStartAPendingLearnUnit() {
-        LearningPathItem pending = item("learnUnit-b", 2, LearningPathItemStatus.PENDING);
+        LearningPathItem pending = item("learnUnit-b", 2, LearningPathItemStatus.PENDING, 0, 0, 0);
         when(repository.findPathItem("journey", "learnUnit-b")).thenReturn(Optional.of(pending));
 
         assertThrows(IllegalArgumentException.class, () -> service.skipLearnUnit("journey", "learnUnit-b"));
@@ -72,85 +71,100 @@ class ProgressServiceTest {
     }
 
     @Test
-    void failedAssessmentReturnsToLearningAndRetainsBestMastery() {
-        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT);
-        LearnerLearnUnit existing = new LearnerLearnUnit(
-                "journey", "learnUnit-a", LearnerLearnUnitStatus.ASSESSING, 85, 90, 3, null, Instant.EPOCH, null, null);
-        when(repository.findLearnerLearnUnit("journey", "learnUnit-a")).thenReturn(Optional.of(existing));
+    void failedAssessmentRetainsBestMasteryOnTheCurrentPathItem() {
+        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 85, 90, 3);
         when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
 
-        LearnerLearnUnit result = service.recordLearnUnitAssessment(
+        LearningPathItem result = service.recordLearnUnitAssessment(
                 "journey", "learnUnit-a", new AssessmentScore(100, 0, 60, true, true), false);
 
-        assertEquals(LearnerLearnUnitStatus.LEARNING, result.status());
+        assertEquals(LearningPathItemStatus.CURRENT, result.status());
         assertEquals(85, result.masteryScore());
         assertEquals(90, result.bestAssessmentScore());
         assertEquals(4, result.attemptCount());
-        verify(repository).upsertLearnerLearnUnit(result);
-        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.ACTIVE), eq("learnUnit-a"), any(Instant.class));
+        verify(repository).updatePathItem(result);
+        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.ACTIVE), any(Instant.class));
     }
 
     @Test
-    void passedAssessmentCompletesLearnUnitAndAdvances() {
-        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT);
-        LearningPathItem next = item("learnUnit-b", 2, LearningPathItemStatus.PENDING);
-        LearnerLearnUnit existing = new LearnerLearnUnit(
-                "journey", "learnUnit-a", LearnerLearnUnitStatus.ASSESSING, 70, 70, 1, null, Instant.EPOCH, null, null);
-        when(repository.findLearnerLearnUnit("journey", "learnUnit-a")).thenReturn(Optional.of(existing));
+    void passedAssessmentCompletesThePathItemAndAdvances() {
+        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 70, 70, 1);
+        LearningPathItem next = item("learnUnit-b", 2, LearningPathItemStatus.PENDING, 0, 0, 0);
         when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
         when(repository.listPath("journey")).thenReturn(List.of(current, next));
 
-        LearnerLearnUnit result = service.recordLearnUnitAssessment(
+        LearningPathItem result = service.recordLearnUnitAssessment(
                 "journey", "learnUnit-a", new AssessmentScore(100, 80, 92, true, true), true);
 
-        assertEquals(LearnerLearnUnitStatus.PASSED, result.status());
+        assertEquals(LearningPathItemStatus.COMPLETED, result.status());
         assertEquals(92, result.masteryScore());
         assertEquals(92, result.bestAssessmentScore());
         assertEquals(2, result.attemptCount());
         assertEquals(PassReason.LEARNING, result.passReason());
-        verify(repository).updatePathItem("journey", "learnUnit-a", LearningPathItemStatus.COMPLETED);
-        verify(repository).updatePathItem("journey", "learnUnit-b", LearningPathItemStatus.CURRENT);
+        ArgumentCaptor<LearningPathItem> updates = ArgumentCaptor.forClass(LearningPathItem.class);
+        verify(repository, times(2)).updatePathItem(updates.capture());
+        assertEquals(LearningPathItemStatus.CURRENT, updates.getAllValues().stream()
+                .filter(item -> item.learnUnitCode().equals("learnUnit-b")).findFirst().orElseThrow().status());
+        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.ACTIVE), any(Instant.class));
     }
 
     @Test
-    void passingTheLastLearnUnitCompletesTheJourney() {
-        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT);
-        LearnerLearnUnit existing = new LearnerLearnUnit(
-                "journey", "learnUnit-a", LearnerLearnUnitStatus.ASSESSING, 0, 0, 0, null, null, null, null);
-        when(repository.findLearnerLearnUnit("journey", "learnUnit-a")).thenReturn(Optional.of(existing));
+    void rejectsAnAssessmentSubmittedAfterThePathItemWasSkipped() {
+        LearningPathItem skipped = item("learnUnit-a", 1, LearningPathItemStatus.SKIPPED, 0, 0, 1);
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(skipped));
+
+        assertThrows(IllegalArgumentException.class, () -> service.recordLearnUnitAssessment(
+                "journey", "learnUnit-a", new AssessmentScore(100, 100, 100, true, true), true));
+
+        verify(repository, times(0)).updatePathItem(any(LearningPathItem.class));
+    }
+
+    @Test
+    void rejectsAStaleDiagnosticResultForASkippedPathItem() {
+        LearningPathItem skipped = item("learnUnit-a", 1, LearningPathItemStatus.SKIPPED, 0, 0, 1);
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(skipped));
+
+        assertThrows(IllegalArgumentException.class, () -> service.recordDiagnosticResult(
+                "journey", "learnUnit-a", new AssessmentScore(100, 100, 100, true, true), true));
+
+        verify(repository, times(0)).updatePathItem(any(LearningPathItem.class));
+    }
+
+    @Test
+    void passingTheLastPathItemCompletesTheJourney() {
+        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 0, 0, 0);
         when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
         when(repository.listPath("journey")).thenReturn(List.of(current));
 
         service.recordLearnUnitAssessment(
                 "journey", "learnUnit-a", new AssessmentScore(100, 100, 100, true, true), true);
 
-        verify(repository).updatePathItem("journey", "learnUnit-a", LearningPathItemStatus.COMPLETED);
-        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.COMPLETED), eq(null), any(Instant.class));
+        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.COMPLETED), any(Instant.class));
     }
 
     @Test
-    void skippingEveryLearnUnitCompletesTheJourneyWithoutPassingThem() {
-        LearningPathItem first = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT);
-        LearningPathItem second = item("learnUnit-b", 2, LearningPathItemStatus.PENDING);
+    void skippingEveryPathItemCompletesTheJourneyWithoutPassingThem() {
+        LearningPathItem first = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 0, 0, 0);
+        LearningPathItem second = item("learnUnit-b", 2, LearningPathItemStatus.PENDING, 0, 0, 0);
         when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(first));
         when(repository.findPathItem("journey", "learnUnit-b")).thenReturn(Optional.of(
-                item("learnUnit-b", 2, LearningPathItemStatus.CURRENT)));
-        when(repository.findLearnerLearnUnit("journey", "learnUnit-a")).thenReturn(Optional.empty());
-        when(repository.findLearnerLearnUnit("journey", "learnUnit-b")).thenReturn(Optional.empty());
+                item("learnUnit-b", 2, LearningPathItemStatus.CURRENT, 0, 0, 0)));
         when(repository.listPath("journey")).thenReturn(
                 List.of(first, second),
-                List.of(item("learnUnit-a", 1, LearningPathItemStatus.SKIPPED), item("learnUnit-b", 2, LearningPathItemStatus.CURRENT)));
+                List.of(item("learnUnit-a", 1, LearningPathItemStatus.SKIPPED, 0, 0, 0),
+                        item("learnUnit-b", 2, LearningPathItemStatus.CURRENT, 0, 0, 0)));
 
         service.skipLearnUnit("journey", "learnUnit-a");
         service.skipLearnUnit("journey", "learnUnit-b");
 
-        verify(repository).updatePathItem("journey", "learnUnit-a", LearningPathItemStatus.SKIPPED);
-        verify(repository).updatePathItem("journey", "learnUnit-b", LearningPathItemStatus.SKIPPED);
-        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.COMPLETED), eq(null), any(Instant.class));
+        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.COMPLETED), any(Instant.class));
     }
 
-    private LearningPathItem item(String learnUnitCode, int sequence, LearningPathItemStatus status) {
-        return new LearningPathItem(learnUnitCode + "-item", "journey", learnUnitCode, sequence, status);
+    private LearningPathItem item(
+            String learnUnitCode, int sequence, LearningPathItemStatus status,
+            int masteryScore, int bestAssessmentScore, int attemptCount) {
+        return new LearningPathItem(
+                learnUnitCode + "-item", "journey", learnUnitCode, sequence, status,
+                masteryScore, bestAssessmentScore, attemptCount, null, Instant.EPOCH, null, null);
     }
-
 }

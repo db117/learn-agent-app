@@ -2,8 +2,6 @@ package com.example.agent.learning.progress;
 
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.journey.JourneyStatus;
-import com.example.agent.learning.journey.LearnerLearnUnit;
-import com.example.agent.learning.journey.LearnerLearnUnitStatus;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.PassReason;
 import com.example.agent.learning.path.DeterministicLearningPathPlanner;
@@ -12,22 +10,20 @@ import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.learning.workflow.LearningWorkflowGraph;
-import com.example.agent.learning.workflow.WorkflowTransition;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * LearnUnit 进度和学习路径状态服务。
+ * Learning Path 的确定性状态服务。
  *
- * <p>每个用户 Action 通过短生命周期 {@link LearningWorkflowGraph} 执行；状态变更都落到 SQLite，
- * 并严格按当前路径节点推进；已完成、已跳过和评估历史不会被覆盖。
+ * <p>Journey + LearnUnit 的关系、状态、掌握度和历史成绩全部由
+ * {@link LearningPathItem} 持久化；TutorAgent 只能读取这些事实。</p>
  */
 @Service
 public class ProgressService {
@@ -50,9 +46,7 @@ public class ProgressService {
                 () -> {
                     LearningJourney journey = journey(journeyId);
                     List<LearnUnit> learnUnits = repository.listLearnUnitsForJourney(journeyId);
-                    Map<String, LearnerLearnUnit> learnerLearnUnits = new LinkedHashMap<>();
-                    repository.listLearnerLearnUnits(journeyId).forEach(status -> learnerLearnUnits.put(status.learnUnitCode(), status));
-                    List<LearningPathItem> path = planner.plan(journeyId, learnUnits, learnerLearnUnits);
+                    List<LearningPathItem> path = planner.plan(journeyId, learnUnits, repository.listPath(journeyId));
                     repository.replacePath(journeyId, path);
                     moveJourneyToPathCurrent(journeyId, path);
                     LearningJourney updated = journey(journeyId);
@@ -71,73 +65,80 @@ public class ProgressService {
                     LearningJourney before = journey(journeyId);
                     LearningPathItem item = pathItem(journeyId, learnUnitCode);
                     requireCurrent(item);
-                    repository.resetCurrentPathItems(journeyId);
-                    repository.updatePathItem(journeyId, learnUnitCode, LearningPathItemStatus.CURRENT);
                     Instant now = Instant.now();
-                    LearnerLearnUnit previous = repository.findLearnerLearnUnit(journeyId, learnUnitCode).orElse(defaultLearnUnit(journeyId, learnUnitCode));
-                    if (previous.status() != LearnerLearnUnitStatus.PASSED && previous.status() != LearnerLearnUnitStatus.SKIPPED) {
-                        repository.upsertLearnerLearnUnit(new LearnerLearnUnit(
-                                journeyId, learnUnitCode, LearnerLearnUnitStatus.LEARNING, previous.masteryScore(),
-                                previous.bestAssessmentScore(), previous.attemptCount(), previous.passReason(),
-                                previous.startedAt() == null ? now : previous.startedAt(), previous.passedAt(), previous.skippedAt()));
-                    }
-                    repository.updateJourney(journeyId, JourneyStatus.ACTIVE, learnUnitCode, now);
+                    repository.resetCurrentPathItems(journeyId);
+                    LearningPathItem started = copy(
+                            item, LearningPathItemStatus.CURRENT, item.masteryScore(), item.bestAssessmentScore(),
+                            item.attemptCount(), item.passReason(), item.startedAt() == null ? now : item.startedAt(),
+                            item.passedAt(), item.skippedAt());
+                    repository.updatePathItem(started);
+                    repository.updateJourney(journeyId, JourneyStatus.ACTIVE, now);
                     transition(journeyId, before.status().name(), "START_LEARN_UNIT", JourneyStatus.ACTIVE.name(),
                             Map.of("learnUnitCode", learnUnitCode));
-                    return new LearningWorkflowGraph.Action<>("complete", pathItem(journeyId, learnUnitCode));
+                    return new LearningWorkflowGraph.Action<>("complete", started);
                 },
                 Map.of("complete", ignored -> {}));
     }
 
     @Transactional
-    public LearnerLearnUnit recordDiagnosticResult(
+    public LearningPathItem recordDiagnosticResult(
             String journeyId, String learnUnitCode, AssessmentScore score, boolean passed) {
         return workflow.execute(
                 "DIAGNOSTIC_RESULT",
                 () -> {
-                    LearnerLearnUnit previous = repository.findLearnerLearnUnit(journeyId, learnUnitCode).orElse(defaultLearnUnit(journeyId, learnUnitCode));
+                    LearningPathItem previous = pathItem(journeyId, learnUnitCode);
+                    if (previous.status() == LearningPathItemStatus.COMPLETED
+                            || previous.status() == LearningPathItemStatus.SKIPPED) {
+                        throw new IllegalArgumentException("LearnUnit is already closed: " + learnUnitCode);
+                    }
                     Instant now = Instant.now();
-                    LearnerLearnUnit result = new LearnerLearnUnit(
-                            journeyId, learnUnitCode, passed ? LearnerLearnUnitStatus.PASSED : LearnerLearnUnitStatus.READY,
+                    LearningPathItem result = copy(
+                            previous,
+                            passed ? LearningPathItemStatus.COMPLETED : previous.status(),
                             Math.max(previous.masteryScore(), score.totalScore()),
-                            Math.max(previous.bestAssessmentScore(), score.totalScore()), previous.attemptCount() + 1,
-                            passed ? PassReason.DIAGNOSTIC : null, previous.startedAt(), passed ? now : null, null);
-                    repository.upsertLearnerLearnUnit(result);
-                    transition(journeyId, previous.status().name(), "DIAGNOSTIC_RESULT",
-                            result.status().name(), Map.of("learnUnitCode", learnUnitCode, "score", score.totalScore(), "passed", passed));
+                            Math.max(previous.bestAssessmentScore(), score.totalScore()),
+                            previous.attemptCount() + 1,
+                            passed ? PassReason.DIAGNOSTIC : previous.passReason(),
+                            previous.startedAt(), passed ? now : previous.passedAt(), previous.skippedAt());
+                    repository.updatePathItem(result);
+                    transition(journeyId, previous.status().name(), "DIAGNOSTIC_RESULT", result.status().name(),
+                            Map.of("learnUnitCode", learnUnitCode, "score", score.totalScore(), "passed", passed));
                     return new LearningWorkflowGraph.Action<>("complete", result);
                 },
                 Map.of("complete", ignored -> {}));
     }
 
     @Transactional
-    public LearnerLearnUnit recordLearnUnitAssessment(
+    public LearningPathItem recordLearnUnitAssessment(
             String journeyId, String learnUnitCode, AssessmentScore score, boolean passed) {
         LearningJourney before = journey(journeyId);
-        LearnerLearnUnit previous = repository.findLearnerLearnUnit(journeyId, learnUnitCode).orElse(defaultLearnUnit(journeyId, learnUnitCode));
-        boolean hasPath = repository.findPathItem(journeyId, learnUnitCode).isPresent();
+        LearningPathItem previous = pathItem(journeyId, learnUnitCode);
+        requireCurrent(previous);
         return workflow.execute(
                 passed ? "PASS" : "RETRY",
                 () -> {
                     Instant now = Instant.now();
-                    LearnerLearnUnit result = new LearnerLearnUnit(
-                            journeyId, learnUnitCode, passed ? LearnerLearnUnitStatus.PASSED : LearnerLearnUnitStatus.LEARNING,
+                    LearningPathItem result = copy(
+                            previous,
+                            passed ? LearningPathItemStatus.COMPLETED : LearningPathItemStatus.CURRENT,
                             Math.max(previous.masteryScore(), score.totalScore()),
-                            Math.max(previous.bestAssessmentScore(), score.totalScore()), previous.attemptCount() + 1,
-                            passed ? PassReason.LEARNING : null, previous.startedAt() == null ? now : previous.startedAt(),
-                            passed ? now : null, null);
-                    repository.upsertLearnerLearnUnit(result);
+                            Math.max(previous.bestAssessmentScore(), score.totalScore()),
+                            previous.attemptCount() + 1,
+                            passed ? PassReason.LEARNING : previous.passReason(),
+                            previous.startedAt() == null ? now : previous.startedAt(),
+                            passed ? now : previous.passedAt(), previous.skippedAt());
+                    repository.updatePathItem(result);
                     return new LearningWorkflowGraph.Action<>(passed ? "pass" : "retry", result);
                 },
                 Map.of(
-                        "pass", ignored -> {
-                            transition(journeyId, before.status().name(), "PASS", LearnerLearnUnitStatus.PASSED.name(),
+                        "pass", result -> {
+                            transition(journeyId, before.status().name(), "PASS", result.status().name(),
                                     Map.of("learnUnitCode", learnUnitCode, "score", score.totalScore()));
-                            if (hasPath) completeLearnUnit(journeyId, learnUnitCode);
+                            moveToNextLearnUnit(journeyId);
                         },
-                        "retry", ignored -> {
-                            if (hasPath) repository.updateJourney(journeyId, JourneyStatus.ACTIVE, learnUnitCode, Instant.now());
-                            transition(journeyId, before.status().name(), "RETRY", JourneyStatus.ACTIVE.name(),
+                        "retry", result -> {
+                            repository.updateJourney(journeyId, JourneyStatus.ACTIVE, Instant.now());
+                            transition(journeyId, before.status().name(), "RETRY", result.status().name(),
                                     Map.of("learnUnitCode", learnUnitCode, "score", score.totalScore()));
                         }));
     }
@@ -147,13 +148,15 @@ public class ProgressService {
         workflow.execute(
                 "START_ASSESSMENT",
                 () -> {
-                    LearningJourney before = journey(journeyId);
-                    LearnerLearnUnit previous = repository.findLearnerLearnUnit(journeyId, learnUnitCode).orElse(defaultLearnUnit(journeyId, learnUnitCode));
-                    repository.upsertLearnerLearnUnit(new LearnerLearnUnit(
-                            journeyId, learnUnitCode, LearnerLearnUnitStatus.ASSESSING, previous.masteryScore(),
-                            previous.bestAssessmentScore(), previous.attemptCount(), previous.passReason(),
-                            previous.startedAt() == null ? Instant.now() : previous.startedAt(), previous.passedAt(), previous.skippedAt()));
-                    transition(journeyId, before.status().name(), "START_ASSESSMENT", LearnerLearnUnitStatus.ASSESSING.name(),
+                    LearningPathItem item = pathItem(journeyId, learnUnitCode);
+                    requireCurrent(item);
+                    Instant now = Instant.now();
+                    LearningPathItem started = copy(
+                            item, LearningPathItemStatus.CURRENT, item.masteryScore(), item.bestAssessmentScore(),
+                            item.attemptCount(), item.passReason(), item.startedAt() == null ? now : item.startedAt(),
+                            item.passedAt(), item.skippedAt());
+                    repository.updatePathItem(started);
+                    transition(journeyId, item.status().name(), "START_ASSESSMENT", started.status().name(),
                             Map.of("learnUnitCode", learnUnitCode));
                     return new LearningWorkflowGraph.Action<Void>("complete", null);
                 },
@@ -162,7 +165,10 @@ public class ProgressService {
 
     @Transactional
     public void completeLearnUnit(String journeyId, String learnUnitCode) {
-        repository.updatePathItem(journeyId, learnUnitCode, LearningPathItemStatus.COMPLETED);
+        LearningPathItem item = pathItem(journeyId, learnUnitCode);
+        repository.updatePathItem(copy(
+                item, LearningPathItemStatus.COMPLETED, item.masteryScore(), item.bestAssessmentScore(),
+                item.attemptCount(), item.passReason(), item.startedAt(), Instant.now(), item.skippedAt()));
         moveToNextLearnUnit(journeyId);
     }
 
@@ -171,13 +177,9 @@ public class ProgressService {
         workflow.execute(
                 "ASSESSMENT_ERROR",
                 () -> {
-                    LearnerLearnUnit previous = learnerLearnUnit(journeyId, learnUnitCode);
-                    repository.upsertLearnerLearnUnit(new LearnerLearnUnit(
-                            journeyId, learnUnitCode, LearnerLearnUnitStatus.LEARNING, previous.masteryScore(),
-                            previous.bestAssessmentScore(), previous.attemptCount(), previous.passReason(),
-                            previous.startedAt() == null ? Instant.now() : previous.startedAt(), previous.passedAt(), previous.skippedAt()));
-                    transition(journeyId, LearnerLearnUnitStatus.ASSESSING.name(), "ASSESSMENT_ERROR",
-                            LearnerLearnUnitStatus.LEARNING.name(), Map.of("learnUnitCode", learnUnitCode));
+                    LearningPathItem item = pathItem(journeyId, learnUnitCode);
+                    transition(journeyId, item.status().name(), "ASSESSMENT_ERROR", item.status().name(),
+                            Map.of("learnUnitCode", learnUnitCode));
                     return new LearningWorkflowGraph.Action<Void>("complete", null);
                 },
                 Map.of("complete", ignored -> {}));
@@ -188,19 +190,17 @@ public class ProgressService {
         LearningJourney before = journey(journeyId);
         LearningPathItem item = pathItem(journeyId, learnUnitCode);
         requireCurrent(item);
-        LearnerLearnUnit previous = repository.findLearnerLearnUnit(journeyId, learnUnitCode).orElse(defaultLearnUnit(journeyId, learnUnitCode));
         workflow.execute(
                 "SKIP",
                 () -> {
-                    repository.upsertLearnerLearnUnit(new LearnerLearnUnit(
-                            journeyId, learnUnitCode, LearnerLearnUnitStatus.SKIPPED, previous.masteryScore(),
-                            previous.bestAssessmentScore(), previous.attemptCount(), null, previous.startedAt(),
-                            previous.passedAt(), Instant.now()));
-                    repository.updatePathItem(journeyId, learnUnitCode, LearningPathItemStatus.SKIPPED);
+                    LearningPathItem skipped = copy(
+                            item, LearningPathItemStatus.SKIPPED, item.masteryScore(), item.bestAssessmentScore(),
+                            item.attemptCount(), null, item.startedAt(), item.passedAt(), Instant.now());
+                    repository.updatePathItem(skipped);
                     return new LearningWorkflowGraph.Action<Void>("skip", null);
                 },
                 Map.of("skip", ignored -> {
-                    transition(journeyId, before.status().name(), "SKIP", LearnerLearnUnitStatus.SKIPPED.name(),
+                    transition(journeyId, before.status().name(), "SKIP", LearningPathItemStatus.SKIPPED.name(),
                             Map.of("learnUnitCode", learnUnitCode));
                     moveToNextLearnUnit(journeyId);
                 }));
@@ -211,30 +211,26 @@ public class ProgressService {
         LearningJourney before = journey(journeyId);
         List<LearningPathItem> path = repository.listPath(journeyId);
         repository.resetCurrentPathItems(journeyId);
-        String next = path.stream()
+        LearningPathItem next = path.stream()
                 .filter(item -> item.status() == LearningPathItemStatus.PENDING)
-                .map(LearningPathItem::learnUnitCode)
                 .findFirst()
                 .orElse(null);
         if (next == null) {
-            repository.updateJourney(journeyId, JourneyStatus.COMPLETED, null, Instant.now());
+            repository.updateJourney(journeyId, JourneyStatus.COMPLETED, Instant.now());
             transition(journeyId, before.status().name(), "COMPLETED", JourneyStatus.COMPLETED.name(), Map.of());
             return;
         }
-        repository.updatePathItem(journeyId, next, LearningPathItemStatus.CURRENT);
-        repository.updateJourney(journeyId, JourneyStatus.ACTIVE, next, Instant.now());
+        repository.updatePathItem(copy(
+                next, LearningPathItemStatus.CURRENT, next.masteryScore(), next.bestAssessmentScore(),
+                next.attemptCount(), next.passReason(), next.startedAt(), next.passedAt(), next.skippedAt()));
+        repository.updateJourney(journeyId, JourneyStatus.ACTIVE, Instant.now());
         transition(journeyId, before.status().name(), "NEXT", JourneyStatus.ACTIVE.name(),
-                Map.of("learnUnitCode", next));
+                Map.of("learnUnitCode", next.learnUnitCode()));
     }
 
     public LearningPathItem pathItem(String journeyId, String learnUnitCode) {
         return repository.findPathItem(journeyId, learnUnitCode)
                 .orElseThrow(() -> new IllegalArgumentException("LearnUnit is not in the learning path: " + learnUnitCode));
-    }
-
-    public LearnerLearnUnit learnerLearnUnit(String journeyId, String learnUnitCode) {
-        return repository.findLearnerLearnUnit(journeyId, learnUnitCode)
-                .orElseThrow(() -> new IllegalArgumentException("learner LearnUnit not found: " + learnUnitCode));
     }
 
     private LearningJourney journey(String id) {
@@ -248,11 +244,8 @@ public class ProgressService {
                 .map(LearningPathItem::learnUnitCode)
                 .findFirst()
                 .orElse(null);
-        repository.updateJourney(journeyId, current == null ? JourneyStatus.COMPLETED : JourneyStatus.ACTIVE, current, Instant.now());
-    }
-
-    private LearnerLearnUnit defaultLearnUnit(String journeyId, String learnUnitCode) {
-        return new LearnerLearnUnit(journeyId, learnUnitCode, LearnerLearnUnitStatus.READY, 0, 0, 0, null, null, null, null);
+        repository.updateJourney(
+                journeyId, current == null ? JourneyStatus.COMPLETED : JourneyStatus.ACTIVE, Instant.now());
     }
 
     private void requireCurrent(LearningPathItem item) {
@@ -264,10 +257,25 @@ public class ProgressService {
         }
     }
 
+    private LearningPathItem copy(
+            LearningPathItem item,
+            LearningPathItemStatus status,
+            int masteryScore,
+            int bestAssessmentScore,
+            int attemptCount,
+            PassReason passReason,
+            Instant startedAt,
+            Instant passedAt,
+            Instant skippedAt) {
+        return new LearningPathItem(
+                item.id(), item.journeyId(), item.learnUnitCode(), item.sequence(), status,
+                masteryScore, bestAssessmentScore, attemptCount, passReason, startedAt, passedAt, skippedAt);
+    }
+
     private void transition(
             String journeyId, String fromState, String action, String toState, Map<String, Object> payload) {
         try {
-            repository.insertWorkflowTransition(new WorkflowTransition(
+            repository.insertWorkflowTransition(new com.example.agent.learning.workflow.WorkflowTransition(
                     UUID.randomUUID().toString(), journeyId, fromState, action, toState,
                     MAPPER.writeValueAsString(payload), Instant.now()));
         } catch (Exception error) {

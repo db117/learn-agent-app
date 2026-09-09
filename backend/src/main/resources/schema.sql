@@ -153,7 +153,7 @@ CREATE TABLE IF NOT EXISTS learn_unit
     diagnostic_eligible INTEGER NOT NULL DEFAULT 1
 );
 
--- 学习 Journey 主记录；current_learn_unit_code 指向当前路径节点。
+-- 学习 Journey 主记录；当前节点由 learning_path_item 的唯一 CURRENT 行决定。
 CREATE TABLE IF NOT EXISTS learning_journey
 (
     id TEXT PRIMARY KEY,
@@ -162,8 +162,7 @@ CREATE TABLE IF NOT EXISTS learning_journey
     goal TEXT NOT NULL,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    current_learn_unit_code TEXT
+    updated_at TEXT NOT NULL
 );
 
 -- Journey 专属课程关系；同一语言的不同 Journey 可以拥有不同的 LearnUnit 内容。
@@ -184,11 +183,13 @@ CREATE TABLE IF NOT EXISTS learner_profile
     learning_goal TEXT NOT NULL
 );
 
--- Journey 中每项 LearnUnit 的状态、掌握度、历史最佳成绩和通过时间。
-CREATE TABLE IF NOT EXISTS learner_learn_unit
+-- Journey 的学习路径节点；路径节点同时保存唯一的进度事实。
+CREATE TABLE IF NOT EXISTS learning_path_item
 (
+    id TEXT PRIMARY KEY,
     journey_id TEXT NOT NULL REFERENCES learning_journey(id),
     learn_unit_code TEXT NOT NULL REFERENCES learn_unit(code),
+    sequence INTEGER NOT NULL,
     status TEXT NOT NULL,
     mastery_score INTEGER NOT NULL DEFAULT 0,
     best_assessment_score INTEGER NOT NULL DEFAULT 0,
@@ -197,17 +198,6 @@ CREATE TABLE IF NOT EXISTS learner_learn_unit
     started_at TEXT,
     passed_at TEXT,
     skipped_at TEXT,
-    PRIMARY KEY (journey_id, learn_unit_code)
-);
-
--- Journey 的学习路径节点；已完成/跳过节点保留，便于恢复和审计。
-CREATE TABLE IF NOT EXISTS learning_path_item
-(
-    id TEXT PRIMARY KEY,
-    journey_id TEXT NOT NULL REFERENCES learning_journey(id),
-    learn_unit_code TEXT NOT NULL REFERENCES learn_unit(code),
-    sequence INTEGER NOT NULL,
-    status TEXT NOT NULL,
     UNIQUE (journey_id, learn_unit_code)
 );
 
@@ -302,8 +292,9 @@ CREATE TABLE IF NOT EXISTS tutor_session
 CREATE INDEX IF NOT EXISTS learn_unit_language_idx ON learn_unit(language_code, sequence);
 CREATE INDEX IF NOT EXISTS journey_learn_unit_journey_idx ON learning_journey_learn_unit(journey_id, learn_unit_code);
 CREATE INDEX IF NOT EXISTS journey_user_idx ON learning_journey(user_id, updated_at);
-CREATE INDEX IF NOT EXISTS learner_learn_unit_journey_idx ON learner_learn_unit(journey_id, status);
 CREATE INDEX IF NOT EXISTS path_journey_idx ON learning_path_item(journey_id, sequence);
+CREATE UNIQUE INDEX IF NOT EXISTS path_one_current_idx
+    ON learning_path_item(journey_id) WHERE status = 'CURRENT';
 CREATE INDEX IF NOT EXISTS question_learn_unit_idx ON question(learn_unit_code, diagnostic_eligible);
 CREATE INDEX IF NOT EXISTS question_retirement_idx ON question_retirement(retired_at);
 CREATE INDEX IF NOT EXISTS assessment_journey_idx ON assessment(journey_id, created_at);
@@ -347,4 +338,4 @@ CREATE TABLE IF NOT EXISTS schema_metadata
 );
 
 INSERT INTO schema_metadata (key, value)
-VALUES ('schema.version', 'agentscope-springboot-webflux-v1');
+VALUES ('schema.version', 'agentscope-springboot-webflux-v2');

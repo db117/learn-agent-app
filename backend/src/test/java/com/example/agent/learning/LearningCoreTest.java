@@ -6,9 +6,8 @@ import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.diagnostic.DeterministicDiagnosticQuestionPlanner;
 import com.example.agent.learning.journey.LearnerProfile;
-import com.example.agent.learning.journey.LearnerLearnUnit;
-import com.example.agent.learning.journey.LearnerLearnUnitStatus;
 import com.example.agent.learning.path.DeterministicLearningPathPlanner;
+import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.learning.scoring.AssessmentScoreEngine;
@@ -16,7 +15,6 @@ import com.example.agent.learning.scoring.LearnUnitPassPolicy;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -66,11 +64,11 @@ class LearningCoreTest {
     void pathPlannerOrdersPrerequisitesAndKeepsPassedLearnUnitsCompleted() {
         LearnUnit advanced = learnUnit("learnUnit-b", 2, 80, List.of("learnUnit-a"));
         LearnUnit basics = learnUnit("learnUnit-a", 1, 80, List.of());
-        LearnerLearnUnit passedBasics = new LearnerLearnUnit(
-                "journey", "learnUnit-a", LearnerLearnUnitStatus.PASSED, 90, 90, 1, null, null, null, null);
+        LearningPathItem passedBasics = new LearningPathItem(
+                "path-a", "journey", "learnUnit-a", 1, LearningPathItemStatus.COMPLETED);
 
         var path = new DeterministicLearningPathPlanner().plan(
-                "journey", List.of(advanced, basics), Map.of("learnUnit-a", passedBasics));
+                "journey", List.of(advanced, basics), List.of(passedBasics));
 
         assertEquals(List.of("learnUnit-a", "learnUnit-b"), path.stream().map(item -> item.learnUnitCode()).toList());
         assertEquals(LearningPathItemStatus.COMPLETED, path.get(0).status());

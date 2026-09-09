@@ -2,17 +2,18 @@ package com.example.agent.learning.tutor;
 
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.journey.LearnerProfile;
-import com.example.agent.learning.journey.LearnerLearnUnit;
+import com.example.agent.learning.journey.LearningJourney;
+import com.example.agent.learning.path.LearningPathItem;
+import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.persistence.LearningRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
-/**
- * 为 Tutor Session 组装只读学习上下文。
- *
- * <p>上下文来自 Journey、画像、当前 LearnUnit 和历史弱点反馈；Tutor 只能据此教学，不能直接改写学习状态。
- */
+/** Builds an immutable, read-only context from the latest durable learning facts. */
 @Service
 public class TutorContextService {
 
@@ -22,48 +23,55 @@ public class TutorContextService {
         this.repository = repository;
     }
 
-    public String forSession(String sessionId) {
+    public TutorContext forSession(String sessionId) {
         return repository.findTutorSessionBySessionId(sessionId)
                 .map(link -> context(link.journeyId(), link.learnUnitCode()))
-                .orElse(staticInstructions());
+                .orElseGet(TutorContext::empty);
     }
 
-    private String context(String journeyId, String learnUnitCode) {
+    public String promptForSession(String sessionId) {
+        return forSession(sessionId).systemPrompt();
+    }
+
+    private TutorContext context(String journeyId, String learnUnitCode) {
+        LearningJourney journey = repository.findJourney(journeyId).orElse(null);
         LearnerProfile profile = repository.findProfile(journeyId).orElse(null);
-        LearnUnit learnUnit = repository.findLearnUnit(learnUnitCode).orElse(null);
-        LearnerLearnUnit learnerLearnUnit = repository.findLearnerLearnUnit(journeyId, learnUnitCode).orElse(null);
+        LearnUnit current = repository.findLearnUnit(learnUnitCode).orElse(null);
+        LearningPathItem currentPath = repository.findPathItem(journeyId, learnUnitCode).orElse(null);
+        List<LearningPathItem> path = repository.listPath(journeyId);
+        Map<String, LearnUnit> unitsByCode = repository.listLearnUnitsForJourney(journeyId).stream()
+                .collect(Collectors.toMap(LearnUnit::code, Function.identity()));
+        LearningPathItem nextPath = path.stream()
+                .filter(item -> item.status() == LearningPathItemStatus.PENDING)
+                .findFirst()
+                .orElse(null);
+        LearnUnit next = nextPath == null ? null : unitsByCode.get(nextPath.learnUnitCode());
+        List<String> mastered = path.stream()
+                .filter(item -> item.status() == LearningPathItemStatus.COMPLETED)
+                .map(item -> {
+                    LearnUnit unit = unitsByCode.get(item.learnUnitCode());
+                    return unit == null ? item.learnUnitCode() : unit.name();
+                })
+                .toList();
         List<String> weakPoints = repository.listQuestionAttemptsForLearnUnit(journeyId, learnUnitCode).stream()
-                .filter(value -> value.correct() == null || !value.correct())
-                .map(value -> value.feedback())
-                .filter(value -> value != null && !value.isBlank())
+                .filter(attempt -> attempt.correct() == null || !attempt.correct())
+                .map(attempt -> attempt.feedback())
+                .filter(feedback -> feedback != null && !feedback.isBlank())
                 .distinct()
                 .limit(5)
                 .toList();
-        String background = profile == null
-                ? "not provided"
-                : profile.primaryLanguage() + ", " + (profile.experienceYears() == null ? "experience unknown" : profile.experienceYears() + " years")
-                        + "; " + profile.selfDescription();
-        return """
-                You are TutorAgent. Teach the learner, but never modify learning progress, scores, pass/fail, or path state.
-                Learning context:
-                Target language: %s
-                Learner background: %s
-                Learning goal: %s
-                Current LearnUnit: %s
-                Learning objectives: %s
-                Mastery score: %s
-                Known weak points: %s
-                Use the learner's background when explaining concepts and suggest the Learning Engine actions when appropriate.
-                """.formatted(
-                learnUnit == null ? "unknown" : learnUnit.languageCode(), background,
-                profile == null ? "not provided" : profile.learningGoal(),
-                learnUnit == null ? learnUnitCode : learnUnit.name(),
-                learnUnit == null ? List.of() : learnUnit.learningObjectives(),
-                learnerLearnUnit == null ? 0 : learnerLearnUnit.masteryScore(), weakPoints);
-    }
-
-    private String staticInstructions() {
-        return "You are TutorAgent. Help the user learn programming clearly and patiently. "
-                + "You teach only; the Learning Engine controls scores, pass/fail, skip, and path state.";
+        TutorContext.MasterySummary mastery = currentPath == null
+                ? TutorContext.MasterySummary.empty()
+                : new TutorContext.MasterySummary(
+                        currentPath.masteryScore(), currentPath.bestAssessmentScore(), currentPath.attemptCount(), mastered);
+        String nextStep = next == null
+                ? currentPath != null && currentPath.status() != LearningPathItemStatus.CURRENT
+                ? "The Journey is complete; review the mastered LearnUnits."
+                : "Complete the current LearnUnit assessment."
+                : "Complete the current LearnUnit, then continue with " + next.name() + ".";
+        return new TutorContext(
+                journeyId,
+                journey == null ? current == null ? "unknown" : current.languageCode() : journey.languageCode(),
+                profile, current, mastery, weakPoints, next, nextStep);
     }
 }

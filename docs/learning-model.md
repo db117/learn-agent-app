@@ -3,9 +3,9 @@
 Learning Core 的主对象位于 `com.example.agent.learning`。教学知识使用 `LearnUnit`；
 框架 `Skill` 只表示 Agent capability，不属于学习领域。
 
-`LearningJourney` 保存语言、目标、生命周期和当前 LearnUnit；`LearnerProfile` 保存主要
-语言、经验和学习目标。每个 Journey 的 `LearnerLearnUnit` 保存状态、mastery、最佳分数、
-尝试次数以及诊断/学习通过原因。
+`LearningJourney` 保存语言、目标和生命周期；`LearnerProfile` 保存主要语言、经验和学习
+目标。每个 Journey 的 `LearningPathItem` 同时保存 LearnUnit 关系、当前状态、mastery、
+最佳分数、尝试次数以及诊断/学习通过原因。
 
 课程目录由 `LearningLanguage` 和有序的 `LearnUnit` 组成。LearnUnit 包含前置关系、学习
 目标、lesson 内容和通过策略参数。Question 是不可变定义，只包含 `MULTIPLE_CHOICE` 或
@@ -14,8 +14,6 @@ Learning Core 的主对象位于 `com.example.agent.learning`。教学知识使�
 状态边界：
 
 - Journey：`ACTIVE → COMPLETED`，也可以 `ARCHIVED`。
-- LearnerLearnUnit：`LOCKED → READY → LEARNING/ASSESSING → PASSED`；`SKIPPED` 是历史
-  结果，不等于掌握。
 - Path item：`PENDING → CURRENT → COMPLETED` 或 `SKIPPED`。
 - Attempt 完成后只追加新的 Retry，旧 Attempt 不更新。
 

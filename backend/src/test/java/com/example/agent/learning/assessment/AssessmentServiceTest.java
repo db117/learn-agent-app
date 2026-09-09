@@ -114,7 +114,7 @@ class AssessmentServiceTest {
     void learnUnitAssessmentGeneratesQuestionsWhenDatabaseHasNone() {
         LearningJourney journey = new LearningJourney(
                 "journey", "user", "typescript", "learn", com.example.agent.learning.journey.JourneyStatus.ACTIVE,
-                Instant.EPOCH, Instant.EPOCH, null);
+                Instant.EPOCH, Instant.EPOCH);
         LearningLanguage language = new LearningLanguage(
                 "language", "typescript", "TypeScript", "typed JavaScript", true);
         LearnUnit learnUnit = new LearnUnit(
@@ -158,7 +158,7 @@ class AssessmentServiceTest {
     void choiceOnlyLearnUnitDoesNotRequireCodingQuestion() {
         LearningJourney journey = new LearningJourney(
                 "journey", "user", "reading", "learn docs", com.example.agent.learning.journey.JourneyStatus.ACTIVE,
-                Instant.EPOCH, Instant.EPOCH, null);
+                Instant.EPOCH, Instant.EPOCH);
         LearningLanguage language = new LearningLanguage(
                 "language", "reading", "Reading", "reading path", true);
         LearnUnit learnUnit = new LearnUnit(

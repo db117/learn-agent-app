@@ -48,7 +48,6 @@ export type SessionDetail = SessionSummary & {
 };
 
 export type JourneyStatus = "ACTIVE" | "COMPLETED" | "ARCHIVED";
-export type LearnerLearnUnitStatus = "LOCKED" | "READY" | "LEARNING" | "ASSESSING" | "PASSED" | "SKIPPED";
 export type LearningPathItemStatus = "PENDING" | "CURRENT" | "COMPLETED" | "SKIPPED";
 export type QuestionType = "MULTIPLE_CHOICE" | "CODING";
 export type AssessmentType = "DIAGNOSTIC" | "LEARN_UNIT";
@@ -88,7 +87,6 @@ export type LearningJourney = {
   status: JourneyStatus;
   createdAt: string;
   updatedAt: string;
-  currentLearnUnitCode: string | null;
 };
 
 export type LearnerProfile = {
@@ -99,10 +97,12 @@ export type LearnerProfile = {
   learningGoal: string;
 };
 
-export type LearnerLearnUnit = {
+export type LearningPathItem = {
+  id: string;
   journeyId: string;
   learnUnitCode: string;
-  status: LearnerLearnUnitStatus;
+  sequence: number;
+  status: LearningPathItemStatus;
   masteryScore: number;
   bestAssessmentScore: number;
   attemptCount: number;
@@ -110,14 +110,6 @@ export type LearnerLearnUnit = {
   startedAt: string | null;
   passedAt: string | null;
   skippedAt: string | null;
-};
-
-export type LearningPathItem = {
-  id: string;
-  journeyId: string;
-  learnUnitCode: string;
-  sequence: number;
-  status: LearningPathItemStatus;
 };
 
 export type Question = {
@@ -206,7 +198,6 @@ export type AssessmentResultResponse = {
 export type LearnUnitResponse = {
   journeyId: string;
   learnUnit: LearnUnit;
-  learnerLearnUnit: LearnerLearnUnit | null;
   pathItem: LearningPathItem | null;
   attempts: AssessmentAttempt[];
   questionAttempts: QuestionAttempt[];
@@ -216,7 +207,6 @@ export type JourneyDetail = {
   journey: LearningJourney;
   profile: LearnerProfile | null;
   path: LearningPathItem[];
-  learnerLearnUnits: LearnerLearnUnit[];
 };
 
 export type TutorSessionResponse = {

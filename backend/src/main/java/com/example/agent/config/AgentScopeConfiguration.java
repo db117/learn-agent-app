@@ -129,7 +129,7 @@ public class AgentScopeConfiguration {
         @Override
         public Mono<String> onSystemPrompt(Agent agent, RuntimeContext runtime, String currentPrompt) {
             if (runtime == null || runtime.getSessionId() == null) return Mono.just(currentPrompt);
-            return Mono.fromCallable(() -> currentPrompt + "\n\n" + context.forSession(runtime.getSessionId()))
+            return Mono.fromCallable(() -> currentPrompt + "\n\n" + context.promptForSession(runtime.getSessionId()))
                     .subscribeOn(Schedulers.boundedElastic());
         }
     }

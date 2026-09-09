@@ -11,7 +11,7 @@ import java.util.Set;
 /** Creates only a new database and refuses to reinterpret an existing unknown SQLite file. */
 final class DatabaseInitializer {
 
-    static final String SCHEMA_VERSION = "agentscope-springboot-webflux-v1";
+    static final String SCHEMA_VERSION = "agentscope-springboot-webflux-v2";
     private static final Set<String> REQUIRED_TABLES = Set.of(
             "session", "message", "agent_run", "event", "setting", "learning_language",
             "learn_unit", "learning_journey", "learning_journey_learn_unit", "learner_profile",

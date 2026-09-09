@@ -150,8 +150,9 @@ export default function App() {
           setJourney(detail);
           if (detail.path.length > 0) {
             setView("dashboard");
-            if (detail.journey.currentLearnUnitCode) {
-              setLearnUnit(await api.learnUnit(detail.journey.id, detail.journey.currentLearnUnitCode));
+            const current = detail.path.find((item) => item.status === "CURRENT");
+            if (current) {
+              setLearnUnit(await api.learnUnit(detail.journey.id, current.learnUnitCode));
             }
           }
         }
@@ -201,13 +202,16 @@ export default function App() {
   }, [tutor?.id]);
 
   async function refreshJourney(id: string) {
+    const previousCode = learnUnit?.learnUnit.code;
     const detail = await api.journey(id);
     setJourney(detail);
-    if (detail.journey.currentLearnUnitCode) {
-      setLearnUnit(await api.learnUnit(id, detail.journey.currentLearnUnitCode));
+    const current = detail.path.find((item) => item.status === "CURRENT");
+    if (current) {
+      setLearnUnit(await api.learnUnit(id, current.learnUnitCode));
     } else {
       setLearnUnit(null);
     }
+    if (previousCode !== current?.learnUnitCode) setTutor(null);
     return detail;
   }
 
@@ -607,6 +611,10 @@ export default function App() {
     const path = journey?.path ?? [];
     const completed = path.filter((item) => item.status === "COMPLETED" || item.status === "SKIPPED").length;
     const current = learnUnit;
+    const next = path.find((item) => item.status === "PENDING");
+    const nextStep = next
+      ? learnUnitLabel(learnUnits, next.learnUnitCode)
+      : current?.pathItem?.status === "CURRENT" ? "完成当前 LearnUnit" : "完成 Journey";
     return (
       <section className="journey-grid">
         <aside className="path panel">
@@ -631,10 +639,11 @@ export default function App() {
               <div className="lesson-header"><div><div className="section-kicker">CURRENT LEARN UNIT</div><h2>{current.learnUnit.name}</h2></div><span className="status-pill">{statusLabel(current.pathItem?.status ?? "CURRENT")}</span></div>
               <p className="lead">{current.learnUnit.lessonIntro}</p>
               <div className="lesson-stats">
-                <span>掌握度 {current.learnerLearnUnit?.masteryScore ?? 0}</span>
-                <span>最佳成绩 {current.learnerLearnUnit?.bestAssessmentScore ?? 0}</span>
-                <span>评估次数 {current.learnerLearnUnit?.attemptCount ?? 0}</span>
+                <span>掌握度 {current.pathItem?.masteryScore ?? 0}</span>
+                <span>最佳成绩 {current.pathItem?.bestAssessmentScore ?? 0}</span>
+                <span>评估次数 {current.pathItem?.attemptCount ?? 0}</span>
               </div>
+              <p className="next-step">下一步：{nextStep}</p>
               <div className="lesson-columns">
                 <div><h3>学习目标</h3><ul>{current.learnUnit.learningObjectives.map((item) => <li key={item}>{item}</li>)}</ul></div>
                 <div><h3>关键概念</h3><div className="tag-list">{current.learnUnit.keyConcepts.map((item) => <span key={item}>{item}</span>)}</div></div>

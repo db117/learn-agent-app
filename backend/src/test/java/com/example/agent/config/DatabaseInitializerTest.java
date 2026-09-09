@@ -38,6 +38,18 @@ class DatabaseInitializerTest {
         assertTrue(error.getMessage().contains("refusing to migrate or overwrite"));
     }
 
+    @Test
+    void refusesAnOlderReplacementSchemaVersion() {
+        DataSource dataSource = dataSource("old-version.db");
+        JdbcClient.create(dataSource).sql("CREATE TABLE schema_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                .update();
+        JdbcClient.create(dataSource).sql(
+                        "INSERT INTO schema_metadata (key, value) VALUES ('schema.version', 'agentscope-springboot-webflux-v1')")
+                .update();
+
+        assertThrows(IllegalStateException.class, () -> new DatabaseInitializer(dataSource).initialize());
+    }
+
     private DataSource dataSource(String name) {
         return new SimpleDriverDataSource(new JDBC(), "jdbc:sqlite:" + tempDir.resolve(name));
     }

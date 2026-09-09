@@ -12,7 +12,6 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.CurriculumGenerator;
-import com.example.agent.learning.journey.LearnerLearnUnitStatus;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
 import com.example.agent.learning.catalog.LearningLanguage;
@@ -35,14 +34,17 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import javax.sql.DataSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -81,6 +83,8 @@ class AgentBackendApplicationTest {
     private TutorSessionService tutorSessions;
     @Autowired
     private AgentStateStore agentStateStore;
+    @Autowired
+    private DataSource dataSource;
 
     @Test
     void startsAgentAndReadsBackASessionFromSqlite() throws Exception {
@@ -135,6 +139,26 @@ class AgentBackendApplicationTest {
     }
 
     @Test
+    void createsAndRestoresExactlyOneCurrentPathItemFromSqlite() {
+        LearningJourney journey = journeys.create(
+                "test-user", "typescript", "path restore", "Java", 8,
+                "backend developer", "learn TypeScript");
+
+        List<com.example.agent.learning.path.LearningPathItem> first = learning.listPath(journey.id());
+        assertFalse(first.isEmpty());
+        assertEquals(1, first.stream()
+                .filter(item -> item.status() == LearningPathItemStatus.CURRENT).count());
+
+        progress.generatePath(journey.id());
+
+        LearningRepository restartedLearning = new LearningRepository(JdbcClient.create(dataSource));
+        List<com.example.agent.learning.path.LearningPathItem> restored = restartedLearning.listPath(journey.id());
+        assertEquals(first.size(), restored.size());
+        assertEquals(1, restored.stream()
+                .filter(item -> item.status() == LearningPathItemStatus.CURRENT).count());
+    }
+
+    @Test
     void refusesToStartWhenConversationExistsWithoutAgentState() {
         LearningJourney journey = journeys.create(
                 "test-user", "typescript", "state separation", "Java", 8,
@@ -180,15 +204,16 @@ class AgentBackendApplicationTest {
         progress.startLearnUnit(journey.id(), current);
         progress.recordLearnUnitAssessment(
                 journey.id(), current, new AssessmentScore(100, 60, 70, true, true), false);
-        assertEquals(LearnerLearnUnitStatus.LEARNING, learning.findLearnerLearnUnit(journey.id(), current).orElseThrow().status());
+        assertEquals(LearningPathItemStatus.CURRENT, learning.findPathItem(journey.id(), current).orElseThrow().status());
         progress.recordLearnUnitAssessment(
                 journey.id(), current, new AssessmentScore(100, 100, 90, true, true), true);
-        assertEquals(LearnerLearnUnitStatus.PASSED, learning.findLearnerLearnUnit(journey.id(), current).orElseThrow().status());
+        assertEquals(LearningPathItemStatus.COMPLETED, learning.findPathItem(journey.id(), current).orElseThrow().status());
         assertTrue(learning.listWorkflowTransitions(journey.id()).size() >= 5);
 
-        String skipped = learning.findJourney(journey.id()).orElseThrow().currentLearnUnitCode();
+        String skipped = learning.listPath(journey.id()).stream()
+                .filter(item -> item.status() == LearningPathItemStatus.CURRENT)
+                .findFirst().orElseThrow().learnUnitCode();
         progress.skipLearnUnit(journey.id(), skipped);
-        assertEquals(LearnerLearnUnitStatus.SKIPPED, learning.findLearnerLearnUnit(journey.id(), skipped).orElseThrow().status());
         assertEquals(LearningPathItemStatus.SKIPPED, learning.findPathItem(journey.id(), skipped).orElseThrow().status());
 
         Question question = new Question(

@@ -44,7 +44,8 @@ public class SaaAgentConfiguration {
                 .name("tutor_agent")
                 .description("A programming-language tutor for the Desktop Learning Agent.")
                 .model(chatModel)
-                .instruction(context.forSession("saa-runtime-foundation"))
+                .instruction("You are TutorAgent. Teach clearly and never change learning state.\n\n"
+                        + context.promptForSession("saa-runtime-foundation"))
                 .tools(ToolCallbacks.from(echoTool))
                 .hooks(SkillsAgentHook.builder().skillRegistry(agentSkillRegistry).build())
                 .build();

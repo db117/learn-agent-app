@@ -12,7 +12,6 @@ import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.journey.LearnerProfile;
-import com.example.agent.learning.journey.LearnerLearnUnit;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
 import com.example.agent.learning.path.LearningPathItem;
@@ -106,7 +105,7 @@ public class LearningController {
     public JourneyDetailResponse journey(@PathVariable String id) {
         LearningJourney journey = journeys.get(id);
         return new JourneyDetailResponse(
-                journey, learning.findProfile(id).orElse(null), learning.listPath(id), learning.listLearnerLearnUnits(id));
+                journey, learning.findProfile(id).orElse(null), learning.listPath(id));
     }
 
     /** 查询 Journey 的完整学习路径，包括历史节点。 */
@@ -119,8 +118,12 @@ public class LearningController {
     /** 查询当前唯一可操作的 LearnUnit 节点。 */
     @GetMapping("/journeys/{id}/current")
     public LearnUnitResponse current(@PathVariable String id) {
-        LearningJourney journey = journeys.get(id);
-        String learnUnitCode = journey.currentLearnUnitCode();
+        journeys.get(id);
+        String learnUnitCode = learning.listPath(id).stream()
+                .filter(item -> item.status() == com.example.agent.learning.path.LearningPathItemStatus.CURRENT)
+                .map(LearningPathItem::learnUnitCode)
+                .findFirst()
+                .orElse(null);
         if (learnUnitCode == null) throw new IllegalStateException("journey has no current LearnUnit");
         return learnUnit(id, learnUnitCode);
     }
@@ -197,8 +200,7 @@ public class LearningController {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("LearnUnit not found: " + learnUnitCode));
         return new LearnUnitResponse(
-                journeyId, learnUnit, learning.findLearnerLearnUnit(journeyId, learnUnitCode).orElse(null),
-                learning.findPathItem(journeyId, learnUnitCode).orElse(null),
+                journeyId, learnUnit, learning.findPathItem(journeyId, learnUnitCode).orElse(null),
                 learning.listAttemptsForLearnUnit(journeyId, learnUnitCode),
                 learning.listQuestionAttemptsForLearnUnit(journeyId, learnUnitCode));
     }
@@ -278,13 +280,11 @@ public class LearningController {
      * @param journey Journey 基本信息
      * @param profile 学习者背景
      * @param path 完整 Path，包括已完成和已跳过历史
-     * @param learnerLearnUnits 各 LearnUnit 当前状态
      */
     public record JourneyDetailResponse(
             LearningJourney journey,
             LearnerProfile profile,
-            List<LearningPathItem> path,
-            List<LearnerLearnUnit> learnerLearnUnits) {
+            List<LearningPathItem> path) {
     }
 
     /**
@@ -292,7 +292,6 @@ public class LearningController {
      *
      * @param journeyId 所属 Journey
      * @param learnUnit Journey 专属的教学内容
-     * @param learnerLearnUnit 学习者对该 LearnUnit 的状态
      * @param pathItem 该 LearnUnit 在 Path 中的节点
      * @param attempts 该 LearnUnit 的历史评估尝试
      * @param questionAttempts 已完成 Attempt 的逐题反馈
@@ -300,7 +299,6 @@ public class LearningController {
     public record LearnUnitResponse(
             String journeyId,
             LearnUnit learnUnit,
-            LearnerLearnUnit learnerLearnUnit,
             LearningPathItem pathItem,
             List<AssessmentAttempt> attempts,
             List<QuestionAttempt> questionAttempts) {

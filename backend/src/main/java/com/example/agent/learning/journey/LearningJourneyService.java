@@ -4,6 +4,7 @@ import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.persistence.LearningRepository;
+import com.example.agent.learning.progress.ProgressService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,10 +22,13 @@ public class LearningJourneyService {
 
     private final LearningRepository repository;
     private final CurriculumService curriculum;
+    private final ProgressService progress;
 
-    public LearningJourneyService(LearningRepository repository, CurriculumService curriculum) {
+    public LearningJourneyService(
+            LearningRepository repository, CurriculumService curriculum, ProgressService progress) {
         this.repository = repository;
         this.curriculum = curriculum;
+        this.progress = progress;
     }
 
     @Transactional
@@ -59,13 +63,14 @@ public class LearningJourneyService {
         curriculum.persistLanguages(generated);
         Instant now = Instant.now();
         LearningJourney journey = new LearningJourney(
-                id, userId, language.code(), goal.trim(), JourneyStatus.ACTIVE, now, now, null);
+                id, userId, language.code(), goal.trim(), JourneyStatus.ACTIVE, now, now);
         repository.insertJourney(journey);
         repository.saveProfile(new LearnerProfile(
                 id, primaryLanguage.trim(), experienceYears,
                 selfDescription == null ? "" : selfDescription.trim(), learningGoal.trim()));
         curriculum.persistJourneyCurriculum(id, generated);
-        return journey;
+        progress.generatePath(id);
+        return get(id);
     }
 
     public LearningJourney get(String id) {
@@ -80,7 +85,7 @@ public class LearningJourneyService {
     public LearningJourney archive(String id) {
         LearningJourney journey = get(id);
         Instant now = Instant.now();
-        repository.updateJourney(id, JourneyStatus.ARCHIVED, journey.currentLearnUnitCode(), now);
+        repository.updateJourney(id, JourneyStatus.ARCHIVED, now);
         return get(id);
     }
 

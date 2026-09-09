@@ -12,7 +12,7 @@ Xerial SQLite JDBC 驱动，`DatabaseInitializer` 只在空库执行 `schema.sql
 | `learning_language` / `learn_unit` | LLM 生成的语言元数据和 Journey 课程单元 |
 | `learning_journey_learn_unit` | Journey 与专属 LearnUnit 的关联 |
 | `learning_journey` / `learner_profile` | 学习目标和学习者背景 |
-| `learner_learn_unit` / `learning_path_item` | 掌握度、LearnUnit 状态和路径历史 |
+| `learning_path_item` | Journey 与 LearnUnit 关系、掌握度、状态和路径历史 |
 | `question` / `question_retirement` | insert-only 题目和 soft delete 标记 |
 | `assessment` / `assessment_question` | 评估定义和创建时固定的题集 |
 | `assessment_attempt` / `question_attempt` | 可重试的评估记录、答案和反馈 |
@@ -29,5 +29,5 @@ Question 的题干、答案、分值、rubric 和历史引用不会被更新。�
 `question_retirement`，历史 Assessment 仍可读取原题。
 
 新链路数据库由 `schema_metadata` 中的 `schema.version` 标识。已有 SQLite 文件如果缺少
-该标识或缺少新链路表，启动会明确报错，不会删除、覆盖或迁移数据。JDBC 和 AgentState
+该标识或缺少新链路表，或版本不是当前版本，启动会明确报错，不会删除、覆盖或迁移数据。JDBC 和 AgentState
 操作必须在 WebFlux event loop 之外执行。

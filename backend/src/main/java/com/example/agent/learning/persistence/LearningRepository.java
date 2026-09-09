@@ -11,8 +11,6 @@ import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.journey.JourneyStatus;
 import com.example.agent.learning.journey.LearnerProfile;
-import com.example.agent.learning.journey.LearnerLearnUnit;
-import com.example.agent.learning.journey.LearnerLearnUnitStatus;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.PassReason;
 import com.example.agent.learning.path.LearningPathItem;
@@ -237,8 +235,8 @@ public class LearningRepository {
     public void insertJourney(LearningJourney journey) {
         jdbc.sql("""
                         INSERT INTO learning_journey
-                          (id, user_id, language_code, goal, status, created_at, updated_at, current_learn_unit_code)
-                        VALUES (:id, :userId, :languageCode, :goal, :status, :createdAt, :updatedAt, :currentLearnUnit)
+                          (id, user_id, language_code, goal, status, created_at, updated_at)
+                        VALUES (:id, :userId, :languageCode, :goal, :status, :createdAt, :updatedAt)
                         """)
                 .param("id", journey.id())
                 .param("userId", journey.userId())
@@ -247,14 +245,13 @@ public class LearningRepository {
                 .param("status", journey.status().name())
                 .param("createdAt", journey.createdAt().toString())
                 .param("updatedAt", journey.updatedAt().toString())
-                .param("currentLearnUnit", journey.currentLearnUnitCode())
                 .update();
     }
 
     /** 查询本地用户的 Journey，最近更新的排在前面。 */
     public List<LearningJourney> listJourneys(String userId) {
         return jdbc.sql("""
-                        SELECT id, user_id, language_code, goal, status, created_at, updated_at, current_learn_unit_code
+                        SELECT id, user_id, language_code, goal, status, created_at, updated_at
                         FROM learning_journey WHERE user_id = :userId ORDER BY updated_at DESC
                         """)
                 .param("userId", userId)
@@ -265,7 +262,7 @@ public class LearningRepository {
     /** 按 Journey 主键查询。 */
     public Optional<LearningJourney> findJourney(String id) {
         return jdbc.sql("""
-                        SELECT id, user_id, language_code, goal, status, created_at, updated_at, current_learn_unit_code
+                        SELECT id, user_id, language_code, goal, status, created_at, updated_at
                         FROM learning_journey WHERE id = :id
                         """)
                 .param("id", id)
@@ -273,15 +270,13 @@ public class LearningRepository {
                 .optional();
     }
 
-    /** 更新 Journey 状态和当前 LearnUnit 指针。 */
-    public void updateJourney(String id, JourneyStatus status, String currentLearnUnit, Instant updatedAt) {
+    /** 更新 Journey 生命周期状态；当前 LearnUnit 由 Path 的 CURRENT 行决定。 */
+    public void updateJourney(String id, JourneyStatus status, Instant updatedAt) {
         jdbc.sql("""
-                        UPDATE learning_journey SET status = :status, current_learn_unit_code = :currentLearnUnit,
-                          updated_at = :updatedAt WHERE id = :id
+                        UPDATE learning_journey SET status = :status, updated_at = :updatedAt WHERE id = :id
                         """)
                 .param("id", id)
                 .param("status", status.name())
-                .param("currentLearnUnit", currentLearnUnit)
                 .param("updatedAt", updatedAt.toString())
                 .update();
     }
@@ -317,57 +312,6 @@ public class LearningRepository {
                 .optional();
     }
 
-    /** 查询 Journey 已产生状态记录的 LearnUnit。 */
-    public List<LearnerLearnUnit> listLearnerLearnUnits(String journeyId) {
-        return jdbc.sql("""
-                        SELECT journey_id, learn_unit_code, status, mastery_score, best_assessment_score, attempt_count,
-                          pass_reason, started_at, passed_at, skipped_at
-                        FROM learner_learn_unit WHERE journey_id = :journeyId ORDER BY learn_unit_code
-                        """)
-                .param("journeyId", journeyId)
-                .query((rs, rowNum) -> mapLearnerLearnUnit(rs))
-                .list();
-    }
-
-    /** 查询单个 LearnUnit 状态；尚未被评估的 LearnUnit 没有记录。 */
-    public Optional<LearnerLearnUnit> findLearnerLearnUnit(String journeyId, String learnUnitCode) {
-        return jdbc.sql("""
-                        SELECT journey_id, learn_unit_code, status, mastery_score, best_assessment_score, attempt_count,
-                          pass_reason, started_at, passed_at, skipped_at
-                        FROM learner_learn_unit WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode
-                        """)
-                .param("journeyId", journeyId)
-                .param("learnUnitCode", learnUnitCode)
-                .query((rs, rowNum) -> mapLearnerLearnUnit(rs))
-                .optional();
-    }
-
-    /** 保存 LearnUnit 状态，同时保留掌握度和历史最佳成绩。 */
-    public void upsertLearnerLearnUnit(LearnerLearnUnit learnUnit) {
-        jdbc.sql("""
-                        INSERT INTO learner_learn_unit
-                          (journey_id, learn_unit_code, status, mastery_score, best_assessment_score, attempt_count,
-                           pass_reason, started_at, passed_at, skipped_at)
-                        VALUES (:journeyId, :learnUnitCode, :status, :masteryScore, :bestScore, :attemptCount,
-                          :passReason, :startedAt, :passedAt, :skippedAt)
-                        ON CONFLICT(journey_id, learn_unit_code) DO UPDATE SET status = excluded.status,
-                          mastery_score = excluded.mastery_score, best_assessment_score = excluded.best_assessment_score,
-                          attempt_count = excluded.attempt_count, pass_reason = excluded.pass_reason,
-                          started_at = excluded.started_at, passed_at = excluded.passed_at, skipped_at = excluded.skipped_at
-                        """)
-                .param("journeyId", learnUnit.journeyId())
-                .param("learnUnitCode", learnUnit.learnUnitCode())
-                .param("status", learnUnit.status().name())
-                .param("masteryScore", learnUnit.masteryScore())
-                .param("bestScore", learnUnit.bestAssessmentScore())
-                .param("attemptCount", learnUnit.attemptCount())
-                .param("passReason", learnUnit.passReason() == null ? null : learnUnit.passReason().name())
-                .param("startedAt", instant(learnUnit.startedAt()))
-                .param("passedAt", instant(learnUnit.passedAt()))
-                .param("skippedAt", instant(learnUnit.skippedAt()))
-                .update();
-    }
-
     /** 用一次事务替换 Journey 的完整 Path。 */
     @Transactional
     public void replacePath(String journeyId, List<LearningPathItem> items) {
@@ -381,41 +325,49 @@ public class LearningRepository {
 
     private void insertPathItem(LearningPathItem item) {
         jdbc.sql("""
-                        INSERT INTO learning_path_item (id, journey_id, learn_unit_code, sequence, status)
-                        VALUES (:id, :journeyId, :learnUnitCode, :sequence, :status)
+                        INSERT INTO learning_path_item
+                          (id, journey_id, learn_unit_code, sequence, status, mastery_score,
+                           best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at)
+                        VALUES (:id, :journeyId, :learnUnitCode, :sequence, :status, :masteryScore,
+                          :bestScore, :attemptCount, :passReason, :startedAt, :passedAt, :skippedAt)
                         """)
                 .param("id", item.id())
                 .param("journeyId", item.journeyId())
                 .param("learnUnitCode", item.learnUnitCode())
                 .param("sequence", item.sequence())
                 .param("status", item.status().name())
+                .param("masteryScore", item.masteryScore())
+                .param("bestScore", item.bestAssessmentScore())
+                .param("attemptCount", item.attemptCount())
+                .param("passReason", item.passReason() == null ? null : item.passReason().name())
+                .param("startedAt", instant(item.startedAt()))
+                .param("passedAt", instant(item.passedAt()))
+                .param("skippedAt", instant(item.skippedAt()))
                 .update();
     }
 
     /** 查询完整 Path，包括已完成和已跳过的历史节点。 */
     public List<LearningPathItem> listPath(String journeyId) {
         return jdbc.sql("""
-                        SELECT id, journey_id, learn_unit_code, sequence, status
+                        SELECT id, journey_id, learn_unit_code, sequence, status, mastery_score,
+                          best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at
                         FROM learning_path_item WHERE journey_id = :journeyId ORDER BY sequence
                         """)
                 .param("journeyId", journeyId)
-                .query((rs, rowNum) -> new LearningPathItem(
-                        rs.getString("id"), rs.getString("journey_id"), rs.getString("learn_unit_code"),
-                        rs.getInt("sequence"), LearningPathItemStatus.valueOf(rs.getString("status"))))
+                .query((rs, rowNum) -> mapPathItem(rs))
                 .list();
     }
 
     /** 查询 Journey 中某 LearnUnit 对应的 Path 节点。 */
     public Optional<LearningPathItem> findPathItem(String journeyId, String learnUnitCode) {
         return jdbc.sql("""
-                        SELECT id, journey_id, learn_unit_code, sequence, status
+                        SELECT id, journey_id, learn_unit_code, sequence, status, mastery_score,
+                          best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at
                         FROM learning_path_item WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode
                         """)
                 .param("journeyId", journeyId)
                 .param("learnUnitCode", learnUnitCode)
-                .query((rs, rowNum) -> new LearningPathItem(
-                        rs.getString("id"), rs.getString("journey_id"), rs.getString("learn_unit_code"),
-                        rs.getInt("sequence"), LearningPathItemStatus.valueOf(rs.getString("status"))))
+                .query((rs, rowNum) -> mapPathItem(rs))
                 .optional();
     }
 
@@ -426,12 +378,25 @@ public class LearningRepository {
                 .update();
     }
 
-    /** 更新一个 Path 节点状态。 */
-    public void updatePathItem(String journeyId, String learnUnitCode, LearningPathItemStatus status) {
-        jdbc.sql("UPDATE learning_path_item SET status = :status WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode")
-                .param("journeyId", journeyId)
-                .param("learnUnitCode", learnUnitCode)
-                .param("status", status.name())
+    /** 更新 Path 节点的完整确定性进度。 */
+    public void updatePathItem(LearningPathItem item) {
+        jdbc.sql("""
+                        UPDATE learning_path_item SET status = :status, mastery_score = :masteryScore,
+                          best_assessment_score = :bestScore, attempt_count = :attemptCount,
+                          pass_reason = :passReason, started_at = :startedAt, passed_at = :passedAt,
+                          skipped_at = :skippedAt
+                        WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode
+                        """)
+                .param("status", item.status().name())
+                .param("masteryScore", item.masteryScore())
+                .param("bestScore", item.bestAssessmentScore())
+                .param("attemptCount", item.attemptCount())
+                .param("passReason", item.passReason() == null ? null : item.passReason().name())
+                .param("startedAt", instant(item.startedAt()))
+                .param("passedAt", instant(item.passedAt()))
+                .param("skippedAt", instant(item.skippedAt()))
+                .param("journeyId", item.journeyId())
+                .param("learnUnitCode", item.learnUnitCode())
                 .update();
     }
 
@@ -778,13 +743,14 @@ public class LearningRepository {
         return new LearningJourney(
                 rs.getString("id"), rs.getString("user_id"), rs.getString("language_code"), rs.getString("goal"),
                 JourneyStatus.valueOf(rs.getString("status")), Instant.parse(rs.getString("created_at")),
-                Instant.parse(rs.getString("updated_at")), rs.getString("current_learn_unit_code"));
+                Instant.parse(rs.getString("updated_at")));
     }
 
-    private LearnerLearnUnit mapLearnerLearnUnit(java.sql.ResultSet rs) throws java.sql.SQLException {
+    private LearningPathItem mapPathItem(java.sql.ResultSet rs) throws java.sql.SQLException {
         String reason = rs.getString("pass_reason");
-        return new LearnerLearnUnit(
-                rs.getString("journey_id"), rs.getString("learn_unit_code"), LearnerLearnUnitStatus.valueOf(rs.getString("status")),
+        return new LearningPathItem(
+                rs.getString("id"), rs.getString("journey_id"), rs.getString("learn_unit_code"), rs.getInt("sequence"),
+                LearningPathItemStatus.valueOf(rs.getString("status")),
                 rs.getInt("mastery_score"), rs.getInt("best_assessment_score"), rs.getInt("attempt_count"),
                 reason == null ? null : PassReason.valueOf(reason), instant(rs.getString("started_at")),
                 instant(rs.getString("passed_at")), instant(rs.getString("skipped_at")));

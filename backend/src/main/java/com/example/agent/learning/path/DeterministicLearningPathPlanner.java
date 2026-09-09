@@ -1,14 +1,11 @@
 package com.example.agent.learning.path;
 
 import com.example.agent.learning.catalog.LearnUnit;
-import com.example.agent.learning.journey.LearnerLearnUnit;
-import com.example.agent.learning.journey.LearnerLearnUnitStatus;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,23 +22,36 @@ public class DeterministicLearningPathPlanner {
     public List<LearningPathItem> plan(
             String journeyId,
             List<LearnUnit> learnUnits,
-            Map<String, LearnerLearnUnit> learnerLearnUnits) {
+            List<LearningPathItem> existingItems) {
         List<LearnUnit> ordered = order(learnUnits);
+        Map<String, LearningPathItem> existingByCode = new HashMap<>();
+        existingItems.forEach(item -> existingByCode.put(item.learnUnitCode(), item));
         List<LearningPathItem> result = new ArrayList<>();
         for (int index = 0; index < ordered.size(); index++) {
             LearnUnit learnUnit = ordered.get(index);
-            LearnerLearnUnit learnerLearnUnit = learnerLearnUnits.get(learnUnit.code());
-            LearningPathItemStatus status = learnerLearnUnit != null && learnerLearnUnit.status() == LearnerLearnUnitStatus.PASSED
-                    ? LearningPathItemStatus.COMPLETED
-                    : learnerLearnUnit != null && learnerLearnUnit.status() == LearnerLearnUnitStatus.SKIPPED
-                    ? LearningPathItemStatus.SKIPPED
-                    : LearningPathItemStatus.PENDING;
-            result.add(new LearningPathItem(UUID.randomUUID().toString(), journeyId, learnUnit.code(), index + 1, status));
+            LearningPathItem previous = existingByCode.get(learnUnit.code());
+            LearningPathItemStatus status = previous != null
+                    && (previous.status() == LearningPathItemStatus.COMPLETED
+                    || previous.status() == LearningPathItemStatus.SKIPPED)
+                    ? previous.status() : LearningPathItemStatus.PENDING;
+            result.add(new LearningPathItem(
+                    previous == null ? UUID.randomUUID().toString() : previous.id(), journeyId, learnUnit.code(), index + 1,
+                    status,
+                    previous == null ? 0 : previous.masteryScore(),
+                    previous == null ? 0 : previous.bestAssessmentScore(),
+                    previous == null ? 0 : previous.attemptCount(),
+                    previous == null ? null : previous.passReason(),
+                    previous == null ? null : previous.startedAt(),
+                    previous == null ? null : previous.passedAt(),
+                    previous == null ? null : previous.skippedAt()));
         }
         for (int index = 0; index < result.size(); index++) {
             if (result.get(index).status() == LearningPathItemStatus.PENDING) {
                 LearningPathItem item = result.get(index);
-                result.set(index, new LearningPathItem(item.id(), item.journeyId(), item.learnUnitCode(), item.sequence(), LearningPathItemStatus.CURRENT));
+                result.set(index, new LearningPathItem(
+                        item.id(), item.journeyId(), item.learnUnitCode(), item.sequence(), LearningPathItemStatus.CURRENT,
+                        item.masteryScore(), item.bestAssessmentScore(), item.attemptCount(), item.passReason(),
+                        item.startedAt(), item.passedAt(), item.skippedAt()));
                 break;
             }
         }
