@@ -1,7 +1,10 @@
 package com.example.agent.learning.catalog;
 
+import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.persistence.LearningRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashSet;
 import java.util.List;
@@ -63,9 +66,11 @@ public class CurriculumService {
     }
 
     /** 写入 Journey 专属 LearnUnit 并建立关联。 */
+    @Transactional
     public void persistJourneyCurriculum(
             String journeyId, CurriculumGenerator.GeneratedCurriculum generated) {
         repository.insertGeneratedCatalogForJourney(journeyId, generated.languages(), generated.learnUnits());
+        generated.questions().forEach(repository::insertGeneratedQuestion);
     }
 
     private CurriculumGenerator.GeneratedCurriculum scopeToJourney(
@@ -80,11 +85,19 @@ public class CurriculumService {
                         learnUnit.passScore(), learnUnit.minCodingScore(), learnUnit.enabled(), learnUnit.learningObjectives(),
                         learnUnit.lessonIntro(), learnUnit.keyConcepts(), learnUnit.examples(), learnUnit.diagnosticEligible()))
                 .toList();
-        return new CurriculumGenerator.GeneratedCurriculum(generated.languages(), learnUnits);
+        List<Question> questions = generated.questions().stream()
+                .map(question -> new Question(
+                        journeyId + "." + question.id(), scopedCodes.get(question.learnUnitCode()), question.type(),
+                        question.difficulty(), question.prompt(), question.points(), question.configJson(),
+                        question.rubricJson(), question.language(), question.starterCode(),
+                        question.referenceConceptsJson(), question.diagnosticEligible()))
+                .toList();
+        return new CurriculumGenerator.GeneratedCurriculum(generated.languages(), learnUnits, questions);
     }
 
     private boolean sameLanguage(String requested, LearningLanguage generated) {
-        return generated.code().equalsIgnoreCase(requested) || generated.name().equalsIgnoreCase(requested);
+        return generated.code().trim().equalsIgnoreCase(requested.trim())
+                || generated.name().trim().equalsIgnoreCase(requested.trim());
     }
 
     private void validate(CurriculumGenerator.GeneratedCurriculum generated) {
@@ -106,6 +119,7 @@ public class CurriculumService {
                     throw new IllegalStateException("Duplicate generated LearnUnit: " + left.code());
                 }));
         Set<String> learnUnitLanguages = new HashSet<>();
+        Set<String> learnUnitContent = new HashSet<>();
         for (LearnUnit learnUnit : generated.learnUnits()) {
             if (learnUnit.code() == null || learnUnit.languageCode() == null || learnUnit.name() == null || learnUnit.description() == null
                     || !languages.containsKey(learnUnit.languageCode())) {
@@ -114,18 +128,29 @@ public class CurriculumService {
             if (learnUnit.code().isBlank() || learnUnit.name().isBlank() || learnUnit.description().isBlank()) {
                 throw new IllegalStateException("Generated LearnUnit has missing required fields: " + learnUnit.code());
             }
-            if (learnUnit.learningObjectives().isEmpty() || learnUnit.lessonIntro() == null || learnUnit.lessonIntro().isBlank()
-                    || learnUnit.keyConcepts().isEmpty() || learnUnit.examples().isEmpty()) {
+            if (learnUnit.sequence() < 1 || learnUnit.learningObjectives().isEmpty()
+                    || learnUnit.lessonIntro() == null || learnUnit.lessonIntro().isBlank()
+                    || learnUnit.keyConcepts().isEmpty() || learnUnit.examples().isEmpty()
+                    || hasBlank(learnUnit.learningObjectives()) || hasBlank(learnUnit.keyConcepts())
+                    || hasBlank(learnUnit.examples())) {
                 throw new IllegalStateException("Generated LearnUnit has incomplete teaching content: " + learnUnit.code());
             }
             if (learnUnit.passScore() < 0 || learnUnit.passScore() > 100
                     || learnUnit.minCodingScore() != null && (learnUnit.minCodingScore() < 0 || learnUnit.minCodingScore() > 100)) {
                 throw new IllegalStateException("Generated LearnUnit has invalid score rules: " + learnUnit.code());
             }
+            String content = String.join("\u001f", learnUnit.name().trim(), learnUnit.description().trim(),
+                    learnUnit.lessonIntro().trim(), learnUnit.learningObjectives().toString(),
+                    learnUnit.keyConcepts().toString(), learnUnit.examples().toString());
+            if (!learnUnitContent.add(content)) {
+                throw new IllegalStateException("Generated LearnUnits contain duplicate teaching content");
+            }
             learnUnitLanguages.add(learnUnit.languageCode());
+            Set<String> prerequisites = new HashSet<>();
             for (String prerequisite : learnUnit.prerequisiteLearnUnitCodes()) {
                 LearnUnit prerequisiteLearnUnit = learnUnits.get(prerequisite);
-                if (prerequisite.equals(learnUnit.code()) || prerequisiteLearnUnit == null
+                if (!prerequisites.add(prerequisite) || prerequisite == null || prerequisite.isBlank()
+                        || prerequisite.equals(learnUnit.code()) || prerequisiteLearnUnit == null
                         || !prerequisiteLearnUnit.languageCode().equals(learnUnit.languageCode())) {
                     throw new IllegalStateException("Generated LearnUnit has invalid prerequisite: " + learnUnit.code());
                 }
@@ -135,6 +160,36 @@ public class CurriculumService {
             throw new IllegalStateException("Every generated language needs at least one LearnUnit");
         }
         validateAcyclic(learnUnits);
+        validateQuestions(generated.questions(), learnUnits);
+    }
+
+    private boolean hasBlank(List<String> values) {
+        return values.stream().anyMatch(value -> value == null || value.isBlank());
+    }
+
+    private void validateQuestions(List<Question> questions, Map<String, LearnUnit> learnUnits) {
+        if (questions.isEmpty()) return;
+        Set<String> ids = new HashSet<>();
+        for (Question question : questions) {
+            if (!ids.add(question.id())) throw new IllegalStateException("Duplicate generated Question: " + question.id());
+            LearnUnit learnUnit = learnUnits.get(question.learnUnitCode());
+            try {
+                QuestionStructureValidator.validate(question, learnUnit);
+            } catch (IllegalArgumentException error) {
+                throw new IllegalStateException("Generated Question is invalid: " + question.id(), error);
+            }
+        }
+        for (LearnUnit learnUnit : learnUnits.values()) {
+            boolean hasChoice = questions.stream().anyMatch(question ->
+                    question.learnUnitCode().equals(learnUnit.code())
+                            && question.type() == com.example.agent.learning.assessment.QuestionType.MULTIPLE_CHOICE);
+            boolean hasCoding = questions.stream().anyMatch(question ->
+                    question.learnUnitCode().equals(learnUnit.code())
+                            && question.type() == com.example.agent.learning.assessment.QuestionType.CODING);
+            if (!hasChoice || learnUnit.minCodingScore() != null && !hasCoding) {
+                throw new IllegalStateException("Generated Question coverage is incomplete for " + learnUnit.code());
+            }
+        }
     }
 
     private void validateAcyclic(Map<String, LearnUnit> learnUnits) {

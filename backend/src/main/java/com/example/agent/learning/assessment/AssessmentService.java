@@ -2,7 +2,6 @@ package com.example.agent.learning.assessment;
 
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
-import com.example.agent.learning.diagnostic.DeterministicDiagnosticQuestionPlanner;
 import com.example.agent.learning.diagnostic.DiagnosticQuestionPlanner;
 import com.example.agent.learning.journey.LearnerProfile;
 import com.example.agent.learning.persistence.LearningRepository;
@@ -43,7 +42,6 @@ public class AssessmentService {
     private final MultipleChoiceEvaluator multipleChoice = new MultipleChoiceEvaluator();
     private final CodingAnswerEvaluator codingEvaluator;
     private final DiagnosticQuestionPlanner llmPlanner;
-    private final DeterministicDiagnosticQuestionPlanner fallbackPlanner = new DeterministicDiagnosticQuestionPlanner();
 
     public AssessmentService(
             LearningRepository repository,
@@ -70,10 +68,15 @@ public class AssessmentService {
                     List<LearnUnit> learnUnits = repository.listLearnUnitsForJourney(journeyId).stream()
                             .filter(LearnUnit::diagnosticEligible)
                             .toList();
-                    List<Question> available = repository.listDiagnosticQuestionsForJourney(journeyId);
+                    Set<String> eligibleCodes = learnUnits.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
+                    List<Question> available = repository.listDiagnosticQuestionsForJourney(journeyId).stream()
+                            .filter(question -> eligibleCodes.contains(question.learnUnitCode()))
+                            .toList();
                     LearnerProfile profile = repository.findProfile(journeyId)
                             .orElse(new LearnerProfile(journeyId, "", null, "", journey.goal()));
-                    List<Question> selected = planQuestions(language, learnUnits, available, profile);
+                    List<Question> selected = available.isEmpty()
+                            ? planQuestions(language, learnUnits, available, profile)
+                            : normalize(available, learnUnits, available);
                     if (selected.isEmpty()) throw new IllegalStateException("No diagnostic questions are available");
                     insertNewQuestions(selected, available);
                     Instant now = Instant.now();
@@ -102,7 +105,9 @@ public class AssessmentService {
                     List<Question> available = repository.listQuestionsForLearnUnit(learnUnitCode);
                     LearnerProfile profile = repository.findProfile(journeyId)
                             .orElse(new LearnerProfile(journeyId, "", null, "", journey.goal()));
-                    List<Question> questions = planQuestions(language, List.of(learnUnit), available, profile);
+                    List<Question> questions = available.isEmpty()
+                            ? planQuestions(language, List.of(learnUnit), available, profile)
+                            : normalize(available, List.of(learnUnit), available);
                     if (questions.isEmpty()) throw new IllegalStateException("learnUnit has no questions: " + learnUnitCode);
                     insertNewQuestions(questions, available);
                     Instant now = Instant.now();
@@ -220,23 +225,17 @@ public class AssessmentService {
                 .orElse(List.of()));
     }
 
-    /**
-     * 调用 LLM 规划题目；模型失败时仅允许从已有 SQLite 题库回退选择。
-     *
-     * <p>新题由 Java 规则校验后再持久化，已有题目不会被模型返回值覆盖。</p>
-     */
+    /** 调用 LLM 规划题目；模型失败直接报错，不回退到旧题库或确定性 Mock。 */
     private List<Question> planQuestions(
             LearningLanguage language,
             List<LearnUnit> learnUnits,
             List<Question> available,
             LearnerProfile profile) {
-        List<Question> proposed;
         try {
-            proposed = llmPlanner.plan(language, learnUnits, available, profile);
-        } catch (IllegalStateException ignored) {
-            proposed = fallbackPlanner.plan(language, learnUnits, available, profile);
+            return normalize(llmPlanner.plan(language, learnUnits, available, profile), learnUnits, available);
+        } catch (RuntimeException error) {
+            throw new IllegalStateException("Unable to generate assessment questions", error);
         }
-        return normalize(proposed, learnUnits, available);
     }
 
     /** 把本次规划得到、尚未存在于题库中的题目以 insert-only 方式写入 SQLite。 */
@@ -249,6 +248,7 @@ public class AssessmentService {
     }
 
     private List<Question> normalize(List<Question> proposed, List<LearnUnit> learnUnits, List<Question> available) {
+        if (proposed == null || proposed.isEmpty()) throw new IllegalStateException("Generated question set is empty");
         Map<String, Question> byId = new HashMap<>();
         available.forEach(question -> byId.put(question.id(), question));
         List<Question> result = new ArrayList<>();
@@ -259,10 +259,18 @@ public class AssessmentService {
             if (!learnUnits.stream().anyMatch(learnUnit -> learnUnit.code().equals(question.learnUnitCode()))) {
                 throw new IllegalArgumentException("Question belongs to an unknown learnUnit");
             }
+            LearnUnit learnUnit = learnUnits.stream()
+                    .filter(candidate -> candidate.code().equals(question.learnUnitCode()))
+                    .findFirst().orElseThrow();
+            if (question.type() == QuestionType.CODING && learnUnit.minCodingScore() == null) {
+                throw new IllegalArgumentException("Coding question has no coding learning objective: " + learnUnit.code());
+            }
             if (ids.add(question.id())) result.add(question);
         }
         for (LearnUnit learnUnit : learnUnits) {
-            for (QuestionType type : List.of(QuestionType.MULTIPLE_CHOICE, QuestionType.CODING)) {
+            for (QuestionType type : learnUnit.minCodingScore() == null
+                    ? List.of(QuestionType.MULTIPLE_CHOICE)
+                    : List.of(QuestionType.MULTIPLE_CHOICE, QuestionType.CODING)) {
                 boolean covered = result.stream().anyMatch(question -> question.learnUnitCode().equals(learnUnit.code()) && question.type() == type);
                 if (!covered) {
                     available.stream()
@@ -275,8 +283,11 @@ public class AssessmentService {
             }
         }
         for (LearnUnit learnUnit : learnUnits) {
-            if (result.stream().noneMatch(question -> question.learnUnitCode().equals(learnUnit.code()) && question.type() == QuestionType.MULTIPLE_CHOICE)
-                    || result.stream().noneMatch(question -> question.learnUnitCode().equals(learnUnit.code()) && question.type() == QuestionType.CODING)) {
+            boolean hasChoice = result.stream().anyMatch(question ->
+                    question.learnUnitCode().equals(learnUnit.code()) && question.type() == QuestionType.MULTIPLE_CHOICE);
+            boolean hasCoding = result.stream().anyMatch(question ->
+                    question.learnUnitCode().equals(learnUnit.code()) && question.type() == QuestionType.CODING);
+            if (!hasChoice || learnUnit.minCodingScore() != null && !hasCoding) {
                 throw new IllegalStateException("Diagnostic coverage is incomplete for " + learnUnit.code());
             }
         }

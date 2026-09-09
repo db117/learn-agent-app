@@ -153,6 +153,40 @@ class AssessmentServiceTest {
         verify(repository).insertAssessmentQuestion(anyString(), eq("generated-coding"), eq(1));
     }
 
+    @Test
+    void choiceOnlyLearnUnitDoesNotRequireCodingQuestion() {
+        LearningJourney journey = new LearningJourney(
+                "journey", "user", "reading", "learn docs", com.example.agent.learning.journey.JourneyStatus.ACTIVE,
+                Instant.EPOCH, Instant.EPOCH, null);
+        LearningLanguage language = new LearningLanguage(
+                "language", "reading", "Reading", "reading path", true);
+        LearnUnit learnUnit = new LearnUnit(
+                "learnUnit-reading", "reading", "learnUnit-reading", "Read docs", "documentation",
+                1, List.of(), 80, null, true, List.of("Read docs"), "Read", List.of("terms"), List.of("API"), false);
+        Question choice = new Question(
+                "generated-choice-only", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
+                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
+                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
+                null, null, null, "[]", true);
+        when(repository.findJourney("journey")).thenReturn(Optional.of(journey));
+        when(repository.findLearnUnit("learnUnit-reading")).thenReturn(Optional.of(learnUnit));
+        when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(learnUnit));
+        when(repository.findLatestLearnUnitAssessment("journey", "learnUnit-reading")).thenReturn(Optional.empty());
+        when(repository.findLanguage("reading")).thenReturn(Optional.of(language));
+        when(repository.findProfile("journey")).thenReturn(Optional.empty());
+        when(repository.listQuestionsForLearnUnit("learnUnit-reading")).thenReturn(List.of());
+        when(planner.plan(any(), any(), any(), any())).thenReturn(List.of(choice));
+        when(repository.findOpenAttempt(anyString())).thenReturn(Optional.empty());
+        when(repository.listQuestionsForAssessment(anyString())).thenReturn(List.of(choice));
+        when(repository.listAttemptsForAssessment(anyString())).thenReturn(List.of());
+
+        AssessmentService.AssessmentState state = service.createLearnUnitAssessment("journey", "learnUnit-reading");
+
+        assertEquals(List.of(choice), state.questions());
+        verify(repository).insertGeneratedQuestion(choice);
+        verify(repository).insertAssessmentQuestion(anyString(), eq(choice.id()), eq(0));
+    }
+
     private AssessmentAttempt attempt(String id) {
         return new AssessmentAttempt(id, "assessment", "journey", "learnUnit-a", id.endsWith("1") ? 1 : 2,
                 null, null, null, null, Instant.EPOCH, null);

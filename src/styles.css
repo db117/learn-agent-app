@@ -40,6 +40,7 @@ h3 { margin-bottom: 10px; font-size: 14px; }
 .onboarding { max-width: 920px; margin-top: 8vh; }
 .onboarding h2 { max-width: 700px; font-size: 32px; line-height: 1.12; }
 .lead { max-width: 760px; color: #aeb8c8; line-height: 1.65; }
+.generation-status { margin: 18px 0 -8px; color: #8fb5ff; font-size: 12px; }
 .onboarding form { margin-top: 28px; }
 label { display: block; margin-bottom: 17px; color: #c9d2e0; font-size: 13px; }
 input, select, textarea { width: 100%; margin-top: 7px; border: 1px solid #344158; border-radius: 8px; outline: 0; padding: 11px 12px; color: #e8edf5; background: #111720; }

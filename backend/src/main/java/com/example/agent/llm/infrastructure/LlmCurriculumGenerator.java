@@ -1,5 +1,8 @@
 package com.example.agent.llm.infrastructure;
 
+import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionStructureValidator;
+import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
@@ -13,6 +16,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -25,6 +29,7 @@ import java.util.UUID;
 @Component
 public final class LlmCurriculumGenerator implements CurriculumGenerator {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
     private final ChatModel chatModel;
 
     public LlmCurriculumGenerator(ChatModel chatModel) {
@@ -45,22 +50,34 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                     "languageCode":"...","code":"...","name":"...","description":"...",
                     "sequence":1,"prerequisiteLearnUnitCodes":[],"passScore":80,"minCodingScore":70,
                     "learningObjectives":["..."],"lessonIntro":"...","keyConcepts":["..."],"examples":["..."]
+                  }],
+                  "questions":[{
+                    "learnUnitCode":"...","type":"MULTIPLE_CHOICE","difficulty":2,"prompt":"...",
+                    "points":20,"options":[{"id":"A","text":"..."},{"id":"B","text":"..."}],"correctOptionIds":["A"],
+                    "multiple":false,"referenceConcepts":["..."],
+                    "language":"...","starterCode":"...",
+                    "rubric":{"correctness":60,"languageUsage":20,"clarity":20}
                   }]
                 }
                 用户指定的目标编程语言是：%s
                 只生成这个目标语言，不要生成其他语言；languages 数组必须只有一个元素。
-                为该语言生成 4 到 8 个循序渐进的 LearnUnit。
+                生成足以覆盖学习目标的循序渐进 LearnUnit，数量按内容需要决定，不设上限，也不要为了凑数重复内容。
                 学习者的目标和背景如下，请让 LearnUnit 顺序和教学内容与其相关：%s
                 至少有一个无前置 LearnUnit 的起点；前置 LearnUnit 只能引用同一语言中已经生成的 code，不能循环。
                 code 使用稳定、简短、适合 URL 的英文标识；每个 LearnUnit 的 code 必须唯一。
                 name、description、learningObjectives、lessonIntro、keyConcepts、examples 使用中文，
                 但技术术语和语言名称可以保留英文。每个 LearnUnit 都要有可讲授的内容。
-                passScore 和 minCodingScore 为 0 到 100 的整数。不要生成题目，不要生成答案，不要生成评分结果。
+                passScore 和 minCodingScore 为 0 到 100 的整数；没有编码学习目标时 minCodingScore 必须为 null。
+                如果某个 LearnUnit 没有编码学习目标，不要为它生成 CODING 题；有编码学习目标时，
+                为每个 LearnUnit 生成至少一道有效的 MULTIPLE_CHOICE 和一道有效的 CODING 题，
+                没有编码学习目标时至少生成一道有效的 MULTIPLE_CHOICE 题。
+                questions 中的选择题必须包含 options、correctOptionIds 和 multiple；Coding 题必须包含非空 language
+                和对象形式的 rubric。题目只能引用已经生成的 LearnUnit code。
                 """.formatted(requestedLanguage.trim(), learningContext == null ? "" : learningContext.trim());
         try {
             String response = chatModel.call(new Prompt(new UserMessage(prompt)))
                     .getResult().getOutput().getText();
-            JsonNode root = new ObjectMapper().readTree(extractJson(response));
+            JsonNode root = MAPPER.readTree(extractJson(response));
             return parse(root);
         } catch (Exception error) {
             throw new IllegalArgumentException("Curriculum generator returned invalid JSON", error);
@@ -109,7 +126,54 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                 }
             }
         }
-        return new GeneratedCurriculum(languages, learnUnits);
+        return new GeneratedCurriculum(languages, learnUnits, parseQuestions(root, learnUnitCodes));
+    }
+
+    private List<Question> parseQuestions(JsonNode root, Set<String> learnUnitCodes) {
+        JsonNode questionNodes = root.get("questions");
+        if (questionNodes == null) throw new IllegalArgumentException("questions is required");
+        if (!questionNodes.isArray() || questionNodes.isEmpty()) {
+            throw new IllegalArgumentException("questions must be a non-empty array");
+        }
+        List<Question> questions = new ArrayList<>();
+        for (JsonNode node : questionNodes) {
+            String learnUnitCode = requiredText(node, "learnUnitCode");
+            if (!learnUnitCodes.contains(learnUnitCode)) {
+                throw new IllegalArgumentException("Question belongs to unknown LearnUnit: " + learnUnitCode);
+            }
+            QuestionType type = QuestionType.valueOf(requiredText(node, "type").toUpperCase(Locale.ROOT));
+            JsonNode options = node.get("options");
+            JsonNode correctOptionIds = node.get("correctOptionIds");
+            String config = null;
+            if (type == QuestionType.MULTIPLE_CHOICE) {
+                if (options == null || correctOptionIds == null) {
+                    throw new IllegalArgumentException("Multiple-choice question needs options and correctOptionIds");
+                }
+                JsonNode multiple = node.get("multiple");
+                if (multiple != null && !multiple.isBoolean()) {
+                    throw new IllegalArgumentException("Multiple-choice multiple must be boolean");
+                }
+                var configNode = MAPPER.createObjectNode();
+                configNode.set("options", options);
+                configNode.set("correctOptionIds", correctOptionIds);
+                configNode.put("multiple", multiple != null && multiple.asBoolean());
+                config = configNode.toString();
+            }
+            String rubric = type == QuestionType.CODING
+                    ? node.has("rubric") && !node.get("rubric").isNull() ? node.get("rubric").toString() : null
+                    : null;
+            JsonNode referenceConcepts = node.get("referenceConcepts");
+            Question question = new Question(
+                    "generated-question-" + UUID.randomUUID(), learnUnitCode, type,
+                    boundedInt(node, "difficulty", 2, 1, 5), requiredText(node, "prompt"),
+                    boundedInt(node, "points", type == QuestionType.CODING ? 100 : 20, 1, 1000),
+                    config, rubric, optionalText(node, "language"), optionalText(node, "starterCode"),
+                    referenceConcepts == null || referenceConcepts.isNull() ? "[]" : referenceConcepts.toString(),
+                    node.path("diagnosticEligible").asBoolean(true));
+            QuestionStructureValidator.validate(question);
+            questions.add(question);
+        }
+        return questions;
     }
 
     private int boundedInt(JsonNode node, String field, int defaultValue, int min, int max) {

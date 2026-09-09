@@ -1,5 +1,7 @@
 package com.example.agent.learning.catalog;
 
+import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.persistence.LearningRepository;
 import org.junit.jupiter.api.Test;
 
@@ -62,13 +64,59 @@ class CurriculumServiceTest {
         assertThrows(IllegalStateException.class, () -> service.generateForJourney("journey", "rust", ""));
     }
 
+    @Test
+    void scopesAndPersistsGeneratedQuestionsWithTheJourney() {
+        LearningLanguage language = language("python");
+        LearnUnit learnUnit = learnUnit("python.basics", "python", null);
+        Question choice = new Question(
+                "choice", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
+                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
+                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
+                null, null, null, "[]", true);
+        when(generator.generate("python", "learn APIs")).thenReturn(new CurriculumGenerator.GeneratedCurriculum(
+                List.of(language), List.of(learnUnit), List.of(choice)));
+
+        CurriculumGenerator.GeneratedCurriculum generated = service.generateForJourney(
+                "journey-1", "python", "learn APIs");
+
+        assertEquals("journey-1.python.basics", generated.learnUnits().get(0).code());
+        assertEquals("journey-1.choice", generated.questions().get(0).id());
+        assertEquals("journey-1.python.basics", generated.questions().get(0).learnUnitCode());
+
+        service.persistJourneyCurriculum("journey-1", generated);
+
+        verify(repository).insertGeneratedCatalogForJourney(
+                "journey-1", List.of(language), generated.learnUnits());
+        verify(repository).insertGeneratedQuestion(generated.questions().get(0));
+    }
+
+    @Test
+    void rejectsCodingQuestionWhenLearnUnitHasNoCodingObjectiveBeforePersistence() {
+        LearningLanguage language = language("python");
+        LearnUnit learnUnit = learnUnit("python.reading", "python", null);
+        Question coding = new Question(
+                "coding", learnUnit.code(), QuestionType.CODING, 1, "Implement", 100,
+                null, "{\"correctness\":100}", "python", "", "[]", true);
+        when(generator.generate("python", "read docs")).thenReturn(new CurriculumGenerator.GeneratedCurriculum(
+                List.of(language), List.of(learnUnit), List.of(coding)));
+
+        assertThrows(IllegalStateException.class,
+                () -> service.generateForJourney("journey-1", "python", "read docs"));
+
+        verifyNoInteractions(repository);
+    }
+
     private LearningLanguage language(String code) {
         return new LearningLanguage("language-" + code, code, code, "description", true);
     }
 
     private LearnUnit learnUnit(String code, String languageCode) {
+        return learnUnit(code, languageCode, 70);
+    }
+
+    private LearnUnit learnUnit(String code, String languageCode, Integer minCodingScore) {
         return new LearnUnit(
                 "learnUnit-" + code, languageCode, code, code, "description", 1, List.of(),
-                80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), true);
+                80, minCodingScore, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), true);
     }
 }

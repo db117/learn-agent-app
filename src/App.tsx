@@ -251,7 +251,7 @@ export default function App() {
       setJourney(detail);
       await beginDiagnostic(created.id);
     } catch (cause) {
-      setError(errorMessage(cause, "Unable to create journey"));
+      setError(errorMessage(cause, "Journey 生成失败，请检查输入后重试"));
       setBusy(false);
     }
   }
@@ -459,7 +459,8 @@ export default function App() {
           <label>当前水平补充
                 <textarea value={form.selfDescription} onChange={(event) => setForm((current) => ({...current, selfDescription: event.target.value}))} rows={3} placeholder="例如：有后端开发经验，希望系统掌握所选语言。" />
           </label>
-          <button className="primary wide" type="submit" disabled={busy || !form.languageCode.trim()}>{busy ? "准备中…" : "创建 Journey 并开始诊断"}</button>
+          {busy && <p className="generation-status" role="status">正在生成 Journey、LearnUnit 教学内容和适用题目，请稍候…</p>}
+          <button className="primary wide" type="submit" disabled={busy || !form.languageCode.trim()}>{busy ? "生成中…" : "创建 Journey 并开始诊断"}</button>
         </form>
       </section>
     );
@@ -666,7 +667,7 @@ export default function App() {
           <span className="muted">{backend.status} · {health?.sqlite ?? "SQLite"}</span>
         </div>
       </header>
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
       {view === "welcome" && renderWelcome()}
       {(view === "diagnostic" || view === "assessment") && renderAssessment()}
       {view === "result" && renderResult()}

@@ -1,5 +1,7 @@
 package com.example.agent.learning.catalog;
 
+import com.example.agent.learning.assessment.Question;
+
 import java.util.List;
 
 /**
@@ -18,14 +20,21 @@ public interface CurriculumGenerator {
      *
      * @param languages 学习语言目录
      * @param learnUnits 语言下的 LearnUnit 教学内容
+     * @param questions LearnUnit 的适用题目；可为空，表示由后续 Assessment 生成
      */
     record GeneratedCurriculum(
             List<LearningLanguage> languages,
-            List<LearnUnit> learnUnits) {
+            List<LearnUnit> learnUnits,
+            List<Question> questions) {
+
+        public GeneratedCurriculum(List<LearningLanguage> languages, List<LearnUnit> learnUnits) {
+            this(languages, learnUnits, List.of());
+        }
 
         public GeneratedCurriculum {
             languages = List.copyOf(languages == null ? List.of() : languages);
             learnUnits = List.copyOf(learnUnits == null ? List.of() : learnUnits);
+            questions = List.copyOf(questions == null ? List.of() : questions);
         }
     }
 }

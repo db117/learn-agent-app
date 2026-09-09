@@ -1,6 +1,7 @@
 package com.example.agent.llm.infrastructure;
 
 import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
@@ -16,10 +17,9 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -46,8 +46,8 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
             LearnerProfile profile) {
         Map<String, Question> existing = new HashMap<>();
         for (Question question : availableQuestions) existing.put(question.id(), question);
-        Set<String> learnUnitCodes = new HashSet<>();
-        for (LearnUnit learnUnit : learnUnits) learnUnitCodes.add(learnUnit.code());
+        Map<String, LearnUnit> learnUnitsByCode = new HashMap<>();
+        for (LearnUnit learnUnit : learnUnits) learnUnitsByCode.put(learnUnit.code(), learnUnit);
         String prompt = """
                 Choose an assessment question set for a programming learner. Return JSON only:
                 {"questions":[...]}.
@@ -56,6 +56,7 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
                 You may also create a new question with learnUnitCode, type (MULTIPLE_CHOICE or CODING), prompt,
                 points, language, starterCode, rubric, referenceConcepts, and for multiple choice an options array
                 of {"id":"A","text":"..."} plus correctOptionIds. New questions must assess the listed LearnUnits.
+                A LearnUnit with null minCodingScore has no coding learning objective and must not receive a CODING question.
                 Never return changed fields alongside existingQuestionId. Do not return scores or passed decisions.
 
                 Language: %s
@@ -76,14 +77,15 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
                 throw new IllegalArgumentException("questions must be a non-empty array");
             }
             List<Question> result = new ArrayList<>();
-            for (JsonNode node : nodes) result.add(parseQuestion(node, existing, learnUnitCodes));
+            for (JsonNode node : nodes) result.add(parseQuestion(node, existing, learnUnitsByCode));
             return result;
         } catch (Exception error) {
             throw new IllegalArgumentException("Assessment question planner returned invalid JSON", error);
         }
     }
 
-    private Question parseQuestion(JsonNode node, Map<String, Question> existing, Set<String> learnUnitCodes) {
+    private Question parseQuestion(
+            JsonNode node, Map<String, Question> existing, Map<String, LearnUnit> learnUnitsByCode) {
         JsonNode existingId = node.get("existingQuestionId");
         if (existingId != null) {
             if (!existingId.isTextual() || node.size() != 1) {
@@ -94,8 +96,9 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
             return question;
         }
         String learnUnitCode = requiredText(node, "learnUnitCode");
-        if (!learnUnitCodes.contains(learnUnitCode)) throw new IllegalArgumentException("Unknown assessment LearnUnit");
-        QuestionType type = QuestionType.valueOf(requiredText(node, "type"));
+        LearnUnit learnUnit = learnUnitsByCode.get(learnUnitCode);
+        if (learnUnit == null) throw new IllegalArgumentException("Unknown assessment LearnUnit");
+        QuestionType type = QuestionType.valueOf(requiredText(node, "type").toUpperCase(Locale.ROOT));
         String prompt = requiredText(node, "prompt");
         int points = node.path("points").asInt(type == QuestionType.CODING ? 100 : 20);
         if (points <= 0) throw new IllegalArgumentException("New question points must be positive");
@@ -119,10 +122,12 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
                     : rubricNode.toString();
         }
         JsonNode concepts = node.get("referenceConcepts");
-        return new Question(
+        Question question = new Question(
                 "generated-question-" + UUID.randomUUID(), learnUnitCode, type, node.path("difficulty").asInt(2),
                 prompt, points, config, rubric, nullableText(node, "language"), nullableText(node, "starterCode"),
                 concepts == null || concepts.isNull() ? "[]" : concepts.toString(), true);
+        QuestionStructureValidator.validate(question, learnUnit);
+        return question;
     }
 
     private String requiredText(JsonNode node, String field) {
