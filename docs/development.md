@@ -12,6 +12,8 @@ export OPENAI_MODEL=gpt-5-mini       # 可选
 
 未设置 `OPENAI_API_KEY` 时 `pnpm dev` 仍可启动界面和后端，但 LLM 操作会明确失败，不会
 回退到静态课程、旧题库或 Mock 结果。
+`pnpm dev` 默认使用项目内的 `.data/dev/agent.db`；设置 `APP_DATABASE` 或 `AGENT_DATA_DIR`
+可覆盖这个开发环境默认值。
 
 ## 命令
 
