@@ -34,6 +34,7 @@ import java.util.UUID;
 public class AssessmentService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final int MIN_DIAGNOSTIC_EVIDENCE = 2;
 
     private final LearningRepository repository;
     private final ProgressService progress;
@@ -68,15 +69,16 @@ public class AssessmentService {
                     List<LearnUnit> learnUnits = repository.listLearnUnitsForJourney(journeyId).stream()
                             .filter(LearnUnit::diagnosticEligible)
                             .toList();
+                    if (learnUnits.isEmpty()) throw new IllegalStateException("No diagnostic LearnUnits are available");
                     Set<String> eligibleCodes = learnUnits.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
                     List<Question> available = repository.listDiagnosticQuestionsForJourney(journeyId).stream()
                             .filter(question -> eligibleCodes.contains(question.learnUnitCode()))
                             .toList();
                     LearnerProfile profile = repository.findProfile(journeyId)
                             .orElse(new LearnerProfile(journeyId, "", null, "", journey.goal()));
-                    List<Question> selected = available.isEmpty()
-                            ? planQuestions(language, learnUnits, available, profile)
-                            : normalize(available, learnUnits, available);
+                    List<Question> selected = hasCoverage(available, learnUnits, MIN_DIAGNOSTIC_EVIDENCE)
+                            ? normalize(available, learnUnits, available, MIN_DIAGNOSTIC_EVIDENCE)
+                            : planQuestions(language, learnUnits, available, profile, MIN_DIAGNOSTIC_EVIDENCE);
                     if (selected.isEmpty()) throw new IllegalStateException("No diagnostic questions are available");
                     insertNewQuestions(selected, available);
                     Instant now = Instant.now();
@@ -106,8 +108,8 @@ public class AssessmentService {
                     LearnerProfile profile = repository.findProfile(journeyId)
                             .orElse(new LearnerProfile(journeyId, "", null, "", journey.goal()));
                     List<Question> questions = available.isEmpty()
-                            ? planQuestions(language, List.of(learnUnit), available, profile)
-                            : normalize(available, List.of(learnUnit), available);
+                            ? planQuestions(language, List.of(learnUnit), available, profile, 1)
+                            : normalize(available, List.of(learnUnit), available, 1);
                     if (questions.isEmpty()) throw new IllegalStateException("learnUnit has no questions: " + learnUnitCode);
                     insertNewQuestions(questions, available);
                     Instant now = Instant.now();
@@ -230,9 +232,11 @@ public class AssessmentService {
             LearningLanguage language,
             List<LearnUnit> learnUnits,
             List<Question> available,
-            LearnerProfile profile) {
+            LearnerProfile profile,
+            int minimumEvidence) {
         try {
-            return normalize(llmPlanner.plan(language, learnUnits, available, profile), learnUnits, available);
+            return normalize(
+                    llmPlanner.plan(language, learnUnits, available, profile), learnUnits, available, minimumEvidence);
         } catch (RuntimeException error) {
             throw new IllegalStateException("Unable to generate assessment questions", error);
         }
@@ -247,26 +251,30 @@ public class AssessmentService {
         }
     }
 
-    private List<Question> normalize(List<Question> proposed, List<LearnUnit> learnUnits, List<Question> available) {
+    private List<Question> normalize(
+            List<Question> proposed, List<LearnUnit> learnUnits, List<Question> available, int minimumEvidence) {
         if (proposed == null || proposed.isEmpty()) throw new IllegalStateException("Generated question set is empty");
         Map<String, Question> byId = new HashMap<>();
         available.forEach(question -> byId.put(question.id(), question));
         List<Question> result = new ArrayList<>();
         Set<String> ids = new HashSet<>();
         for (Question question : proposed) {
+            if (question == null) throw new IllegalArgumentException("Question is required");
             Question existing = byId.get(question.id());
             if (existing != null && !existing.equals(question)) throw new IllegalArgumentException("Existing question was changed");
-            if (!learnUnits.stream().anyMatch(learnUnit -> learnUnit.code().equals(question.learnUnitCode()))) {
-                throw new IllegalArgumentException("Question belongs to an unknown learnUnit");
-            }
             LearnUnit learnUnit = learnUnits.stream()
                     .filter(candidate -> candidate.code().equals(question.learnUnitCode()))
-                    .findFirst().orElseThrow();
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Question belongs to an unknown learnUnit"));
             if (question.type() == QuestionType.CODING && learnUnit.minCodingScore() == null) {
                 throw new IllegalArgumentException("Coding question has no coding learning objective: " + learnUnit.code());
             }
-            if (existing == null) QuestionStructureValidator.validate(question, learnUnit);
-            if (ids.add(question.id())) result.add(question);
+            if (minimumEvidence > 1 && !question.diagnosticEligible()) {
+                throw new IllegalArgumentException("Diagnostic question must be eligible: " + question.id());
+            }
+            QuestionStructureValidator.validate(question, learnUnit);
+            if (!ids.add(question.id())) throw new IllegalArgumentException("Duplicate question: " + question.id());
+            result.add(question);
         }
         for (LearnUnit learnUnit : learnUnits) {
             for (QuestionType type : learnUnit.minCodingScore() == null
@@ -276,23 +284,61 @@ public class AssessmentService {
                 if (!covered) {
                     available.stream()
                             .filter(question -> question.learnUnitCode().equals(learnUnit.code()) && question.type() == type)
+                            .filter(question -> ids.add(question.id()))
                             .findFirst()
-                            .ifPresent(question -> {
-                                if (ids.add(question.id())) result.add(question);
-                            });
+                            .ifPresent(result::add);
                 }
             }
+            while (result.stream().filter(question -> question.learnUnitCode().equals(learnUnit.code())).count()
+                    < minimumEvidence) {
+                int before = result.size();
+                available.stream()
+                        .filter(question -> question.learnUnitCode().equals(learnUnit.code()))
+                        .filter(question -> ids.add(question.id()))
+                        .findFirst()
+                        .ifPresent(result::add);
+                if (result.size() == before) break;
+            }
+        }
+        for (Question question : result) {
+            LearnUnit learnUnit = learnUnits.stream()
+                    .filter(candidate -> candidate.code().equals(question.learnUnitCode()))
+                    .findFirst().orElseThrow();
+            if (minimumEvidence > 1 && !question.diagnosticEligible()) {
+                throw new IllegalArgumentException("Diagnostic question must be eligible: " + question.id());
+            }
+            QuestionStructureValidator.validate(question, learnUnit);
         }
         for (LearnUnit learnUnit : learnUnits) {
             boolean hasChoice = result.stream().anyMatch(question ->
                     question.learnUnitCode().equals(learnUnit.code()) && question.type() == QuestionType.MULTIPLE_CHOICE);
             boolean hasCoding = result.stream().anyMatch(question ->
                     question.learnUnitCode().equals(learnUnit.code()) && question.type() == QuestionType.CODING);
-            if (!hasChoice || learnUnit.minCodingScore() != null && !hasCoding) {
-                throw new IllegalStateException("Diagnostic coverage is incomplete for " + learnUnit.code());
+            long evidence = result.stream()
+                    .filter(question -> question.learnUnitCode().equals(learnUnit.code()))
+                    .count();
+            if (evidence < minimumEvidence || !hasChoice || learnUnit.minCodingScore() != null && !hasCoding) {
+                throw new IllegalStateException("Assessment coverage is incomplete for " + learnUnit.code());
             }
         }
         return result;
+    }
+
+    private boolean hasCoverage(List<Question> questions, List<LearnUnit> learnUnits, int minimumEvidence) {
+        return !learnUnits.isEmpty() && learnUnits.stream().allMatch(learnUnit -> {
+            long evidence = questions.stream()
+                    .filter(question -> question.learnUnitCode().equals(learnUnit.code()))
+                    .filter(Question::diagnosticEligible)
+                    .count();
+            boolean hasChoice = questions.stream().anyMatch(question ->
+                    question.learnUnitCode().equals(learnUnit.code())
+                            && question.diagnosticEligible() && question.type() == QuestionType.MULTIPLE_CHOICE);
+            boolean hasCoding = questions.stream().anyMatch(question ->
+                    question.learnUnitCode().equals(learnUnit.code())
+                            && question.diagnosticEligible() && question.type() == QuestionType.CODING);
+            return evidence >= minimumEvidence && hasChoice
+                    && (learnUnit.minCodingScore() == null || hasCoding);
+        });
     }
 
     private List<DiagnosticLearnUnitResult> diagnosticResults(

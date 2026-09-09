@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
@@ -186,6 +188,122 @@ class AssessmentServiceTest {
         assertEquals(List.of(choice), state.questions());
         verify(repository).insertGeneratedQuestion(choice);
         verify(repository).insertAssessmentQuestion(anyString(), eq(choice.id()), eq(0));
+    }
+
+    @Test
+    void diagnosticRejectsIncompleteEvidenceBeforePersistence() {
+        LearningJourney journey = new LearningJourney(
+                "journey", "user", "reading", "learn docs", com.example.agent.learning.journey.JourneyStatus.ACTIVE,
+                Instant.EPOCH, Instant.EPOCH);
+        LearningLanguage language = new LearningLanguage(
+                "language", "reading", "Reading", "reading path", true);
+        LearnUnit learnUnit = new LearnUnit(
+                "learnUnit-reading", "reading", "learnUnit-reading", "Read docs", "documentation",
+                1, List.of(), 80, null, true, List.of("Read docs"), "Read", List.of("terms"), List.of("API"), true);
+        Question choice = new Question(
+                "diagnostic-choice", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
+                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
+                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
+                null, null, null, "[]", true);
+        when(repository.findJourney("journey")).thenReturn(Optional.of(journey));
+        when(repository.findLanguage("reading")).thenReturn(Optional.of(language));
+        when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(learnUnit));
+        when(repository.listDiagnosticQuestionsForJourney("journey")).thenReturn(List.of(choice));
+        when(repository.findProfile("journey")).thenReturn(Optional.empty());
+        when(planner.plan(any(), any(), any(), any())).thenReturn(List.of(choice));
+
+        assertThrows(IllegalStateException.class, () -> service.createDiagnostic("journey"));
+
+        verify(planner).plan(any(), any(), any(), any());
+        verify(repository, never()).insertGeneratedQuestion(any(Question.class));
+        verify(repository, never()).insertAssessment(any(Assessment.class));
+    }
+
+    @Test
+    void diagnosticUsesPlannerToCompleteExistingCatalogAndKeepsQuestionSetFixed() {
+        LearningJourney journey = new LearningJourney(
+                "journey", "user", "reading", "learn docs", com.example.agent.learning.journey.JourneyStatus.ACTIVE,
+                Instant.EPOCH, Instant.EPOCH);
+        LearningLanguage language = new LearningLanguage(
+                "language", "reading", "Reading", "reading path", true);
+        LearnUnit learnUnit = new LearnUnit(
+                "learnUnit-reading", "reading", "learnUnit-reading", "Read docs", "documentation",
+                1, List.of(), 80, null, true, List.of("Read docs"), "Read", List.of("terms"), List.of("API"), true);
+        Question first = new Question(
+                "diagnostic-choice-1", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose one", 20,
+                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
+                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
+                null, null, null, "[]", true);
+        Question second = new Question(
+                "diagnostic-choice-2", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 2, "Choose two", 20,
+                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
+                        + "\"correctOptionIds\":[\"B\"],\"multiple\":false}",
+                null, null, null, "[]", true);
+        when(repository.findDiagnosticAssessment("journey")).thenReturn(Optional.empty());
+        when(repository.findJourney("journey")).thenReturn(Optional.of(journey));
+        when(repository.findLanguage("reading")).thenReturn(Optional.of(language));
+        when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(learnUnit));
+        when(repository.listDiagnosticQuestionsForJourney("journey")).thenReturn(List.of(first));
+        when(repository.findProfile("journey")).thenReturn(Optional.empty());
+        when(planner.plan(any(), any(), any(), any())).thenReturn(List.of(first, second));
+        when(repository.findOpenAttempt(anyString())).thenReturn(Optional.empty());
+        when(repository.listQuestionsForAssessment(anyString())).thenReturn(List.of(first, second));
+        when(repository.listAttemptsForAssessment(anyString())).thenReturn(List.of());
+
+        AssessmentService.AssessmentState state = service.createDiagnostic("journey");
+
+        assertEquals(List.of(first, second), state.questions());
+        verify(planner).plan(any(), any(), any(), any());
+        verify(repository).insertGeneratedQuestion(second);
+        verify(repository).insertAssessment(any(Assessment.class));
+        verify(repository).insertAssessmentQuestion(anyString(), eq(first.id()), eq(0));
+        verify(repository).insertAssessmentQuestion(anyString(), eq(second.id()), eq(1));
+
+        when(repository.findDiagnosticAssessment("journey")).thenReturn(Optional.of(state.assessment()));
+        AssessmentService.AssessmentState resumed = service.createDiagnostic("journey");
+
+        assertEquals(state.assessment(), resumed.assessment());
+        verify(planner, times(1)).plan(any(), any(), any(), any());
+        verify(repository, times(1)).insertAssessment(any(Assessment.class));
+    }
+
+    @Test
+    void completingDiagnosticScoresInJavaAndUpdatesLearningPath() {
+        Assessment assessment = new Assessment(
+                "diagnostic", "journey", null, AssessmentType.DIAGNOSTIC,
+                AssessmentStatus.IN_PROGRESS, Instant.EPOCH, null);
+        AssessmentAttempt openAttempt = new AssessmentAttempt(
+                "attempt", assessment.id(), "journey", null, 1,
+                null, null, null, null, Instant.EPOCH, null);
+        Question first = new Question(
+                "diagnostic-choice-1", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose one", 20,
+                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
+                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
+                null, null, null, "[]", true);
+        Question second = new Question(
+                "diagnostic-choice-2", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 2, "Choose two", 20,
+                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
+                        + "\"correctOptionIds\":[\"B\"],\"multiple\":false}",
+                null, null, null, "[]", true);
+        when(repository.findAssessment(assessment.id())).thenReturn(Optional.of(assessment));
+        when(repository.findOpenAttempt(assessment.id())).thenReturn(Optional.of(openAttempt));
+        when(repository.listQuestionsForAssessment(assessment.id())).thenReturn(List.of(first, second));
+        when(repository.listQuestionAttempts(openAttempt.id())).thenReturn(List.of(
+                new QuestionAttempt(first.id(), openAttempt.id(), "{}", 20, 20, "Correct.", true, null, null, "[\"A\"]"),
+                new QuestionAttempt(second.id(), openAttempt.id(), "{}", 20, 20, "Correct.", true, null, null, "[\"B\"]")));
+        when(repository.findAttempt(openAttempt.id())).thenReturn(Optional.of(new AssessmentAttempt(
+                openAttempt.id(), assessment.id(), "journey", null, 1,
+                100, null, 100, true, Instant.EPOCH, Instant.now())));
+
+        AssessmentService.AssessmentSubmission result = service.submit(assessment.id());
+
+        assertTrue(result.passed());
+        assertEquals(100, result.score().totalScore());
+        assertEquals(1, result.learnUnitResults().size());
+        verify(progress).recordDiagnosticResult(
+                "journey", "learnUnit-a", new AssessmentScore(100, 0, 100, true, false), true);
+        verify(progress).generatePath("journey");
+        verify(repository).updateAssessment(eq(assessment.id()), eq(AssessmentStatus.COMPLETED), any(Instant.class));
     }
 
     private AssessmentAttempt attempt(String id) {

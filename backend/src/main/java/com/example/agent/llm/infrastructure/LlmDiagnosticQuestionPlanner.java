@@ -63,6 +63,9 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
                 Learner profile: %s
                 LearnUnits: %s
                 Existing catalog questions: %s
+                For every listed LearnUnit, return at least two distinct diagnostic questions.
+                Include at least one MULTIPLE_CHOICE question; when minCodingScore is not null,
+                include at least one CODING question as the second evidence item.
                 """.formatted(language.code(), profile, learnUnits, availableQuestions);
         String text;
         try {
