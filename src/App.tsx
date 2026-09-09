@@ -76,6 +76,30 @@ function statusLabel(status: string) {
   return status.toLowerCase().replaceAll("_", " ");
 }
 
+function eventLabel(event: TutorEvent) {
+  switch (event.eventType) {
+    case "skill_load_start": return `加载 Skill${event.skillName ? ` · ${event.skillName}` : ""}`;
+    case "skill_load_complete": return `Skill 已加载${event.skillName ? ` · ${event.skillName}` : ""}`;
+    case "reasoning_summary": return "处理中摘要";
+    case "tool_call": return "工具调用";
+    case "tool_result": return "工具结果";
+    case "text_delta": return "回答";
+    case "error": return "错误";
+    case "complete": return "完成";
+  }
+}
+
+function eventText(event: TutorEvent) {
+  if (event.eventType === "reasoning_summary") return event.summary || event.content || "处理中";
+  if (event.eventType === "tool_call") return event.toolCall || event.content || "工具已调用";
+  if (event.eventType === "tool_result") return event.toolResult || event.content || "工具已返回结果";
+  return event.content || (event.eventType === "complete" ? "本次回答已完成" : "(empty)");
+}
+
+function isProgressEvent(event: TutorEvent) {
+  return event.eventType === "skill_load_start" || event.eventType === "skill_load_complete" || event.eventType === "reasoning_summary";
+}
+
 export default function App() {
   const [health, setHealth] = useState<BackendHealth | null>(null);
   const [backend, setBackend] = useState<BackendStatus>({status: "checking"});
@@ -560,7 +584,17 @@ export default function App() {
               <button className="primary" type="submit" disabled={!tutorInput.trim()}>发送</button>
             </form>
             <details className="events-details"><summary>Agent events ({events.length})</summary>
-              {events.slice(-8).map((event) => <div className="event" key={event.id}><span>{event.eventType}</span><p>{event.content || event.toolCall || event.toolResult || "(empty)"}</p></div>)}
+              {events.slice(-8).map((event) => isProgressEvent(event) ? (
+                <details className={`event event-progress ${event.eventType}`} key={event.id} open={event.eventType === "skill_load_start"}>
+                  <summary><span>{eventLabel(event)}</span>{event.status && <small>{event.status}</small>}</summary>
+                  <p>{eventText(event)}</p>
+                </details>
+              ) : (
+                <div className={`event event-${event.eventType}`} key={event.id}>
+                  <span>{eventLabel(event)}</span>
+                  <p>{eventText(event)}</p>
+                </div>
+              ))}
             </details>
           </>
         )}

@@ -123,6 +123,13 @@ ul { margin: 0; padding-left: 19px; color: #b8c2d2; line-height: 1.8; }
 .event { margin-top: 9px; border-top: 1px solid #263246; padding-top: 8px; }
 .event span { color: #84dcb2; text-transform: uppercase; }
 .event p { margin: 4px 0 0; color: #95a4b9; white-space: pre-wrap; word-break: break-word; }
+.event-progress summary { cursor: pointer; list-style-position: inside; }
+.event-progress summary small { margin-left: 8px; color: #77869e; text-transform: capitalize; }
+.event-progress p { padding-left: 16px; }
+.event-reasoning_summary span { color: #b8a5ed; }
+.event-skill_load_start span, .event-skill_load_complete span { color: #80c8ef; }
+.event-error span { color: #ff9fac; }
+.event-error p { color: #ffb2bf; }
 .empty { margin: auto; padding: 24px; color: #667388; font-size: 13px; line-height: 1.5; text-align: center; }
 
 @media (max-width: 1120px) {

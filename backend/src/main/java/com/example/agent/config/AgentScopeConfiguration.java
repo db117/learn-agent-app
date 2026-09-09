@@ -66,7 +66,7 @@ public class AgentScopeConfiguration {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(echoTool);
         ToolsConfig toolsConfig = new ToolsConfig();
-        toolsConfig.setAllow(List.of("echo"));
+        toolsConfig.setAllow(List.of("echo", "load_skill_through_path"));
         return HarnessAgent.builder()
                 .name("tutor_agent")
                 .description("A programming-language tutor for the Desktop Learning Agent.")

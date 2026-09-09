@@ -17,6 +17,9 @@ public record TutorEvent(
         String content,
         String toolCall,
         String toolResult,
+        String skillName,
+        String summary,
+        String status,
         Instant timestamp,
         String rawJson) {
 
@@ -24,26 +27,48 @@ public record TutorEvent(
 
     public static TutorEvent textDelta(
             String sessionId, String runId, String author, String content, Instant timestamp) {
-        return create(sessionId, runId, author, "text_delta", content, null, null, timestamp);
+        return create(sessionId, runId, author, "text_delta", content, null, null,
+                null, null, null, timestamp);
     }
 
     public static TutorEvent toolCall(
             String sessionId, String runId, String author, String content, Instant timestamp) {
-        return create(sessionId, runId, author, "tool_call", content, content, null, timestamp);
+        return create(sessionId, runId, author, "tool_call", content, content, null,
+                null, null, null, timestamp);
     }
 
     public static TutorEvent toolResult(
             String sessionId, String runId, String author, String content, Instant timestamp) {
-        return create(sessionId, runId, author, "tool_result", content, null, content, timestamp);
+        return create(sessionId, runId, author, "tool_result", content, null, content,
+                null, null, null, timestamp);
+    }
+
+    public static TutorEvent reasoningSummary(String sessionId, String runId, Instant timestamp) {
+        String summary = "正在分析问题并规划回答";
+        return create(sessionId, runId, "tutor_agent", "reasoning_summary", summary,
+                null, null, null, summary, "started", timestamp);
+    }
+
+    public static TutorEvent skillLoadStart(String sessionId, String runId, Instant timestamp) {
+        return create(sessionId, runId, "tutor_agent", "skill_load_start", "正在加载工程 Skill",
+                null, null, null, null, "started", timestamp);
+    }
+
+    public static TutorEvent skillLoadComplete(
+            String sessionId, String runId, String skillName, Instant timestamp) {
+        return create(sessionId, runId, "tutor_agent", "skill_load_complete", "Skill 已加载",
+                null, null, skillName, null, "completed", timestamp);
     }
 
     public static TutorEvent error(String sessionId, String runId, Throwable error) {
         String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
-        return create(sessionId, runId, "system", "error", message, null, null, Instant.now());
+        return create(sessionId, runId, "system", "error", message, null, null,
+                null, null, "failed", Instant.now());
     }
 
     public static TutorEvent complete(String sessionId, String runId, Instant timestamp) {
-        return create(sessionId, runId, "system", "complete", "", null, null, timestamp);
+        return create(sessionId, runId, "system", "complete", "", null, null,
+                null, null, "completed", timestamp);
     }
 
     private static TutorEvent create(
@@ -54,6 +79,9 @@ public record TutorEvent(
             String content,
             String toolCall,
             String toolResult,
+            String skillName,
+            String summary,
+            String status,
             Instant timestamp) {
         String id = UUID.randomUUID().toString();
         Map<String, Object> raw = new LinkedHashMap<>();
@@ -65,10 +93,13 @@ public record TutorEvent(
         raw.put("content", content == null ? "" : content);
         raw.put("toolCall", toolCall);
         raw.put("toolResult", toolResult);
+        raw.put("skillName", skillName);
+        raw.put("summary", summary);
+        raw.put("status", status);
         raw.put("timestamp", timestamp.toString());
         return new TutorEvent(
                 id, sessionId, runId, author, eventType, content == null ? "" : content,
-                toolCall, toolResult, timestamp, write(raw));
+                toolCall, toolResult, skillName, summary, status, timestamp, write(raw));
     }
 
     public String json() {
@@ -81,6 +112,9 @@ public record TutorEvent(
         payload.put("content", content);
         payload.put("toolCall", toolCall);
         payload.put("toolResult", toolResult);
+        payload.put("skillName", skillName);
+        payload.put("summary", summary);
+        payload.put("status", status);
         payload.put("timestamp", timestamp.toString());
         payload.put("rawJson", rawJson);
         return write(payload);

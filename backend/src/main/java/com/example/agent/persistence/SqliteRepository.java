@@ -142,9 +142,9 @@ public class SqliteRepository {
     jdbc.sql("""
                     INSERT OR IGNORE INTO "event"
                       (id, session_id, run_id, author, event_type, content, tool_call_json,
-                       tool_result_json, timestamp, raw_json)
+                       tool_result_json, skill_name, summary, status, timestamp, raw_json)
                     VALUES (:id, :sessionId, :runId, :author, :eventType, :content, :toolCall,
-                            :toolResult, :timestamp, :rawJson)
+                            :toolResult, :skillName, :summary, :status, :timestamp, :rawJson)
                     """)
             .param("id", event.id())
             .param("sessionId", event.sessionId())
@@ -154,6 +154,9 @@ public class SqliteRepository {
             .param("content", event.content())
             .param("toolCall", event.toolCall())
             .param("toolResult", event.toolResult())
+            .param("skillName", event.skillName())
+            .param("summary", event.summary())
+            .param("status", event.status())
             .param("timestamp", event.timestamp().toString())
             .param("rawJson", event.rawJson())
             .update();
@@ -163,7 +166,7 @@ public class SqliteRepository {
   public List<TutorEvent> listEvents(String sessionId) {
     return jdbc.sql("""
                     SELECT id, session_id, run_id, author, event_type, content, tool_call_json,
-                      tool_result_json, timestamp, raw_json
+                      tool_result_json, skill_name, summary, status, timestamp, raw_json
                     FROM "event" WHERE session_id = :sessionId ORDER BY sequence
                     """)
             .param("sessionId", sessionId)
@@ -177,6 +180,9 @@ public class SqliteRepository {
                             rs.getString("content"),
                             rs.getString("tool_call_json"),
                             rs.getString("tool_result_json"),
+                            rs.getString("skill_name"),
+                            rs.getString("summary"),
+                            rs.getString("status"),
                             Instant.parse(rs.getString("timestamp")),
                             rs.getString("raw_json")))
             .list();

@@ -94,6 +94,9 @@ CREATE TABLE IF NOT EXISTS "event"
     content TEXT NOT NULL,
     tool_call_json TEXT,
     tool_result_json TEXT,
+    skill_name TEXT,
+    summary TEXT,
+    status TEXT,
     timestamp TEXT NOT NULL,
     raw_json TEXT NOT NULL
     );

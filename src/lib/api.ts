@@ -25,10 +25,21 @@ export type TutorEvent = {
   sessionId: string;
   runId: string;
   author: string;
-  eventType: "text_delta" | "tool_call" | "tool_result" | "error" | "complete";
+  eventType:
+    | "text_delta"
+    | "tool_call"
+    | "tool_result"
+    | "skill_load_start"
+    | "skill_load_complete"
+    | "reasoning_summary"
+    | "error"
+    | "complete";
   content: string;
   toolCall?: string;
   toolResult?: string;
+  skillName?: string;
+  summary?: string;
+  status?: "started" | "completed" | "failed";
   timestamp: string;
 };
 
