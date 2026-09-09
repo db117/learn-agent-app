@@ -3,13 +3,16 @@ package com.example.agent.api;
 import com.example.agent.agent.EventHub;
 import com.example.agent.agent.TutorAgentService;
 import com.example.agent.config.AppProperties;
+import com.example.agent.persistence.AgentStatePersistenceException;
 import com.example.agent.persistence.SessionRecord;
 import com.example.agent.persistence.SqliteRepository;
 import com.example.agent.persistence.TutorEvent;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,6 +25,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** Phase 1 Tutor 会话和 SSE 事件的 HTTP 接口。 */
@@ -76,18 +80,21 @@ public class SessionController {
 
     /** 保存用户消息并异步启动 AgentScope TutorAgent。 */
     @PostMapping("/{sessionId}/messages")
-    public SendMessageResponse send(
+    public Mono<SendMessageResponse> send(
             @PathVariable String sessionId, @RequestBody SendMessageRequest request) {
-        SessionRecord session = find(sessionId);
-        if (request == null || request.content() == null || request.content().isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "content must not be blank");
-        }
-        String content = request.content().trim();
-        if (content.length() > 20_000) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "content is too long");
-        }
-        TutorAgentService.RunReceipt receipt = tutor.start(session, content);
-        return new SendMessageResponse(receipt.runId(), receipt.messageId());
+        return Mono.fromCallable(() -> {
+                    SessionRecord session = find(sessionId);
+                    if (request == null || request.content() == null || request.content().isBlank()) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "content must not be blank");
+                    }
+                    String content = request.content().trim();
+                    if (content.length() > 20_000) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "content is too long");
+                    }
+                    TutorAgentService.RunReceipt receipt = tutor.start(session, content);
+                    return new SendMessageResponse(receipt.runId(), receipt.messageId());
+                })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /** 以 SSE 方式订阅会话事件，已落库事件会先回放。 */
@@ -97,6 +104,12 @@ public class SessionController {
                 .subscribeOn(Schedulers.boundedElastic())
                 .thenMany(eventHub.open(sessionId, () -> repository.listEvents(sessionId)))
                 .map(event -> ServerSentEvent.<TutorEvent>builder(event).id(event.id()).build());
+    }
+
+    /** Do not turn a missing or corrupt AgentState into a fresh conversation. */
+    @ExceptionHandler(AgentStatePersistenceException.class)
+    public ResponseEntity<Map<String, String>> agentStateError(AgentStatePersistenceException error) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", error.getMessage()));
     }
 
     private SessionRecord find(String id) {

@@ -2,6 +2,7 @@ package com.example.agent.config;
 
 import com.example.agent.tool.EchoTool;
 import com.example.agent.learning.tutor.TutorContextService;
+import com.example.agent.persistence.SqliteAgentStateStore;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
@@ -11,7 +12,7 @@ import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
-import io.agentscope.core.state.InMemoryAgentStateStore;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.harness.agent.HarnessAgent;
@@ -20,6 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -28,6 +30,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import javax.sql.DataSource;
 
 /** AgentScope runtime for the single TutorAgent. */
 @Configuration(proxyBeanMethods = false)
@@ -58,11 +61,18 @@ public class AgentScopeConfiguration {
     }
 
     @Bean
+    @DependsOn("databaseInitializer")
+    AgentStateStore agentStateStore(DataSource dataSource) {
+        return new SqliteAgentStateStore(dataSource);
+    }
+
+    @Bean
     HarnessAgent tutorAgent(
             Model model,
             EchoTool echoTool,
             ClasspathSkillRepository skillRepository,
-            TutorContextService context) {
+            TutorContextService context,
+            AgentStateStore stateStore) {
         Toolkit toolkit = new Toolkit();
         toolkit.registerTool(echoTool);
         ToolsConfig toolsConfig = new ToolsConfig();
@@ -75,7 +85,7 @@ public class AgentScopeConfiguration {
                 .toolkit(toolkit)
                 .toolsConfig(toolsConfig)
                 .skillRepository(skillRepository)
-                .stateStore(new InMemoryAgentStateStore())
+                .stateStore(stateStore)
                 .middleware(new TutorContextMiddleware(context))
                 .enableAgentTracingLog(false)
                 .disableCompaction()

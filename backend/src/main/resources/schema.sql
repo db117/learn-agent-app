@@ -323,3 +323,28 @@ CREATE TABLE IF NOT EXISTS workflow_transition
 
 CREATE INDEX IF NOT EXISTS workflow_transition_journey_idx
     ON workflow_transition(journey_id, created_at);
+
+-- AgentScope runtime state; it is deliberately separate from learning facts and Tutor messages.
+CREATE TABLE IF NOT EXISTS agent_state
+(
+    user_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    state_key TEXT NOT NULL,
+    state_kind TEXT NOT NULL,
+    state_json TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, session_id, state_key)
+);
+
+CREATE INDEX IF NOT EXISTS agent_state_session_idx ON agent_state(user_id, session_id);
+
+-- Marker for the replacement database. Existing files without this marker are never migrated.
+CREATE TABLE IF NOT EXISTS schema_metadata
+(
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+INSERT INTO schema_metadata (key, value)
+VALUES ('schema.version', 'agentscope-springboot-webflux-v1');

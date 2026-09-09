@@ -21,9 +21,12 @@ import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
 import com.example.agent.learning.scoring.AssessmentScore;
+import com.example.agent.learning.tutor.TutorSessionService;
 import com.example.agent.persistence.SessionRecord;
 import com.example.agent.persistence.SqliteRepository;
+import com.example.agent.persistence.AgentStatePersistenceException;
 import com.example.agent.tool.EchoTool;
+import io.agentscope.core.state.AgentStateStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -74,6 +77,10 @@ class AgentBackendApplicationTest {
     private LearningJourneyService journeys;
     @Autowired
     private ProgressService progress;
+    @Autowired
+    private TutorSessionService tutorSessions;
+    @Autowired
+    private AgentStateStore agentStateStore;
 
     @Test
     void startsAgentAndReadsBackASessionFromSqlite() throws Exception {
@@ -106,6 +113,47 @@ class AgentBackendApplicationTest {
         assertEquals(
                 List.of("remember this", "I remembered it"),
                 repository.listMessages(id).stream().map(message -> message.content()).toList());
+    }
+
+    @Test
+    void reusesOneTutorSessionPerJourneyAndLearnUnit() {
+        LearningJourney journey = journeys.create(
+                "test-user", "typescript", "tutor session", "Java", 8,
+                "backend developer", "learn TypeScript");
+        List<LearnUnit> units = learning.listLearnUnitsForJourney(journey.id());
+
+        TutorSessionService.TutorSession first = tutorSessions.open(journey.id(), units.get(0).code());
+        TutorSessionService.TutorSession reentered = tutorSessions.open(journey.id(), units.get(0).code());
+        TutorSessionService.TutorSession switched = tutorSessions.open(journey.id(), units.get(1).code());
+
+        assertEquals(first.session().id(), reentered.session().id());
+        assertNotNull(switched.session());
+        org.junit.jupiter.api.Assertions.assertNotEquals(first.session().id(), switched.session().id());
+        assertEquals(first.session().id(), learning.findTutorSessionId(journey.id(), units.get(0).code()).orElseThrow());
+        assertEquals(switched.session().id(), learning.findTutorSessionId(journey.id(), units.get(1).code()).orElseThrow());
+        assertEquals(journey.id(), learning.findJourney(journey.id()).orElseThrow().id());
+    }
+
+    @Test
+    void refusesToStartWhenConversationExistsWithoutAgentState() {
+        LearningJourney journey = journeys.create(
+                "test-user", "typescript", "state separation", "Java", 8,
+                "backend developer", "learn TypeScript");
+        String learnUnitCode = learning.listLearnUnitsForJourney(journey.id()).get(0).code();
+        SessionRecord session = tutorSessions.open(journey.id(), learnUnitCode).session();
+        Instant now = Instant.now();
+        repository.insertMessage(new com.example.agent.persistence.MessageRecord(
+                UUID.randomUUID().toString(), session.id(), "user", "old message", now));
+        LearningJourney before = journeys.get(journey.id());
+
+        AgentStatePersistenceException error = org.junit.jupiter.api.Assertions.assertThrows(
+                AgentStatePersistenceException.class,
+                () -> tutorAgentService.start(session, "new message"));
+
+        assertTrue(error.getMessage().contains("AgentState restore failed"));
+        assertEquals(1, repository.listMessages(session.id()).size());
+        assertTrue(!agentStateStore.exists(session.userId(), session.id()));
+        assertEquals(before, journeys.get(journey.id()));
     }
 
     @Test

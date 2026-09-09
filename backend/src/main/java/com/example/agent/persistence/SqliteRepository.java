@@ -36,6 +36,21 @@ public class SqliteRepository {
             .update();
   }
 
+  /** 新增会话但不覆盖同标识的既有会话，用于幂等的 Journey Tutor Session 建立。 */
+  public void insertSessionIfAbsent(SessionRecord session) {
+    jdbc.sql("""
+                    INSERT INTO "session" (id, user_id, title, created_at, updated_at)
+                    VALUES (:id, :userId, :title, :createdAt, :updatedAt)
+                    ON CONFLICT(id) DO NOTHING
+                    """)
+            .param("id", session.id())
+            .param("userId", session.userId())
+            .param("title", session.title())
+            .param("createdAt", session.createdAt().toString())
+            .param("updatedAt", session.updatedAt().toString())
+            .update();
+  }
+
   /** 按最近更新时间倒序查询会话摘要。 */
   public List<SessionRecord> listSessions() {
     return jdbc.sql("""

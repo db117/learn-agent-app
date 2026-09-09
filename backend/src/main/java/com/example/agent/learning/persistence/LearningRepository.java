@@ -719,7 +719,7 @@ public class LearningRepository {
         jdbc.sql("""
                         INSERT INTO tutor_session (id, journey_id, learn_unit_code, session_id)
                         VALUES (:id, :journeyId, :learnUnitCode, :sessionId)
-                        ON CONFLICT(journey_id, learn_unit_code) DO UPDATE SET session_id = excluded.session_id
+                        ON CONFLICT(journey_id, learn_unit_code) DO NOTHING
                         """)
                 .param("id", UUID.randomUUID().toString())
                 .param("journeyId", journeyId)

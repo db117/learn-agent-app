@@ -1,5 +1,6 @@
 package com.example.agent.agent;
 
+import com.example.agent.persistence.AgentStatePersistenceException;
 import com.example.agent.persistence.MessageRecord;
 import com.example.agent.persistence.RunRecord;
 import com.example.agent.persistence.SessionRecord;
@@ -16,15 +17,16 @@ import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ToolResultState;
-import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.state.AgentState;
+import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -40,6 +42,7 @@ public class TutorAgentService {
     private final SqliteRepository repository;
     private final EventHub eventHub;
     private final ExecutorService executor;
+    private final AgentStateStore stateStore;
     private final ConcurrentHashMap<String, Boolean> activeSessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, StringBuilder> responseText = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> skillNames = new ConcurrentHashMap<>();
@@ -48,28 +51,32 @@ public class TutorAgentService {
             HarnessAgent tutorAgent,
             SqliteRepository repository,
             EventHub eventHub,
-            ExecutorService executor) {
+            ExecutorService executor,
+            AgentStateStore stateStore) {
         this.tutorAgent = tutorAgent;
         this.repository = repository;
         this.eventHub = eventHub;
         this.executor = executor;
+        this.stateStore = stateStore;
     }
 
-    /** The durable application message history is the input context for each short AgentScope call. */
+    /** Verify the durable session exists before starting a TutorAgent call. */
     public void ensureSession(SessionRecord session) {
         repository.findSession(session.id())
                 .orElseThrow(() -> new IllegalArgumentException("session not found: " + session.id()));
     }
 
+    /** Start a call; AgentState owns the runtime conversation while messages remain inspectable. */
     public RunReceipt start(SessionRecord session, String content) {
         ensureSession(session);
+        ensureRuntimeState(session);
         String messageId = UUID.randomUUID().toString();
         String runId = UUID.randomUUID().toString();
         Instant now = Instant.now();
         repository.insertMessage(new MessageRecord(messageId, session.id(), "user", content, now));
         repository.insertRun(new RunRecord(runId, session.id(), "RUNNING", null, now, null));
         activeSessions.put(session.id(), Boolean.TRUE);
-        executor.submit(() -> execute(session, runId));
+        executor.submit(() -> execute(session, runId, content));
         return new RunReceipt(runId, messageId);
     }
 
@@ -77,25 +84,48 @@ public class TutorAgentService {
         return activeSessions.containsKey(sessionId);
     }
 
-    private void execute(SessionRecord session, String runId) {
+    private void execute(SessionRecord session, String runId, String content) {
         try {
-            List<Msg> messages = new ArrayList<>();
-            for (MessageRecord message : repository.listMessages(session.id())) {
-                messages.add("user".equals(message.role())
-                        ? new UserMessage(message.content())
-                        : new AssistantMessage(message.content()));
-            }
             RuntimeContext runtimeContext = RuntimeContext.builder()
                     .userId(session.userId())
                     .sessionId(session.id())
                     .build();
-            tutorAgent.streamEvents(messages, runtimeContext)
+            tutorAgent.streamEvents(List.of(new UserMessage(content)), runtimeContext)
                     .doOnNext(event -> persistEvent(session, runId, event))
                     .doOnComplete(() -> finishCompleted(session.id(), runId))
                     .blockLast();
         } catch (Throwable error) {
             finishFailed(session.id(), runId, error);
         }
+    }
+
+    private void ensureRuntimeState(SessionRecord session) {
+        try {
+            if (!stateStore.exists(session.userId(), session.id())) {
+                if (!repository.listMessages(session.id()).isEmpty()) {
+                    throw missingState(session);
+                }
+                return;
+            }
+            AgentState state = stateStore.get(session.userId(), session.id(), "agent_state", AgentState.class)
+                    .orElseThrow(() -> missingState(session));
+            if (!session.id().equals(state.getSessionId())
+                    || !Objects.equals(session.userId(), state.getUserId())) {
+                throw missingState(session);
+            }
+        } catch (AgentStatePersistenceException error) {
+            throw error;
+        } catch (RuntimeException error) {
+            throw new AgentStatePersistenceException(
+                    "AgentState restore failed for session " + session.id()
+                            + "; refusing to create an empty runtime context", error);
+        }
+    }
+
+    private static AgentStatePersistenceException missingState(SessionRecord session) {
+        return new AgentStatePersistenceException(
+                "AgentState restore failed for session " + session.id()
+                        + "; refusing to create an empty runtime context");
     }
 
     private void persistEvent(SessionRecord session, String runId, AgentEvent event) {

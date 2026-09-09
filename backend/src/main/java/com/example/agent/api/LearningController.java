@@ -1,6 +1,5 @@
 package com.example.agent.api;
 
-import com.example.agent.agent.TutorAgentService;
 import com.example.agent.config.AppProperties;
 import com.example.agent.learning.assessment.Assessment;
 import com.example.agent.learning.assessment.AssessmentAttempt;
@@ -20,8 +19,7 @@ import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
 import com.example.agent.learning.scoring.AssessmentScore;
-import com.example.agent.persistence.SessionRecord;
-import com.example.agent.persistence.SqliteRepository;
+import com.example.agent.learning.tutor.TutorSessionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
@@ -33,11 +31,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * Learning Journey HTTP 入口。
@@ -56,8 +54,7 @@ public class LearningController {
     private final LearningJourneyService journeys;
     private final ProgressService progress;
     private final AssessmentService assessments;
-    private final SqliteRepository sessions;
-    private final TutorAgentService tutor;
+    private final TutorSessionService tutorSessions;
     private final AppProperties properties;
 
     public LearningController(
@@ -66,16 +63,14 @@ public class LearningController {
             LearningJourneyService journeys,
             ProgressService progress,
             AssessmentService assessments,
-            SqliteRepository sessions,
-            TutorAgentService tutor,
+            TutorSessionService tutorSessions,
             AppProperties properties) {
         this.learning = learning;
         this.curriculum = curriculum;
         this.journeys = journeys;
         this.progress = progress;
         this.assessments = assessments;
-        this.sessions = sessions;
-        this.tutor = tutor;
+        this.tutorSessions = tutorSessions;
         this.properties = properties;
     }
 
@@ -217,20 +212,14 @@ public class LearningController {
 
     /** 为 Journey LearnUnit 创建或复用 Tutor Session。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/tutor")
-    public TutorSessionResponse tutorSession(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
-        learnUnit(journeyId, learnUnitCode);
-        String sessionId = learning.findTutorSessionId(journeyId, learnUnitCode).orElse(null);
-        if (sessionId == null) {
-            Instant now = Instant.now();
-            SessionRecord session = new SessionRecord(
-                    UUID.randomUUID().toString(), properties.userId(), "Tutor · " + learnUnitCode, now, now);
-            sessions.insertSession(session);
-            tutor.ensureSession(session);
-            learning.linkTutorSession(journeyId, learnUnitCode, session.id());
-            sessionId = session.id();
-        }
-        SessionRecord session = sessions.findSession(sessionId).orElseThrow();
-        return new TutorSessionResponse(SessionResponse.from(session), journeyId, learnUnitCode);
+    public Mono<TutorSessionResponse> tutorSession(
+            @PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        return Mono.fromCallable(() -> tutorSessions.open(journeyId, learnUnitCode))
+                .subscribeOn(Schedulers.boundedElastic())
+                .map(tutorSession -> new TutorSessionResponse(
+                        SessionResponse.from(tutorSession.session()),
+                        tutorSession.journeyId(),
+                        tutorSession.learnUnitCode()));
     }
 
     /** 将 Coding 评分失败转换为 422，保留可重试的答案草稿。 */

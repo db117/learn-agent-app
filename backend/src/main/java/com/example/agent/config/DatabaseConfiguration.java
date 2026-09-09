@@ -3,6 +3,8 @@ package com.example.agent.config;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 import org.sqlite.JDBC;
 
@@ -25,6 +27,19 @@ public class DatabaseConfiguration {
     @Bean
     DataSource dataSource(AppProperties properties) throws IOException {
         Files.createDirectories(Path.of(properties.dataDir()));
+        Path database = Path.of(properties.database());
+        if (database.getParent() != null) Files.createDirectories(database.getParent());
         return new SimpleDriverDataSource(new JDBC(), "jdbc:sqlite:" + properties.database());
+    }
+
+    @Bean(name = "databaseInitializer", initMethod = "initialize")
+    DatabaseInitializer databaseInitializer(DataSource dataSource) {
+        return new DatabaseInitializer(dataSource);
+    }
+
+    @Bean
+    @DependsOn("databaseInitializer")
+    JdbcClient jdbcClient(DataSource dataSource) {
+        return JdbcClient.create(dataSource);
     }
 }
