@@ -27,6 +27,9 @@ public record CodingEvaluationResult(
         if (clarity < 0 || clarity > 20) throw new IllegalArgumentException("clarity must be 0..20");
         if (feedback == null || feedback.isBlank()) throw new IllegalArgumentException("feedback is required");
         issues = List.copyOf(issues == null ? List.of() : issues);
+        if (issues.stream().anyMatch(issue -> issue == null || issue.isBlank())) {
+            throw new IllegalArgumentException("issues must contain non-blank strings");
+        }
     }
 
     public int totalScore() {

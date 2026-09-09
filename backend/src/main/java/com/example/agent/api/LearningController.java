@@ -390,12 +390,15 @@ public class LearningController {
             AssessmentScore score,
             boolean passed,
             List<AssessmentService.DiagnosticLearnUnitResult> learnUnitResults,
-            List<QuestionAttempt> questionAttempts) {
+            List<QuestionAttempt> questionAttempts,
+            int passScore,
+            Integer codingPassScore) {
 
         static AssessmentResultResponse from(AssessmentService.AssessmentSubmission submission) {
             return new AssessmentResultResponse(
                     submission.assessment(), submission.attempt(), submission.score(), submission.passed(),
-                    submission.learnUnitResults(), submission.questionAttempts());
+                    submission.learnUnitResults(), submission.questionAttempts(), submission.passScore(),
+                    submission.codingPassScore());
         }
     }
 

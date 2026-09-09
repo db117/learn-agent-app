@@ -47,7 +47,10 @@ public class AssessmentScoreEngine {
                 .map(attempt -> {
                     QuestionType type = types.get(attempt.questionId());
                     if (type == null) throw new IllegalArgumentException("Unknown question: " + attempt.questionId());
-                    return new ScoredQuestion(type, attempt.score() == null ? 0 : attempt.score(), attempt.maxScore());
+                    if (attempt.score() == null) {
+                        throw new IllegalArgumentException("Question attempt has not been evaluated: " + attempt.questionId());
+                    }
+                    return new ScoredQuestion(type, attempt.score(), attempt.maxScore());
                 })
                 .toList());
     }

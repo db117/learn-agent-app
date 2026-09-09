@@ -543,7 +543,15 @@ export default function App() {
         <h2>{assessmentResult.assessment.type === "DIAGNOSTIC" ? "你的学习路径已经准备好了" : "LearnUnit 评估完成"}</h2>
         <div className="score-summary">
           <strong>{assessmentResult.score.totalScore}</strong><span>/ 100</span>
-          <p className={assessmentResult.passed ? "success" : "warning"}>{assessmentResult.passed ? "通过" : "需要继续练习"}</p>
+          <p className={assessmentResult.passed ? "success" : "warning"}>{assessmentResult.passed ? "Passed" : "Not Yet"}</p>
+        </div>
+        <div className="score-breakdown">
+          {assessmentResult.score.hasChoiceQuestions && <span>选择题 {assessmentResult.score.choiceScore}</span>}
+          {assessmentResult.score.hasCodingQuestions && <span>Coding {assessmentResult.score.codingScore}</span>}
+        </div>
+        <div className="score-thresholds">
+          <span>通过阈值 {assessmentResult.passScore}</span>
+          <span>{assessmentResult.codingPassScore === null ? "编码阈值不适用" : `编码阈值 ${assessmentResult.codingPassScore}`}</span>
         </div>
         {assessmentResult.learnUnitResults.length > 0 && (
           <div className="result-list">

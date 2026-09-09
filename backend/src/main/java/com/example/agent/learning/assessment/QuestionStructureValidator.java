@@ -78,6 +78,12 @@ public final class QuestionStructureValidator {
         }
         JsonNode rubric = object(question.rubricJson(), "Coding rubric");
         if (rubric.isEmpty()) throw new IllegalArgumentException("Coding rubric must not be empty");
+        rubric.fields().forEachRemaining(field -> {
+            JsonNode weight = field.getValue();
+            if (!weight.isIntegralNumber() || weight.intValue() < 0 || weight.intValue() > 100) {
+                throw new IllegalArgumentException("Coding rubric weights must be integers from 0 to 100");
+            }
+        });
     }
 
     private static void validateReferenceConcepts(String raw) {

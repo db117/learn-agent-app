@@ -105,6 +105,8 @@ ul { margin: 0; padding-left: 19px; color: #b8c2d2; line-height: 1.8; }
 .score-summary strong { color: #9ebdff; font-size: 72px; letter-spacing: -.08em; }
 .score-summary > span { color: #7f8ca1; font-size: 18px; }
 .score-summary p { margin: 8px 0 0; font-weight: 700; }
+.score-breakdown, .score-thresholds { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px 24px; color: #c3cede; font-size: 13px; }
+.score-thresholds { margin-top: 10px; color: #8795aa; font-size: 12px; }
 .success { color: #70dca9; }
 .warning { color: #e9bd75; }
 .result-list { margin: 26px 0; border-top: 1px solid #2d394d; text-align: left; }

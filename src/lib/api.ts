@@ -193,6 +193,8 @@ export type AssessmentResultResponse = {
   passed: boolean;
   learnUnitResults: DiagnosticLearnUnitResult[];
   questionAttempts: QuestionAttempt[];
+  passScore: number;
+  codingPassScore: number | null;
 };
 
 export type LearnUnitResponse = {

@@ -19,8 +19,9 @@ public final class MultipleChoiceEvaluator {
         try {
             JsonNode config = MAPPER.readTree(question.configJson());
             Set<String> expected = values(config.get("correctOptionIds"));
-            Set<String> selected = new HashSet<>(selectedOptionIds == null ? List.of() : selectedOptionIds);
-            boolean correct = !expected.isEmpty() && expected.equals(selected);
+            List<String> selectedValues = selectedOptionIds == null ? List.of() : selectedOptionIds;
+            Set<String> selected = new HashSet<>(selectedValues);
+            boolean correct = !expected.isEmpty() && selected.size() == selectedValues.size() && expected.equals(selected);
             return new Result(correct ? question.points() : 0, correct);
         } catch (Exception error) {
             throw new IllegalArgumentException("Invalid multiple-choice config: " + question.id(), error);

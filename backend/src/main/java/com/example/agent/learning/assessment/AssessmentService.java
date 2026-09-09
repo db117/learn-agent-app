@@ -178,7 +178,8 @@ public class AssessmentService {
                 current = emptyAttempt(question, attempt.id());
                 repository.saveQuestionAttempt(current);
             }
-            if (question.type() == QuestionType.CODING && current.score() == null) {
+            if (question.type() == QuestionType.CODING
+                    && (current.score() == null || current.evaluationJson() == null || current.evaluationJson().isBlank())) {
                 try {
                     current = evaluateCoding(question, current);
                 } catch (AssessmentEvaluationException error) {
@@ -198,13 +199,19 @@ public class AssessmentService {
         AssessmentScore score = scoreEngine.scoreAttempts(completedQuestions, types);
         boolean passed;
         List<DiagnosticLearnUnitResult> learnUnitResults = List.of();
+        int passScore;
+        Integer codingPassScore;
         if (assessment.type() == AssessmentType.DIAGNOSTIC) {
             learnUnitResults = diagnosticResults(assessment.journeyId(), questions, completedQuestions);
             passed = learnUnitResults.stream().allMatch(DiagnosticLearnUnitResult::passed);
+            passScore = LearnUnitPassPolicy.DIAGNOSTIC_PASS_SCORE;
+            codingPassScore = null;
             progress.generatePath(assessment.journeyId());
         } else {
             LearnUnit learnUnit = repository.findLearnUnit(assessment.learnUnitCode()).orElseThrow();
             passed = passPolicy.passed(score, learnUnit);
+            passScore = learnUnit.passScore();
+            codingPassScore = score.hasCodingQuestions() ? learnUnit.minCodingScore() : null;
             progress.recordLearnUnitAssessment(assessment.journeyId(), assessment.learnUnitCode(), score, passed);
         }
         Instant completedAt = Instant.now();
@@ -212,7 +219,7 @@ public class AssessmentService {
         repository.updateAssessment(assessment.id(), AssessmentStatus.COMPLETED, completedAt);
         return new AssessmentSubmission(
                 requireAssessment(assessmentId), repository.findAttempt(attempt.id()).orElseThrow(), score, passed,
-                learnUnitResults, completedQuestions);
+                learnUnitResults, completedQuestions, passScore, codingPassScore);
     }
 
     public AssessmentState state(Assessment assessment) {
@@ -276,28 +283,30 @@ public class AssessmentService {
             if (!ids.add(question.id())) throw new IllegalArgumentException("Duplicate question: " + question.id());
             result.add(question);
         }
-        for (LearnUnit learnUnit : learnUnits) {
-            for (QuestionType type : learnUnit.minCodingScore() == null
-                    ? List.of(QuestionType.MULTIPLE_CHOICE)
-                    : List.of(QuestionType.MULTIPLE_CHOICE, QuestionType.CODING)) {
-                boolean covered = result.stream().anyMatch(question -> question.learnUnitCode().equals(learnUnit.code()) && question.type() == type);
-                if (!covered) {
+        if (minimumEvidence > 1) {
+            for (LearnUnit learnUnit : learnUnits) {
+                for (QuestionType type : learnUnit.minCodingScore() == null
+                        ? List.of(QuestionType.MULTIPLE_CHOICE)
+                        : List.of(QuestionType.MULTIPLE_CHOICE, QuestionType.CODING)) {
+                    boolean covered = result.stream().anyMatch(question -> question.learnUnitCode().equals(learnUnit.code()) && question.type() == type);
+                    if (!covered) {
+                        available.stream()
+                                .filter(question -> question.learnUnitCode().equals(learnUnit.code()) && question.type() == type)
+                                .filter(question -> ids.add(question.id()))
+                                .findFirst()
+                                .ifPresent(result::add);
+                    }
+                }
+                while (result.stream().filter(question -> question.learnUnitCode().equals(learnUnit.code())).count()
+                        < minimumEvidence) {
+                    int before = result.size();
                     available.stream()
-                            .filter(question -> question.learnUnitCode().equals(learnUnit.code()) && question.type() == type)
+                            .filter(question -> question.learnUnitCode().equals(learnUnit.code()))
                             .filter(question -> ids.add(question.id()))
                             .findFirst()
                             .ifPresent(result::add);
+                    if (result.size() == before) break;
                 }
-            }
-            while (result.stream().filter(question -> question.learnUnitCode().equals(learnUnit.code())).count()
-                    < minimumEvidence) {
-                int before = result.size();
-                available.stream()
-                        .filter(question -> question.learnUnitCode().equals(learnUnit.code()))
-                        .filter(question -> ids.add(question.id()))
-                        .findFirst()
-                        .ifPresent(result::add);
-                if (result.size() == before) break;
             }
         }
         for (Question question : result) {
@@ -317,7 +326,8 @@ public class AssessmentService {
             long evidence = result.stream()
                     .filter(question -> question.learnUnitCode().equals(learnUnit.code()))
                     .count();
-            if (evidence < minimumEvidence || !hasChoice || learnUnit.minCodingScore() != null && !hasCoding) {
+            if (evidence < minimumEvidence
+                    || minimumEvidence > 1 && (!hasChoice || learnUnit.minCodingScore() != null && !hasCoding)) {
                 throw new IllegalStateException("Assessment coverage is incomplete for " + learnUnit.code());
             }
         }
@@ -367,6 +377,9 @@ public class AssessmentService {
         try {
             CodingEvaluationResult evaluation = codingEvaluator.evaluate(
                     CodingQuestion.from(question), current.submittedCode());
+            if (evaluation.totalScore() > question.points()) {
+                throw new IllegalArgumentException("Coding score exceeds question maximum: " + question.id());
+            }
             return new QuestionAttempt(
                     current.questionId(), current.assessmentAttemptId(), current.answerJson(), evaluation.totalScore(),
                     current.maxScore(), evaluation.feedback(), null, current.submittedCode(),
@@ -455,7 +468,9 @@ public class AssessmentService {
             AssessmentScore score,
             boolean passed,
             List<DiagnosticLearnUnitResult> learnUnitResults,
-            List<QuestionAttempt> questionAttempts) {
+            List<QuestionAttempt> questionAttempts,
+            int passScore,
+            Integer codingPassScore) {
     }
 
     /**

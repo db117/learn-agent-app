@@ -53,6 +53,22 @@ class LlmCodingAnswerEvaluatorTest {
         assertThrows(IllegalArgumentException.class, () -> decisionField.evaluate(question, "code"));
     }
 
+    @Test
+    void rejectsMalformedJsonResponse() {
+        var evaluator = new LlmCodingAnswerEvaluator(model("not json"));
+
+        assertThrows(IllegalArgumentException.class, () -> evaluator.evaluate(question, "code"));
+    }
+
+    @Test
+    void rejectsBlankRubricIssue() {
+        var evaluator = new LlmCodingAnswerEvaluator(model("""
+                {"correctness":60,"languageUsage":20,"clarity":20,"feedback":"bad","issues":[""]}
+                """));
+
+        assertThrows(IllegalArgumentException.class, () -> evaluator.evaluate(question, "code"));
+    }
+
     private ChatModel model(String response) {
         ChatModel model = mock(ChatModel.class);
         when(model.call(any(Prompt.class))).thenReturn(

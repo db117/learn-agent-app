@@ -2,6 +2,8 @@ package com.example.agent.learning;
 
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionAttempt;
+import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.diagnostic.DeterministicDiagnosticQuestionPlanner;
@@ -15,6 +17,7 @@ import com.example.agent.learning.scoring.LearnUnitPassPolicy;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -43,9 +46,38 @@ class LearningCoreTest {
     }
 
     @Test
+    void codingOnlyAssessmentUsesCodingPercentageAsTotal() {
+        AssessmentScore score = scoreEngine.score(List.of(
+                new AssessmentScoreEngine.ScoredQuestion(QuestionType.CODING, 70, 100)));
+
+        assertEquals(70, score.codingScore());
+        assertEquals(70, score.totalScore());
+        assertFalse(score.hasChoiceQuestions());
+        assertTrue(score.hasCodingQuestions());
+        assertTrue(passPolicy.passed(score, learnUnit("learnUnit-a", 1, 70, List.of())));
+    }
+
+    @Test
     void scoreRejectsOutOfRangeQuestionScores() {
         assertThrows(IllegalArgumentException.class, () -> scoreEngine.score(List.of(
                 new AssessmentScoreEngine.ScoredQuestion(QuestionType.CODING, 101, 100))));
+    }
+
+    @Test
+    void scoreAttemptsRejectsUnevaluatedQuestionsInsteadOfTreatingThemAsZero() {
+        assertThrows(IllegalArgumentException.class, () -> scoreEngine.scoreAttempts(
+                List.of(new QuestionAttempt(
+                        "coding", "attempt", "{}", null, 100, null, null, "code", null, null)),
+                Map.of("coding", QuestionType.CODING)));
+    }
+
+    @Test
+    void codingRubricRequiresNumericWeights() {
+        Question coding = new Question(
+                "coding", "learnUnit-a", QuestionType.CODING, 1, "Implement", 100,
+                null, "{\"correctness\":\"high\"}", "typescript", "", "[]", false);
+
+        assertThrows(IllegalArgumentException.class, () -> QuestionStructureValidator.validate(coding));
     }
 
     @Test
