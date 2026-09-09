@@ -22,6 +22,7 @@
         <maven.compiler.release>21</maven.compiler.release>
         <spring-ai.version>2.0.0-M1</spring-ai.version>
         <spring-ai-alibaba.version>2.0.0-M1.1</spring-ai-alibaba.version>
+        <agentscope.version>2.0.3</agentscope.version>
         <sqlite-jdbc.version>3.53.2.0</sqlite-jdbc.version>
         <start-class>com.example.agent.AgentBackendApplication</start-class>
         <native.image.parallelism>12</native.image.parallelism>
@@ -44,13 +45,20 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <dependency>
+                <groupId>io.agentscope</groupId>
+                <artifactId>agentscope-bom</artifactId>
+                <version>${agentscope.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -67,6 +75,14 @@
         <dependency>
             <groupId>com.alibaba.cloud.ai</groupId>
             <artifactId>spring-ai-alibaba-graph-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-harness</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.agentscope</groupId>
+            <artifactId>agentscope-extensions-model-openai</artifactId>
         </dependency>
         <dependency>
             <groupId>org.xerial</groupId>

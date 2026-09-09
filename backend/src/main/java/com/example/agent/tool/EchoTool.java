@@ -10,8 +10,10 @@ import java.util.Map;
 public class EchoTool {
 
     @Tool(name = "echo", description = "Echo text so the tutor can verify a tool call.")
+    @io.agentscope.core.tool.Tool(name = "echo", description = "Echo text so the tutor can verify a tool call.")
     public Map<String, Object> echo(
-            @ToolParam(description = "Text to echo back.") String text) {
+            @ToolParam(description = "Text to echo back.")
+            @io.agentscope.core.tool.ToolParam(name = "text", description = "Text to echo back.") String text) {
         return Map.of("echo", text);
     }
 }

@@ -7,8 +7,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/** Framework-neutral SQLite projection and SSE payload for one Tutor event. */
-public record PersistedEvent(
+/** Framework-neutral event projected for SQLite replay and the Tutor SSE stream. */
+public record TutorEvent(
         String id,
         String sessionId,
         String runId,
@@ -22,31 +22,31 @@ public record PersistedEvent(
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    public static PersistedEvent message(
+    public static TutorEvent textDelta(
             String sessionId, String runId, String author, String content, Instant timestamp) {
-        return create(sessionId, runId, author, "message", content, null, null, timestamp);
+        return create(sessionId, runId, author, "text_delta", content, null, null, timestamp);
     }
 
-    public static PersistedEvent toolCall(
-            String sessionId, String runId, String author, String content, String toolCall, Instant timestamp) {
-        return create(sessionId, runId, author, "tool_call", content, toolCall, null, timestamp);
+    public static TutorEvent toolCall(
+            String sessionId, String runId, String author, String content, Instant timestamp) {
+        return create(sessionId, runId, author, "tool_call", content, content, null, timestamp);
     }
 
-    public static PersistedEvent toolResult(
-            String sessionId, String runId, String author, String content, String toolResult, Instant timestamp) {
-        return create(sessionId, runId, author, "tool_result", content, null, toolResult, timestamp);
+    public static TutorEvent toolResult(
+            String sessionId, String runId, String author, String content, Instant timestamp) {
+        return create(sessionId, runId, author, "tool_result", content, null, content, timestamp);
     }
 
-    public static PersistedEvent error(String sessionId, String runId, Throwable error) {
+    public static TutorEvent error(String sessionId, String runId, Throwable error) {
         String message = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
         return create(sessionId, runId, "system", "error", message, null, null, Instant.now());
     }
 
-    public static PersistedEvent complete(String sessionId, String runId, Instant timestamp) {
+    public static TutorEvent complete(String sessionId, String runId, Instant timestamp) {
         return create(sessionId, runId, "system", "complete", "", null, null, timestamp);
     }
 
-    private static PersistedEvent create(
+    private static TutorEvent create(
             String sessionId,
             String runId,
             String author,
@@ -66,7 +66,7 @@ public record PersistedEvent(
         raw.put("toolCall", toolCall);
         raw.put("toolResult", toolResult);
         raw.put("timestamp", timestamp.toString());
-        return new PersistedEvent(
+        return new TutorEvent(
                 id, sessionId, runId, author, eventType, content == null ? "" : content,
                 toolCall, toolResult, timestamp, write(raw));
     }

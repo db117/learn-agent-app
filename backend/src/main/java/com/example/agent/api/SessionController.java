@@ -5,8 +5,10 @@ import com.example.agent.agent.TutorAgentService;
 import com.example.agent.config.AppProperties;
 import com.example.agent.persistence.SessionRecord;
 import com.example.agent.persistence.SqliteRepository;
+import com.example.agent.persistence.TutorEvent;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,7 +16,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Instant;
 import java.util.List;
@@ -70,7 +74,7 @@ public class SessionController {
                 repository.listMessages(session.id()));
     }
 
-    /** 保存用户消息并异步启动 SAA TutorAgent。 */
+    /** 保存用户消息并异步启动 AgentScope TutorAgent。 */
     @PostMapping("/{sessionId}/messages")
     public SendMessageResponse send(
             @PathVariable String sessionId, @RequestBody SendMessageRequest request) {
@@ -88,9 +92,11 @@ public class SessionController {
 
     /** 以 SSE 方式订阅会话事件，已落库事件会先回放。 */
     @GetMapping(value = "/{sessionId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter events(@PathVariable String sessionId) {
-        find(sessionId);
-        return eventHub.open(sessionId, () -> repository.listEvents(sessionId));
+    public Flux<ServerSentEvent<TutorEvent>> events(@PathVariable String sessionId) {
+        return Mono.fromCallable(() -> find(sessionId))
+                .subscribeOn(Schedulers.boundedElastic())
+                .thenMany(eventHub.open(sessionId, () -> repository.listEvents(sessionId)))
+                .map(event -> ServerSentEvent.<TutorEvent>builder(event).id(event.id()).build());
     }
 
     private SessionRecord find(String id) {

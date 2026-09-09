@@ -2,7 +2,7 @@ import {useEffect, useRef, useState} from "react";
 import {invoke} from "@tauri-apps/api/core";
 import {
   api,
-  type AgentEvent,
+  type TutorEvent,
   type AssessmentResponse,
   type AssessmentResultResponse,
   type BackendHealth,
@@ -99,7 +99,7 @@ export default function App() {
   });
   const [tutor, setTutor] = useState<SessionDetail | null>(null);
   const [tutorInput, setTutorInput] = useState("");
-  const [events, setEvents] = useState<AgentEvent[]>([]);
+  const [events, setEvents] = useState<TutorEvent[]>([]);
   const eventSource = useRef<EventSource | null>(null);
 
   const journeyId = journey?.journey.id;
@@ -163,9 +163,9 @@ export default function App() {
     const source = new EventSource(api.eventsUrl(tutor.id));
     eventSource.current = source;
     source.onmessage = (event) => {
-      const next = JSON.parse(event.data) as AgentEvent;
+      const next = JSON.parse(event.data) as TutorEvent;
       setEvents((current) => current.some((item) => item.id === next.id) ? current : [...current, next]);
-      if (next.eventType === "complete" || (next.eventType === "message" && next.author !== "user")) {
+      if (next.eventType === "complete") {
         void api.session(tutor.id).then(setTutor).catch(() => undefined);
       }
     };

@@ -20,8 +20,6 @@ import reactor.core.publisher.Flux;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /** Spring AI Alibaba runtime foundation for the single TutorAgent and workflow graph. */
 @Configuration(proxyBeanMethods = false)
@@ -77,11 +75,6 @@ public class SaaAgentConfiguration {
         } catch (Exception error) {
             throw new IllegalStateException("Unable to compile the SAA workflow graph", error);
         }
-    }
-
-    @Bean(destroyMethod = "shutdown")
-    ExecutorService agentExecutor() {
-        return Executors.newCachedThreadPool();
     }
 
     private static final class UnavailableChatModel implements ChatModel {

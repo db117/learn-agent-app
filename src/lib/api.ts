@@ -20,12 +20,12 @@ export type Message = {
   createdAt: string;
 };
 
-export type AgentEvent = {
+export type TutorEvent = {
   id: string;
   sessionId: string;
   runId: string;
   author: string;
-  eventType: "message" | "tool_call" | "tool_result" | "error" | "complete";
+  eventType: "text_delta" | "tool_call" | "tool_result" | "error" | "complete";
   content: string;
   toolCall?: string;
   toolResult?: string;

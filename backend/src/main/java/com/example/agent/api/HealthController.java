@@ -1,27 +1,27 @@
 package com.example.agent.api;
 
 import com.example.agent.persistence.SqliteRepository;
-import com.alibaba.cloud.ai.graph.agent.ReactAgent;
-import org.springframework.ai.chat.model.ChatModel;
+import io.agentscope.core.model.Model;
+import io.agentscope.harness.agent.HarnessAgent;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 
-/** 后端、SQLite、SAA TutorAgent 和 LLM 提供商的健康检查接口。 */
+/** 后端、SQLite、AgentScope TutorAgent 和 LLM 提供商的健康检查接口。 */
 @RestController
 @RequestMapping("/api")
 public class HealthController {
 
   private final SqliteRepository repository;
-  private final ReactAgent tutorAgent;
-  private final ChatModel chatModel;
+  private final HarnessAgent tutorAgent;
+  private final Model model;
 
-  public HealthController(SqliteRepository repository, ReactAgent tutorAgent, ChatModel chatModel) {
+  public HealthController(SqliteRepository repository, HarnessAgent tutorAgent, Model model) {
     this.repository = repository;
     this.tutorAgent = tutorAgent;
-    this.chatModel = chatModel;
+    this.model = model;
   }
 
   /** 返回各运行时依赖的可用状态。 */
@@ -30,9 +30,9 @@ public class HealthController {
     try {
       repository.probe();
       return new HealthResponse(
-              "UP", "UP", tutorAgent == null ? "DOWN" : "UP", chatModel.getClass().getSimpleName(), Instant.now());
+              "UP", "UP", tutorAgent == null ? "DOWN" : "UP", model.getClass().getSimpleName(), Instant.now());
     } catch (RuntimeException error) {
-      return new HealthResponse("DOWN", "DOWN", "UP", chatModel.getClass().getSimpleName(), Instant.now());
+      return new HealthResponse("DOWN", "DOWN", "UP", model.getClass().getSimpleName(), Instant.now());
     }
   }
 }

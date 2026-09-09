@@ -138,7 +138,7 @@ public class SqliteRepository {
   }
 
   /** 持久化 Agent 事件，并依靠 sequence 保证读取顺序。 */
-  public void insertEvent(PersistedEvent event) {
+  public void insertEvent(TutorEvent event) {
     jdbc.sql("""
                     INSERT OR IGNORE INTO "event"
                       (id, session_id, run_id, author, event_type, content, tool_call_json,
@@ -160,7 +160,7 @@ public class SqliteRepository {
   }
 
   /** 按数据库 sequence 读取会话事件。 */
-  public List<PersistedEvent> listEvents(String sessionId) {
+  public List<TutorEvent> listEvents(String sessionId) {
     return jdbc.sql("""
                     SELECT id, session_id, run_id, author, event_type, content, tool_call_json,
                       tool_result_json, timestamp, raw_json
@@ -168,7 +168,7 @@ public class SqliteRepository {
                     """)
             .param("sessionId", sessionId)
             .query((rs, rowNum) ->
-                    new PersistedEvent(
+                    new TutorEvent(
                             rs.getString("id"),
                             rs.getString("session_id"),
                             rs.getString("run_id"),
