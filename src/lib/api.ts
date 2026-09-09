@@ -267,12 +267,18 @@ export const api = {
   submit: (id: string) => request<AssessmentResultResponse>(`/learning/assessments/${id}/submit`, {method: "POST"}),
   startLearnUnit: (journeyId: string, learnUnitCode: string) =>
     request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/start`, {method: "POST"}),
+  continueLearnUnit: (journeyId: string, learnUnitCode: string) =>
+    request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/continue`, {method: "POST"}),
   learnUnitAssessment: (journeyId: string, learnUnitCode: string) =>
     request<AssessmentResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/assessment`, {method: "POST"}),
+  retryLearnUnit: (journeyId: string, learnUnitCode: string) =>
+    request<AssessmentResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/retry`, {method: "POST"}),
   learnUnit: (journeyId: string, learnUnitCode: string) =>
     request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}`),
   skipLearnUnit: (journeyId: string, learnUnitCode: string) =>
     request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/skip`, {method: "POST"}),
+  nextLearnUnit: (journeyId: string, learnUnitCode: string) =>
+    request<JourneyDetail>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/next`, {method: "POST"}),
   tutor: (journeyId: string, learnUnitCode: string) =>
     request<TutorSessionResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/tutor`, {method: "POST"}),
   session: (id: string) => request<SessionDetail>(`/sessions/${id}`),

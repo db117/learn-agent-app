@@ -89,6 +89,43 @@ class AssessmentServiceTest {
     }
 
     @Test
+    void retryUsesTheExistingAssessmentAndFixedQuestionSet() {
+        Assessment completed = new Assessment(
+                "assessment", "journey", "learnUnit-a", AssessmentType.LEARN_UNIT,
+                AssessmentStatus.COMPLETED, Instant.EPOCH, Instant.EPOCH.plusSeconds(1));
+        Assessment inProgress = new Assessment(
+                "assessment", "journey", "learnUnit-a", AssessmentType.LEARN_UNIT,
+                AssessmentStatus.IN_PROGRESS, Instant.EPOCH, completed.completedAt());
+        AssessmentAttempt failed = new AssessmentAttempt(
+                "attempt-1", completed.id(), completed.journeyId(), completed.learnUnitCode(), 1,
+                60, null, 60, false, Instant.EPOCH, completed.completedAt());
+        AssessmentAttempt retry = new AssessmentAttempt(
+                "attempt-2", completed.id(), completed.journeyId(), completed.learnUnitCode(), 2,
+                null, null, null, null, Instant.EPOCH, null);
+        Question choice = new Question(
+                "choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
+                "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
+        when(repository.findAssessment(completed.id())).thenReturn(Optional.of(completed), Optional.of(inProgress));
+        when(repository.findLatestLearnUnitAssessment(completed.journeyId(), completed.learnUnitCode()))
+                .thenReturn(Optional.of(completed));
+        when(repository.findOpenAttempt(completed.id())).thenReturn(Optional.empty(), Optional.empty(), Optional.of(retry));
+        when(repository.listQuestionsForAssessment(completed.id())).thenReturn(List.of(choice));
+        when(repository.listAttemptsForAssessment(completed.id())).thenReturn(List.of(failed));
+        when(repository.nextAttemptNumber(completed.id())).thenReturn(2);
+        when(repository.listQuestionAttempts(retry.id())).thenReturn(List.of());
+
+        AssessmentService.AssessmentState result = service.retry(completed.journeyId(), completed.learnUnitCode());
+
+        assertEquals(inProgress, result.assessment());
+        assertEquals(List.of(choice), result.questions());
+        assertEquals(retry, result.openAttempt());
+        verify(progress).requireCurrentLearnUnit(completed.journeyId(), completed.learnUnitCode());
+        verify(repository).insertAttempt(argThat(attempt -> attempt.assessmentId().equals(completed.id())
+                && attempt.attemptNumber() == 2 && attempt.completedAt() == null));
+        verify(repository, never()).insertAssessmentQuestion(anyString(), anyString(), any(Integer.class));
+    }
+
+    @Test
     void multipleChoiceUsesTheExactConfiguredOptionSet() {
         Question question = new Question(
                 "choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,

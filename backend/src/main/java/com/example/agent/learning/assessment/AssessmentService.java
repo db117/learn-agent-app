@@ -95,6 +95,7 @@ public class AssessmentService {
 
     @Transactional
     public AssessmentState createLearnUnitAssessment(String journeyId, String learnUnitCode) {
+        progress.requireCurrentLearnUnit(journeyId, learnUnitCode);
         var journey = requireJourney(journeyId);
         LearnUnit learnUnit = repository.listLearnUnitsForJourney(journeyId).stream()
                 .filter(candidate -> candidate.code().equals(learnUnitCode))
@@ -140,6 +141,22 @@ public class AssessmentService {
         repository.updateAssessment(assessment.id(), AssessmentStatus.IN_PROGRESS, null);
         if (assessment.type() == AssessmentType.LEARN_UNIT) progress.markAssessing(assessment.journeyId(), assessment.learnUnitCode());
         return state(requireAssessment(assessmentId));
+    }
+
+    /** Start another Attempt for the same current LearnUnit Assessment after a failed Attempt. */
+    @Transactional
+    public AssessmentState retry(String journeyId, String learnUnitCode) {
+        progress.requireCurrentLearnUnit(journeyId, learnUnitCode);
+        Assessment assessment = repository.findLatestLearnUnitAssessment(journeyId, learnUnitCode)
+                .orElseThrow(() -> new IllegalArgumentException("LearnUnit has no assessment to retry: " + learnUnitCode));
+        AssessmentState current = state(assessment);
+        if (current.openAttempt() != null) return current;
+        AssessmentAttempt latest = current.attempts().stream().findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("LearnUnit has no completed attempt to retry: " + learnUnitCode));
+        if (latest.completedAt() == null || !Boolean.FALSE.equals(latest.passed())) {
+            throw new IllegalArgumentException("LearnUnit assessment is not retryable: " + learnUnitCode);
+        }
+        return start(assessment.id());
     }
 
     @Transactional

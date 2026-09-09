@@ -8,6 +8,7 @@ import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.scoring.AssessmentScore;
+import com.example.agent.learning.workflow.WorkflowTransition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -71,6 +72,17 @@ class ProgressServiceTest {
     }
 
     @Test
+    void cannotSkipWhileTheCurrentLearnUnitHasAnOpenAttempt() {
+        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 0, 0, 0);
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
+        when(repository.hasOpenLearnUnitAttempt("journey", "learnUnit-a")).thenReturn(true);
+
+        assertThrows(IllegalArgumentException.class, () -> service.skipLearnUnit("journey", "learnUnit-a"));
+        verify(repository, times(0)).updatePathItem(any(LearningPathItem.class));
+        verify(repository, times(0)).insertWorkflowTransition(any(WorkflowTransition.class));
+    }
+
+    @Test
     void failedAssessmentRetainsBestMasteryOnTheCurrentPathItem() {
         LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 85, 90, 3);
         when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
@@ -109,6 +121,26 @@ class ProgressServiceTest {
     }
 
     @Test
+    void passAndNextTransitionsUsePathStates() {
+        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 0, 0, 0);
+        LearningPathItem next = item("learnUnit-b", 2, LearningPathItemStatus.PENDING, 0, 0, 0);
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
+        when(repository.listPath("journey")).thenReturn(List.of(current, next));
+
+        service.recordLearnUnitAssessment(
+                "journey", "learnUnit-a", new AssessmentScore(100, 0, 100, true, false), true);
+
+        ArgumentCaptor<WorkflowTransition> transitions = ArgumentCaptor.forClass(WorkflowTransition.class);
+        verify(repository, times(2)).insertWorkflowTransition(transitions.capture());
+        assertEquals("CURRENT", transitions.getAllValues().get(0).fromState());
+        assertEquals("PASS", transitions.getAllValues().get(0).action());
+        assertEquals("COMPLETED", transitions.getAllValues().get(0).toState());
+        assertEquals("PENDING", transitions.getAllValues().get(1).fromState());
+        assertEquals("NEXT", transitions.getAllValues().get(1).action());
+        assertEquals("CURRENT", transitions.getAllValues().get(1).toState());
+    }
+
+    @Test
     void rejectsAnAssessmentSubmittedAfterThePathItemWasSkipped() {
         LearningPathItem skipped = item("learnUnit-a", 1, LearningPathItemStatus.SKIPPED, 0, 0, 1);
         when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(skipped));
@@ -140,6 +172,27 @@ class ProgressServiceTest {
                 "journey", "learnUnit-a", new AssessmentScore(100, 100, 100, true, true), true);
 
         verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.COMPLETED), any(Instant.class));
+    }
+
+    @Test
+    void nextIsIdempotentAfterPassAndReturnsTheServerSelectedCurrentItem() {
+        LearningPathItem closed = item("learnUnit-a", 1, LearningPathItemStatus.COMPLETED, 100, 100, 1);
+        LearningPathItem current = item("learnUnit-b", 2, LearningPathItemStatus.CURRENT, 0, 0, 0);
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(closed));
+        when(repository.listPath("journey")).thenReturn(List.of(closed, current));
+
+        assertEquals(current, service.nextLearnUnit("journey", "learnUnit-a"));
+        verify(repository, times(0)).updatePathItem(any(LearningPathItem.class));
+        verify(repository, times(0)).insertWorkflowTransition(any(WorkflowTransition.class));
+    }
+
+    @Test
+    void nextRejectsAnOpenCurrentLearnUnit() {
+        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 0, 0, 0);
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
+
+        assertThrows(IllegalArgumentException.class, () -> service.nextLearnUnit("journey", "learnUnit-a"));
+        verify(repository, times(0)).updatePathItem(any(LearningPathItem.class));
     }
 
     @Test

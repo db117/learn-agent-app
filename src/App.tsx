@@ -76,6 +76,15 @@ function statusLabel(status: string) {
   return status.toLowerCase().replaceAll("_", " ");
 }
 
+function pathStatusLabel(status: string) {
+  switch (status) {
+    case "COMPLETED": return "Passed";
+    case "SKIPPED": return "Skipped";
+    case "CURRENT": return "Current";
+    default: return "Pending";
+  }
+}
+
 function eventLabel(event: TutorEvent) {
   switch (event.eventType) {
     case "skill_load_start": return `加载 Skill${event.skillName ? ` · ${event.skillName}` : ""}`;
@@ -127,6 +136,17 @@ export default function App() {
   const eventSource = useRef<EventSource | null>(null);
 
   const journeyId = journey?.journey.id;
+  const currentPathItem = journey?.path.find((item) => item.status === "CURRENT") ?? null;
+  const currentLearnUnit = Boolean(
+    journey?.journey.status === "ACTIVE" &&
+    currentPathItem &&
+    learnUnit?.learnUnit.code === currentPathItem.learnUnitCode &&
+    learnUnit.pathItem?.status === "CURRENT",
+  );
+  const hasOpenAttempt = currentLearnUnit &&
+    (learnUnit?.attempts.some((attempt) => attempt.completedAt === null) ?? false);
+  const canRetry = currentLearnUnit && !hasOpenAttempt &&
+    (learnUnit?.attempts.some((attempt) => attempt.completedAt !== null && attempt.passed === false) ?? false);
   const currentQuestion = assessment?.questions[questionIndex] ?? null;
   const currentDraft = currentQuestion ? answers[currentQuestion.id] ?? emptyDraft : emptyDraft;
   const questionConfig = currentQuestion ? parseQuestionConfig(currentQuestion.configJson) : {options: [], multiple: false};
@@ -318,7 +338,7 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
-      const opened = await api.startLearnUnit(journeyId, code);
+      const opened = await api.continueLearnUnit(journeyId, code);
       setLearnUnit(opened);
       setTutor(null);
       await refreshJourney(journeyId);
@@ -330,8 +350,25 @@ export default function App() {
     }
   }
 
+  async function retryCurrentLearnUnit() {
+    if (!journeyId || !learnUnit || !currentLearnUnit || !canRetry) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const retried = await api.retryLearnUnit(journeyId, learnUnit.learnUnit.code);
+      hydrateAssessment(retried);
+      setAssessmentResult(null);
+      setQuestionIndex(firstUnanswered(retried));
+      setView("assessment");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to retry LearnUnit assessment"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function startLearnUnitAssessment() {
-    if (!journeyId || !learnUnit) return;
+    if (!journeyId || !learnUnit || !currentLearnUnit) return;
     setBusy(true);
     setError(null);
     try {
@@ -349,7 +386,7 @@ export default function App() {
   }
 
   async function skipCurrentLearnUnit() {
-    if (!journeyId || !learnUnit || !window.confirm("Skip this LearnUnit? It will remain in your history and will not count as mastered.")) return;
+    if (!journeyId || !learnUnit || !currentLearnUnit || !window.confirm("Skip this LearnUnit? It will remain in your history and will not count as mastered.")) return;
     setBusy(true);
     setError(null);
     try {
@@ -358,6 +395,24 @@ export default function App() {
       await refreshJourney(journeyId);
     } catch (cause) {
       setError(errorMessage(cause, "Unable to skip LearnUnit"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function nextLearnUnit() {
+    const closedCode = assessmentResult?.assessment.learnUnitCode;
+    if (!journeyId || !closedCode || !assessmentResult?.passed || assessmentResult.assessment.type !== "LEARN_UNIT") return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.nextLearnUnit(journeyId, closedCode);
+      await refreshJourney(journeyId);
+      setAssessment(null);
+      setAssessmentResult(null);
+      setView("dashboard");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to continue to the next LearnUnit"));
     } finally {
       setBusy(false);
     }
@@ -537,13 +592,18 @@ export default function App() {
 
   function renderResult() {
     if (!assessmentResult) return null;
+    const diagnostic = assessmentResult.assessment.type === "DIAGNOSTIC";
+    const resultStatus = assessmentResult.passed ? "Passed" : diagnostic ? "Not Yet" : "Retry Required";
+    const canNext = !diagnostic && assessmentResult.passed &&
+      journey?.journey.status === "ACTIVE" &&
+      journey.path.some((item) => item.status === "CURRENT");
     return (
       <section className="result panel">
         <div className="section-kicker">ASSESSMENT COMPLETE</div>
-        <h2>{assessmentResult.assessment.type === "DIAGNOSTIC" ? "你的学习路径已经准备好了" : "LearnUnit 评估完成"}</h2>
+        <h2>{diagnostic ? "你的学习路径已经准备好了" : "LearnUnit 评估完成"}</h2>
         <div className="score-summary">
           <strong>{assessmentResult.score.totalScore}</strong><span>/ 100</span>
-          <p className={assessmentResult.passed ? "success" : "warning"}>{assessmentResult.passed ? "Passed" : "Not Yet"}</p>
+          <p className={assessmentResult.passed ? "success" : "warning"}>{resultStatus}</p>
         </div>
         <div className="score-breakdown">
           {assessmentResult.score.hasChoiceQuestions && <span>选择题 {assessmentResult.score.choiceScore}</span>}
@@ -564,9 +624,11 @@ export default function App() {
           </div>
         )}
         <div className="button-row result-actions">
-          <button className="primary" onClick={() => void continueToDashboard()} disabled={busy}>{busy ? "加载路径…" : "进入学习路径"}</button>
-          {!assessmentResult.passed && assessmentResult.assessment.type === "LEARN_UNIT" && (
-            <button className="secondary" onClick={() => void startLearnUnitAssessment()} disabled={busy}>Retry LearnUnit</button>
+          <button className="primary" onClick={() => void (canNext ? nextLearnUnit() : continueToDashboard())} disabled={busy}>
+            {busy ? "加载路径…" : canNext ? "Next LearnUnit" : "Continue"}
+          </button>
+          {!diagnostic && !assessmentResult.passed && (
+            <button className="secondary" onClick={() => void retryCurrentLearnUnit()} disabled={busy || !canRetry}>Retry</button>
           )}
         </div>
       </section>
@@ -617,7 +679,8 @@ export default function App() {
 
   function renderDashboard() {
     const path = journey?.path ?? [];
-    const completed = path.filter((item) => item.status === "COMPLETED" || item.status === "SKIPPED").length;
+    const passed = path.filter((item) => item.status === "COMPLETED").length;
+    const skipped = path.filter((item) => item.status === "SKIPPED").length;
     const current = learnUnit;
     const next = path.find((item) => item.status === "PENDING");
     const nextStep = next
@@ -626,13 +689,13 @@ export default function App() {
     return (
       <section className="journey-grid">
         <aside className="path panel">
-          <div className="panel-title"><span>Learning path</span><span className="muted">{completed}/{path.length}</span></div>
+          <div className="panel-title"><span>Learning path</span><span className="muted">{passed} passed · {skipped} skipped</span></div>
           <div className="path-list">
             {path.map((item) => {
               const actionable = item.status === "CURRENT";
               return <button className={`path-item ${item.status.toLowerCase()}`} key={item.learnUnitCode} onClick={() => actionable && void openLearnUnit(item.learnUnitCode)} disabled={!actionable || busy}>
                 <span className="path-number">{item.sequence}</span>
-                <span><strong>{learnUnitLabel(learnUnits, item.learnUnitCode)}</strong><small>{statusLabel(item.status)}</small></span>
+                <span><strong>{learnUnitLabel(learnUnits, item.learnUnitCode)}</strong><small>{pathStatusLabel(item.status)}</small></span>
                 <span className="path-mark">{item.status === "COMPLETED" ? "✓" : item.status === "SKIPPED" ? "–" : item.status === "CURRENT" ? "→" : "·"}</span>
               </button>;
             })}
@@ -644,7 +707,7 @@ export default function App() {
             <div className="empty">{journey?.journey.status === "COMPLETED" ? "恭喜，你已完成这条学习路径。" : "正在加载当前 LearnUnit…"}</div>
           ) : (
             <>
-              <div className="lesson-header"><div><div className="section-kicker">CURRENT LEARN UNIT</div><h2>{current.learnUnit.name}</h2></div><span className="status-pill">{statusLabel(current.pathItem?.status ?? "CURRENT")}</span></div>
+              <div className="lesson-header"><div><div className="section-kicker">CURRENT LEARN UNIT</div><h2>{current.learnUnit.name}</h2></div><span className="status-pill">{pathStatusLabel(current.pathItem?.status ?? "CURRENT")}</span></div>
               <p className="lead">{current.learnUnit.lessonIntro}</p>
               <div className="lesson-stats">
                 <span>掌握度 {current.pathItem?.masteryScore ?? 0}</span>
@@ -661,8 +724,10 @@ export default function App() {
                 <div className="feedback-block"><h3>最近反馈</h3>{current.questionAttempts.filter((item) => item.feedback?.trim()).slice(0, 3).map((item) => <p key={`${item.assessmentAttemptId}-${item.questionId}`}>{item.feedback}</p>)}</div>
               )}
               <div className="button-row">
-                <button className="primary" onClick={() => void startLearnUnitAssessment()} disabled={busy || current.pathItem?.status !== "CURRENT"}>开始 LearnUnit 评估</button>
-                <button className="secondary" onClick={() => void skipCurrentLearnUnit()} disabled={busy || current.pathItem?.status !== "CURRENT"}>跳过</button>
+                <button className="primary" onClick={() => void openLearnUnit(current.learnUnit.code)} disabled={busy || !currentLearnUnit}>Continue</button>
+                <button className="secondary" onClick={() => void retryCurrentLearnUnit()} disabled={busy || !canRetry}>Retry</button>
+                <button className="primary" onClick={() => void startLearnUnitAssessment()} disabled={busy || !currentLearnUnit}>开始 LearnUnit 评估</button>
+                <button className="secondary" onClick={() => void skipCurrentLearnUnit()} disabled={busy || !currentLearnUnit || hasOpenAttempt}>Skip</button>
               </div>
             </>
           )}

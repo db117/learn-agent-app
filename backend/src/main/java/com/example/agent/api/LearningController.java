@@ -177,10 +177,23 @@ public class LearningController {
         return learnUnit(journeyId, learnUnitCode);
     }
 
+    /** Continue the server-selected current LearnUnit after a restart or result screen. */
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/continue")
+    public LearnUnitResponse continueLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        progress.continueLearnUnit(journeyId, learnUnitCode);
+        return learnUnit(journeyId, learnUnitCode);
+    }
+
     /** 创建或恢复指定 LearnUnit 的固定题集评估。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/assessment")
     public AssessmentResponse learnUnitAssessment(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
         return AssessmentResponse.from(assessments.createLearnUnitAssessment(journeyId, learnUnitCode));
+    }
+
+    /** Retry a failed Attempt without replacing its Assessment or fixed Question set. */
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/retry")
+    public AssessmentResponse retryLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        return AssessmentResponse.from(assessments.retry(journeyId, learnUnitCode));
     }
 
     /** 跳过当前 Path 节点，并保留跳过历史。 */
@@ -188,6 +201,13 @@ public class LearningController {
     public LearnUnitResponse skipLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
         progress.skipLearnUnit(journeyId, learnUnitCode);
         return learnUnit(journeyId, learnUnitCode);
+    }
+
+    /** Confirm and recover the next server-selected LearnUnit after a closed item. */
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/next")
+    public JourneyDetailResponse nextLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        progress.nextLearnUnit(journeyId, learnUnitCode);
+        return journey(journeyId);
     }
 
     /** 查询 LearnUnit 内容、进度和历史评估。 */

@@ -539,6 +539,20 @@ public class LearningRepository {
                 .optional();
     }
 
+    /** 查询 Journey 的 LearnUnit 是否有未提交 Attempt，避免 Skip 留下悬空评估草稿。 */
+    public boolean hasOpenLearnUnitAttempt(String journeyId, String learnUnitCode) {
+        Integer count = jdbc.sql("""
+                        SELECT COUNT(*)
+                        FROM assessment_attempt
+                        WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode AND completed_at IS NULL
+                        """)
+                .param("journeyId", journeyId)
+                .param("learnUnitCode", learnUnitCode)
+                .query(Integer.class)
+                .single();
+        return count > 0;
+    }
+
     /** 按 Attempt 主键查询。 */
     public Optional<AssessmentAttempt> findAttempt(String id) {
         return jdbc.sql("""
