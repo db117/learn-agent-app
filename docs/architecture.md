@@ -2,31 +2,45 @@
 
 ```text
 React + TypeScript + Vite
-          │ HTTP / SSE
+          │ framework-neutral HTTP / SSE
           ▼
 Tauri 2 shell ── starts/stops/status of JVM process
           │ 127.0.0.1:18080
           ▼
-Spring Boot 4.0.0 backend
-  API → TutorAgentService → SAA ReactAgent / Graph Core / Tool
-                  │
-                  ├─ Spring AI ChatModel → OpenAI
-                  └─ JdbcClient → SQLite
+Spring Boot 4.0.0 + WebFlux JVM
+  ├─ SessionController → TutorAgentService
+  │       → AgentScope HarnessAgent → AgentScope OpenAI Model
+  │       ├─ AgentScope Skill repository / tools
+  │       └─ SqliteAgentStateStore → JdbcClient → SQLite
+  ├─ LearningController → Java Learning Engine → JdbcClient → SQLite
+  │       ├─ Journey-scoped LearnUnit / Question
+  │       ├─ fixed Assessment / Attempt history
+  │       └─ deterministic Score / Path / Workflow facts
+  ├─ LlmCurriculum/Diagnostic/Coding adapters → Spring AI ChatModel (legacy seam)
+  └─ ProgressService → SAA LearningWorkflowGraph (legacy bridge)
 ```
 
-Rust 只负责桌面进程生命周期，React 只消费框架无关的 HTTP/SSE DTO 和事件。Java 负责
-TutorAgent、Learning Engine、workflow 状态、持久化和 API 契约。SAA Graph Core 表达
-Java 节点、Agent 节点和条件路由；Graph State 只属于当前执行，SQLite 保存长期事实。
-每次 Learning Action 由 `LearningWorkflowGraph` 创建并执行一次短生命周期 Graph，完成后立即
-结束；Pass/Retry/Skip/Next/Completed 等结果由 Java 节点写入 `workflow_transition`。
+Rust 只负责 JVM 进程生命周期，React 只消费项目自有 DTO 和 `TutorEvent`。Java 负责
+HTTP、SSE、Learning Engine、SQLite、AgentScope TutorAgent 和边界适配。
 
-## 运行时边界
+## 当前迁移状态
 
-- 后端只保留一个 Spring AI Alibaba `ReactAgent`，Agent capability 使用框架 Skill registry。
-- Spring AI 只负责 ChatModel 提供商接入；提供商适配集中在 `llm/infrastructure`。
-- `LearnUnit` 是按 Journey 由 LLM 生成并持久化的教学知识，不进入 Skill registry。
-- Learning Engine 用 Java 规则决定分数、Pass、Retry、Skip、Next 和 Journey 完成状态。
-- SQLite 是唯一持久化数据库，使用 Spring `JdbcClient`；Question 只能新增或 soft delete。
+AgentScope `HarnessAgent` 是 Tutor HTTP/SSE 的实际运行时，AgentState 使用新的 SQLite
+表，Learning Engine 负责分数、通过、Retry、Skip、Next、路径和 Journey 完成。`LearnUnit`
+是 Journey-scoped 教学知识；AgentScope `Skill` 是工程能力，两者没有领域关系。
+
+旧 Spring AI/Spring AI Alibaba 目前仍被编译并部分使用：SAA 配置创建旧 Agent/Graph bean，
+`LearningWorkflowGraph` 使用 SAA `StateGraph`，三个 LLM 适配器使用 Spring AI `ChatModel`，
+工具保留两套注解。它们不是 fallback；在 macOS arm64 + 真实 OpenAI 完整 E2E 通过前不得删除。
+当前源码和依赖中没有 ADK runtime。
+
+## 持久化与桌面边界
+
+- HTTP、SSE、SQLite 和前端 DTO 不暴露 AgentScope 或 SAA 内部消息类型。
+- AgentScope 是 Tutor 的目标运行时；Learning Engine 不由 Agent 直接修改分数、通过状态或路径。
+- SQLite 是唯一 durable database，使用 Xerial JDBC 和 Spring `JdbcClient`；JDBC、事务和
+  AgentState 等阻塞操作必须在 WebFlux event loop 外执行。
+- 发现旧 schema 或旧 AgentState 时不迁移、不覆盖、不回退，要求使用新数据库路径。
 - JVM JAR 是当前桌面后端形态；应用包不提供 JRE，运行环境需要 Java 21。
 
 ## Learning Journey
@@ -45,7 +59,7 @@ LearningController → Learning Engine → JdbcClient → SQLite
 ```
 
 应用启动只创建表，不加载固定课程或 Question。用户提交目标语言创建 Journey 时，LLM
-只为该 Journey 生成 LearnUnit，Java 校验后 insert-only 写入 SQLite，并通过
+只为该 Journey 生成 LearnUnit 和必要题目；Java 校验后 insert-only 写入 SQLite，并通过
 `learning_journey_learn_unit` 建立关联。同一 Journey 重启后只恢复 SQLite 数据；不同
-Journey 即使目标语言相同也不会共享课程或题目。诊断和 LearnUnit 评估需要题目时才由 LLM
-选择或生成，Assessment 创建后固定题集，Retry 复用原题集。
+Journey 即使目标语言相同也不会共享课程或题目。Assessment 创建后固定题集，Retry 复用
+原题集；LLM 失败、结构非法或恢复失败均明确报错，不创建空上下文、不使用 fallback。

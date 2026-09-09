@@ -5,9 +5,6 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.catalog.LearnUnit;
-import com.example.agent.learning.catalog.LearningLanguage;
-import com.example.agent.learning.diagnostic.DeterministicDiagnosticQuestionPlanner;
-import com.example.agent.learning.journey.LearnerProfile;
 import com.example.agent.learning.path.DeterministicLearningPathPlanner;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
@@ -105,22 +102,6 @@ class LearningCoreTest {
         assertEquals(List.of("learnUnit-a", "learnUnit-b"), path.stream().map(item -> item.learnUnitCode()).toList());
         assertEquals(LearningPathItemStatus.COMPLETED, path.get(0).status());
         assertEquals(LearningPathItemStatus.CURRENT, path.get(1).status());
-    }
-
-    @Test
-    void deterministicQuestionFallbackAlsoSupportsNonDiagnosticLearnUnits() {
-        LearnUnit learnUnit = learnUnit("learnUnit-a", 1, 80, List.of());
-        Question choice = new Question(
-                "choice", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
-                "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
-        Question coding = new Question(
-                "coding", learnUnit.code(), QuestionType.CODING, 1, "Implement", 100,
-                null, "{\"correctness\":60}", "typescript", "", "[]", false);
-
-        assertEquals(List.of(choice, coding), new DeterministicDiagnosticQuestionPlanner().plan(
-                new LearningLanguage("language", "typescript", "TypeScript", "typed JavaScript", true),
-                List.of(learnUnit), List.of(choice, coding),
-                new LearnerProfile("journey", "java", 8, "backend developer", "learn TypeScript")));
     }
 
     private LearnUnit learnUnit(String code, int sequence, int passScore, List<String> prerequisites) {

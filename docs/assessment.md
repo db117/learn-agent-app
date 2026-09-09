@@ -7,7 +7,7 @@
 诊断或 LearnUnit 评估创建时，LLM 可以从活动题库选题，也可以提出新题；题库为空时直接
 生成新题。Java 只接受合法的 `MULTIPLE_CHOICE`/`CODING` 题目，已有 Question 必须完全
 相等；每个本次评估覆盖的 LearnUnit 至少保留一道选择题和一道 Coding 题。非法结构化
-响应会被拒绝；只有模型不可用时才允许从已有 SQLite 题库确定性回退。
+响应会被拒绝；模型不可用时直接报错，不从已有 SQLite 题库回退，也不保存部分生成结果。
 
 选择题由 Java 确定性评分。Coding 通过 `CodingAnswerEvaluator` 只返回受限 rubric
 维度、feedback 和 issues，Java 校验范围并计算最终分数，不接受模型直接返回 passed。

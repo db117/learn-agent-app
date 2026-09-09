@@ -28,7 +28,8 @@
       "../backend/target/agent-backend.jar": "agent-backend.jar"
     },
     "icon": [
-      "icons/icon.png"
+      "icons/icon.png",
+      "icons/icon.ico"
     ]
   }
 }

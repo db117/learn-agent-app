@@ -1,5 +1,9 @@
 # Wayfinder Map — Phase 2 Learning Core
 
+> Historical planning record. The AgentScope + Spring Boot WebFlux migration in
+> `.scratch/agentscope-springboot-migration/spec.md` supersedes the ADK/SAA decisions below;
+> do not use this map as the current runtime specification.
+
 ## Destination
 
 现有 Phase 1 桌面学习 Agent 具备可手工演示、可测试、可 Native 构建的 Learning Journey 主流程，并停在 Phase 2 边界。

@@ -1,8 +1,8 @@
 # AgentScope Java 2.0 + Spring Boot WebFlux 学习代理迁移规格
 
-Triage: ready-for-agent
+Triage: ready-for-human
 
-Status: ready-for-agent
+Status: issue 11 local checks complete; macOS arm64 + real OpenAI acceptance blocked
 
 Scope: macOS arm64、Java 21、Spring Boot 4.0.0、Spring WebFlux、AgentScope Java 2.0.3、SQLite、React/Tauri
 

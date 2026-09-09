@@ -20,6 +20,7 @@ Learning Core 的主对象位于 `com.example.agent.learning`。教学知识使�
 运行时读取来自 SQLite。应用启动只创建表，不加载固定课程；用户提出目标语言创建新
 Journey 时，由 LLM 为该 Journey 独立生成 LearnUnit，并通过
 `learning_journey_learn_unit` 建立关联。同一 Journey 后续只读取已保存关联；不同 Journey
-即使目标语言相同也不共享课程。诊断或 LearnUnit 评估需要题目时再由 LLM 生成或选择。已
-持久化的目录和题目定义不会被模型响应覆盖，题目退役通过 `question_retirement` 保留
-历史引用。
+即使目标语言相同也不共享课程。诊断或 LearnUnit 评估需要题目时再由 LLM 生成或选择；模型
+不可用、响应非法或题型覆盖不足时直接报错，不回退到已有题库，也不保存部分生成结果。已
+持久化的目录和题目定义不会被模型响应覆盖，题目退役通过 `question_retirement` 保留历史
+引用。
