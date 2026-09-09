@@ -35,7 +35,7 @@ class CurriculumServiceTest {
         LearningLanguage language = language("python");
         LearnUnit learnUnit = learnUnit("python.basics", "python");
         CurriculumGenerator.GeneratedCurriculum generated = new CurriculumGenerator.GeneratedCurriculum(
-                List.of(language), List.of(learnUnit));
+                List.of(language), List.of(learnUnit), List.of(choiceQuestion(learnUnit)));
         when(generator.generate("python", "learn backend APIs")).thenReturn(generated);
 
         CurriculumGenerator.GeneratedCurriculum first = service.generateForJourney(
@@ -59,7 +59,7 @@ class CurriculumServiceTest {
     void rejectsCatalogThatDoesNotCoverEveryLanguage() {
         LearningLanguage language = language("rust");
         when(generator.generate("rust", "")).thenReturn(new CurriculumGenerator.GeneratedCurriculum(
-                List.of(language), List.of()));
+                List.of(language), List.of(), List.of()));
 
         assertThrows(IllegalStateException.class, () -> service.generateForJourney("journey", "rust", ""));
     }
@@ -106,12 +106,33 @@ class CurriculumServiceTest {
         verifyNoInteractions(repository);
     }
 
+    @Test
+    void rejectsEmptyQuestionSetBeforePersistence() {
+        LearningLanguage language = language("python");
+        LearnUnit learnUnit = learnUnit("python.reading", "python", null);
+        when(generator.generate("python", "read docs")).thenReturn(new CurriculumGenerator.GeneratedCurriculum(
+                List.of(language), List.of(learnUnit), List.of()));
+
+        assertThrows(IllegalStateException.class,
+                () -> service.generateForJourney("journey-1", "python", "read docs"));
+
+        verifyNoInteractions(repository);
+    }
+
     private LearningLanguage language(String code) {
         return new LearningLanguage("language-" + code, code, code, "description", true);
     }
 
     private LearnUnit learnUnit(String code, String languageCode) {
-        return learnUnit(code, languageCode, 70);
+        return learnUnit(code, languageCode, null);
+    }
+
+    private Question choiceQuestion(LearnUnit learnUnit) {
+        return new Question(
+                "choice", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
+                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
+                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
+                null, null, null, "[]", true);
     }
 
     private LearnUnit learnUnit(String code, String languageCode, Integer minCodingScore) {

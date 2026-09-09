@@ -52,7 +52,7 @@ public final class QuestionStructureValidator {
         for (JsonNode option : options) {
             String id = text(option, "id");
             String label = text(option, "text");
-            if (!optionIds.add(id) || label.isBlank()) {
+            if (id.isBlank() || !optionIds.add(id) || label.isBlank()) {
                 throw new IllegalArgumentException("Multiple-choice options must have unique ids and text");
             }
         }
@@ -64,10 +64,10 @@ public final class QuestionStructureValidator {
             }
         }
         JsonNode multiple = config.get("multiple");
-        if (multiple != null && !multiple.isBoolean()) {
+        if (multiple == null || !multiple.isBoolean()) {
             throw new IllegalArgumentException("Multiple-choice multiple must be boolean");
         }
-        if (multiple != null && !multiple.asBoolean() && correctIds.size() != 1) {
+        if (!multiple.asBoolean() && correctIds.size() != 1) {
             throw new IllegalArgumentException("Single-answer questions need exactly one correct option");
         }
     }

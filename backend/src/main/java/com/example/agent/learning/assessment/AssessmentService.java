@@ -265,6 +265,7 @@ public class AssessmentService {
             if (question.type() == QuestionType.CODING && learnUnit.minCodingScore() == null) {
                 throw new IllegalArgumentException("Coding question has no coding learning objective: " + learnUnit.code());
             }
+            if (existing == null) QuestionStructureValidator.validate(question, learnUnit);
             if (ids.add(question.id())) result.add(question);
         }
         for (LearnUnit learnUnit : learnUnits) {

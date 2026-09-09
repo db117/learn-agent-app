@@ -53,9 +53,9 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
                 {"questions":[...]}.
                 The existing catalog may be empty. For an existing question return exactly
                 {"existingQuestionId":"..."} using one of the catalog ids.
-                You may also create a new question with learnUnitCode, type (MULTIPLE_CHOICE or CODING), prompt,
-                points, language, starterCode, rubric, referenceConcepts, and for multiple choice an options array
-                of {"id":"A","text":"..."} plus correctOptionIds. New questions must assess the listed LearnUnits.
+                You may also create a new question with learnUnitCode, type (MULTIPLE_CHOICE or CODING), difficulty,
+                prompt, points, language, starterCode, rubric, referenceConcepts, and for multiple choice an options array
+                of {"id":"A","text":"..."} plus correctOptionIds and boolean multiple. New questions must assess the listed LearnUnits.
                 A LearnUnit with null minCodingScore has no coding learning objective and must not receive a CODING question.
                 Never return changed fields alongside existingQuestionId. Do not return scores or passed decisions.
 
@@ -100,30 +100,31 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
         if (learnUnit == null) throw new IllegalArgumentException("Unknown assessment LearnUnit");
         QuestionType type = QuestionType.valueOf(requiredText(node, "type").toUpperCase(Locale.ROOT));
         String prompt = requiredText(node, "prompt");
-        int points = node.path("points").asInt(type == QuestionType.CODING ? 100 : 20);
-        if (points <= 0) throw new IllegalArgumentException("New question points must be positive");
+        int difficulty = requiredInt(node, "difficulty", 1, 5);
+        int points = requiredInt(node, "points", 1, 1000);
         String config = null;
         String rubric = null;
         if (type == QuestionType.MULTIPLE_CHOICE) {
             JsonNode options = node.get("options");
             JsonNode correct = node.get("correctOptionIds");
-            if (options == null || !options.isArray() || correct == null || !correct.isArray()) {
-                throw new IllegalArgumentException("Multiple choice question needs options and correctOptionIds");
+            JsonNode multiple = node.get("multiple");
+            if (options == null || !options.isArray() || correct == null || !correct.isArray()
+                    || multiple == null || !multiple.isBoolean()) {
+                throw new IllegalArgumentException("Multiple choice question needs options, correctOptionIds and multiple");
             }
             ObjectNode configNode = MAPPER.createObjectNode();
             configNode.set("options", options);
             configNode.set("correctOptionIds", correct);
-            configNode.put("multiple", node.path("multiple").asBoolean(false));
+            configNode.set("multiple", multiple);
             config = configNode.toString();
         } else {
             JsonNode rubricNode = node.get("rubric");
-            rubric = rubricNode == null || rubricNode.isNull()
-                    ? "{\"correctness\":60,\"languageUsage\":20,\"clarity\":20}"
-                    : rubricNode.toString();
+            if (rubricNode == null || rubricNode.isNull()) throw new IllegalArgumentException("Coding question rubric is required");
+            rubric = rubricNode.toString();
         }
         JsonNode concepts = node.get("referenceConcepts");
         Question question = new Question(
-                "generated-question-" + UUID.randomUUID(), learnUnitCode, type, node.path("difficulty").asInt(2),
+                "generated-question-" + UUID.randomUUID(), learnUnitCode, type, difficulty,
                 prompt, points, config, rubric, nullableText(node, "language"), nullableText(node, "starterCode"),
                 concepts == null || concepts.isNull() ? "[]" : concepts.toString(), true);
         QuestionStructureValidator.validate(question, learnUnit);
@@ -134,6 +135,14 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
         String value = nullableText(node, field);
         if (value == null || value.isBlank()) throw new IllegalArgumentException("Missing " + field);
         return value;
+    }
+
+    private int requiredInt(JsonNode node, String field, int min, int max) {
+        JsonNode value = node.get(field);
+        if (value == null || !value.isIntegralNumber()) throw new IllegalArgumentException("Missing or invalid " + field);
+        int result = value.asInt(Integer.MIN_VALUE);
+        if (result < min || result > max) throw new IllegalArgumentException("Invalid " + field);
+        return result;
     }
 
     private String nullableText(JsonNode node, String field) {

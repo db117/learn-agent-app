@@ -227,22 +227,32 @@ class AgentBackendApplicationTest {
                         "generated-language-" + suffix, languageCode, "TypeScript", "typed JavaScript", true);
                 LearnUnit runtime = new LearnUnit(
                         "generated-learnUnit-runtime-" + suffix, languageCode, languageCode + ".javascript-runtime",
-                        "JavaScript Runtime", "Runtime fundamentals", 1, List.of(), 80, 70, true,
+                        "JavaScript Runtime", "Runtime fundamentals", 1, List.of(), 80, null, true,
                         List.of("Understand the runtime"), "Runtime lesson", List.of("event loop"),
                         List.of("Promise callbacks"), true);
                 LearnUnit types = new LearnUnit(
                         "generated-learnUnit-types-" + suffix, languageCode, languageCode + ".basic-types",
-                        "Basic Types", "Common types", 2, List.of(runtime.code()), 80, 70, true,
+                        "Basic Types", "Common types", 2, List.of(runtime.code()), 80, null, true,
                         List.of("Use common types"), "Types lesson", List.of("unknown"),
                         List.of("unknown at boundaries"), true);
                 LearnUnit functions = new LearnUnit(
                         "generated-learnUnit-functions-" + suffix, languageCode, languageCode + ".functions",
-                        "Functions", "Function fundamentals", 3, List.of(types.code()), 80, 70, true,
+                        "Functions", "Function fundamentals", 3, List.of(types.code()), 80, null, true,
                         List.of("Write reusable functions"), "Functions lesson", List.of("parameters"),
                         List.of("small functions"), true);
                 return new CurriculumGenerator.GeneratedCurriculum(
-                        List.of(language), List.of(runtime, types, functions));
+                        List.of(language), List.of(runtime, types, functions),
+                        List.of(choiceQuestion(runtime), choiceQuestion(types), choiceQuestion(functions)));
             };
+        }
+
+        private Question choiceQuestion(LearnUnit learnUnit) {
+            return new Question(
+                    "choice-" + learnUnit.code(), learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1,
+                    "Choose the correct answer", 20,
+                    "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
+                            + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
+                    null, null, null, "[]", true);
         }
     }
 }

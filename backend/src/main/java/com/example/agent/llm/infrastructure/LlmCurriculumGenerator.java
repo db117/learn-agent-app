@@ -113,8 +113,8 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
             if (!learnUnitCodes.add(code)) throw new IllegalArgumentException("Duplicate LearnUnit code: " + code);
             learnUnits.add(new LearnUnit(
                     "generated-learn-unit-" + UUID.randomUUID(), languageCode, code, requiredText(node, "name"),
-                    requiredText(node, "description"), boundedInt(node, "sequence", 1, 1, 1000),
-                    strings(node.get("prerequisiteLearnUnitCodes")), boundedInt(node, "passScore", 80, 0, 100),
+                    requiredText(node, "description"), requiredBoundedInt(node, "sequence", 1, 1000),
+                    strings(node.get("prerequisiteLearnUnitCodes")), requiredBoundedInt(node, "passScore", 0, 100),
                     nullableBoundedInt(node, "minCodingScore", 0, 100), true,
                     strings(node.get("learningObjectives")), optionalText(node, "lessonIntro"),
                     strings(node.get("keyConcepts")), strings(node.get("examples")), true));
@@ -144,19 +144,16 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
             QuestionType type = QuestionType.valueOf(requiredText(node, "type").toUpperCase(Locale.ROOT));
             JsonNode options = node.get("options");
             JsonNode correctOptionIds = node.get("correctOptionIds");
+            JsonNode multiple = node.get("multiple");
             String config = null;
             if (type == QuestionType.MULTIPLE_CHOICE) {
-                if (options == null || correctOptionIds == null) {
-                    throw new IllegalArgumentException("Multiple-choice question needs options and correctOptionIds");
-                }
-                JsonNode multiple = node.get("multiple");
-                if (multiple != null && !multiple.isBoolean()) {
+                if (options == null || correctOptionIds == null || multiple == null || !multiple.isBoolean()) {
                     throw new IllegalArgumentException("Multiple-choice multiple must be boolean");
                 }
                 var configNode = MAPPER.createObjectNode();
                 configNode.set("options", options);
                 configNode.set("correctOptionIds", correctOptionIds);
-                configNode.put("multiple", multiple != null && multiple.asBoolean());
+                configNode.set("multiple", multiple);
                 config = configNode.toString();
             }
             String rubric = type == QuestionType.CODING
@@ -165,8 +162,8 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
             JsonNode referenceConcepts = node.get("referenceConcepts");
             Question question = new Question(
                     "generated-question-" + UUID.randomUUID(), learnUnitCode, type,
-                    boundedInt(node, "difficulty", 2, 1, 5), requiredText(node, "prompt"),
-                    boundedInt(node, "points", type == QuestionType.CODING ? 100 : 20, 1, 1000),
+                    requiredBoundedInt(node, "difficulty", 1, 5), requiredText(node, "prompt"),
+                    requiredBoundedInt(node, "points", 1, 1000),
                     config, rubric, optionalText(node, "language"), optionalText(node, "starterCode"),
                     referenceConcepts == null || referenceConcepts.isNull() ? "[]" : referenceConcepts.toString(),
                     node.path("diagnosticEligible").asBoolean(true));
@@ -176,9 +173,10 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         return questions;
     }
 
-    private int boundedInt(JsonNode node, String field, int defaultValue, int min, int max) {
+    private int requiredBoundedInt(JsonNode node, String field, int min, int max) {
         JsonNode value = node.get(field);
-        int result = value == null || value.isNull() ? defaultValue : value.asInt(Integer.MIN_VALUE);
+        if (value == null || !value.isIntegralNumber()) throw new IllegalArgumentException("Missing or invalid " + field);
+        int result = value.asInt(Integer.MIN_VALUE);
         if (result < min || result > max) throw new IllegalArgumentException("Invalid " + field);
         return result;
     }

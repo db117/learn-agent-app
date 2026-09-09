@@ -2,6 +2,7 @@ package com.example.agent.learning.catalog;
 
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
+import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.persistence.LearningRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -168,7 +169,7 @@ public class CurriculumService {
     }
 
     private void validateQuestions(List<Question> questions, Map<String, LearnUnit> learnUnits) {
-        if (questions.isEmpty()) return;
+        if (questions.isEmpty()) throw new IllegalStateException("Generated Question set must not be empty");
         Set<String> ids = new HashSet<>();
         for (Question question : questions) {
             if (!ids.add(question.id())) throw new IllegalStateException("Duplicate generated Question: " + question.id());
@@ -182,10 +183,10 @@ public class CurriculumService {
         for (LearnUnit learnUnit : learnUnits.values()) {
             boolean hasChoice = questions.stream().anyMatch(question ->
                     question.learnUnitCode().equals(learnUnit.code())
-                            && question.type() == com.example.agent.learning.assessment.QuestionType.MULTIPLE_CHOICE);
+                            && question.type() == QuestionType.MULTIPLE_CHOICE);
             boolean hasCoding = questions.stream().anyMatch(question ->
                     question.learnUnitCode().equals(learnUnit.code())
-                            && question.type() == com.example.agent.learning.assessment.QuestionType.CODING);
+                            && question.type() == QuestionType.CODING);
             if (!hasChoice || learnUnit.minCodingScore() != null && !hasCoding) {
                 throw new IllegalStateException("Generated Question coverage is incomplete for " + learnUnit.code());
             }

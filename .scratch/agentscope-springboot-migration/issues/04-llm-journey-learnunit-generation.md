@@ -18,5 +18,5 @@ LearnUnit、教学内容和适用题目，并以原子方式保存。
 ## Answer
 
 - 扩展 Journey curriculum 生成协议，支持独立 LearnUnit、教学内容和 Question；Question/ LearnUnit ID 按 Journey 隔离。
-- 增加 Java 结构校验、无编码目标分支、生成失败零落库事务边界，并移除评估题目规划的旧题库 fallback；LearnUnit 与 Journey 的关系继续由现有 Learning Path 流程维护。
-- React 展示生成中状态和可恢复错误；后端 44 项测试及完整项目检查通过。
+- 增加 Java 结构校验、必填字段/题型约束、无编码目标分支、生成失败零落库事务边界，并移除评估题目规划的旧题库 fallback；LearnUnit 与 Journey 的关系继续由现有 Learning Path 流程维护。
+- React 展示生成中状态和可恢复错误；后端 47 项测试及完整项目检查通过。

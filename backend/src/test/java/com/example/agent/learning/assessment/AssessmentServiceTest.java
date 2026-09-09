@@ -122,7 +122,8 @@ class AssessmentServiceTest {
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), false);
         Question choice = new Question(
                 "generated-choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
-                "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", true);
+                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
+                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}", null, null, null, "[]", true);
         Question coding = new Question(
                 "generated-coding", "learnUnit-a", QuestionType.CODING, 2, "Implement", 100,
                 null, "{\"correctness\":60,\"languageUsage\":20,\"clarity\":20}",
