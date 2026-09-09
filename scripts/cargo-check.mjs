@@ -1,7 +1,7 @@
 import {spawn} from "node:child_process";
 
 const child = spawn("cargo", ["check", "--manifest-path", "src-tauri/Cargo.toml"], {
-    env: {...process.env, TAURI_CONFIG: JSON.stringify({bundle: {externalBin: []}})},
+    env: {...process.env, TAURI_CONFIG: JSON.stringify({bundle: {resources: []}})},
     stdio: "inherit",
     shell: process.platform === "win32",
 });

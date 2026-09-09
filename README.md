@@ -1,6 +1,6 @@
 # 桌面学习 Agent
 
-这是一个面向 Windows、macOS 和 Linux 的桌面学习 Agent MVP。
+这是一个以 macOS arm64 为正式目标的桌面学习 Agent MVP。
 
 桌面壳使用 Tauri 2，界面使用 React + TypeScript + Vite。本地后端使用 Spring Boot
 4.0.0、Spring AI Alibaba 2.0.0-M1.1 的 `ReactAgent`/Graph Core，以及 Spring AI
@@ -12,7 +12,7 @@ SQLite 是长期事实来源。
 
 ## 本地运行
 
-前置条件：Node.js 22+、pnpm、Rust、Maven Wrapper，以及用于 JVM 开发路径的 Java 21。
+前置条件：Node.js 22+、pnpm、Rust、Maven Wrapper，以及 Java 21。
 没有 `OPENAI_API_KEY` 也可以启动 dev，此时后端使用 disabled ChatModel；创建 Journey、Tutor 和其他 LLM 功能仍需配置真实 key。
 
 ```bash
@@ -21,19 +21,19 @@ export OPENAI_API_KEY=...
 pnpm dev
 ```
 
-`pnpm dev` 会启动 Spring 后端（`127.0.0.1:18080`）、Vite 界面
-（`127.0.0.1:1420`）和 Tauri 壳。开发时使用 JVM 后端，打包版本使用 Native sidecar。
+`pnpm dev` 会启动 Vite 界面（`127.0.0.1:1420`）和 Tauri 壳；Tauri
+负责启动并回收 Spring Boot JVM 后端（`127.0.0.1:18080`）。
 
 ## 检查
 
 ```bash
 pnpm check          # TypeScript、ESLint、Vite、Cargo、Maven 测试
-pnpm native:build   # 构建 GraalVM Native Image 可执行文件
-pnpm native:check   # 检查构建、启动、健康状态、SQLite、SAA 工具循环和 SSE
+pnpm desktop:smoke  # JVM 启动、固定端口和退出回收
+pnpm package:desktop # 构建 JVM JAR 并打包 Tauri 应用
 ```
 
-Native 命令要求使用安装了 `native-image` 的 GraalVM 25 JDK。当前机器的验证结果见
-[docs/graalvm.md](docs/graalvm.md)，sidecar 命名见 [docs/packaging.md](docs/packaging.md)。
+当前桌面包使用 JVM JAR，不包含 JRE；运行包的机器需要可用的 Java 21。
+Native Image、Native sidecar 和其他平台构建不属于当前验收范围。
 
 ## API
 

@@ -1,5 +1,6 @@
 import {useEffect, useRef, useState} from "react";
-import {invoke} from "@tauri-apps/api/core";
+import {invoke, isTauri} from "@tauri-apps/api/core";
+import {listen} from "@tauri-apps/api/event";
 import {
   api,
   type TutorEvent,
@@ -23,7 +24,12 @@ type QuestionConfig = { options: QuestionOption[]; multiple: boolean };
 const emptyDraft: AnswerDraft = {selectedOptionIds: [], submittedCode: ""};
 
 function errorMessage(cause: unknown, fallback: string) {
-  return cause instanceof Error ? cause.message : fallback;
+  return cause instanceof Error ? cause.message : typeof cause === "string" ? cause : fallback;
+}
+
+function backendConnectionError(cause: unknown) {
+  const detail = errorMessage(cause, "connection failed");
+  return `无法启动或连接本地 JVM 后端（127.0.0.1:18080）。请确认 Java 21 已安装且可在 PATH 中找到。${detail ? ` ${detail}` : ""}`;
 }
 
 function parseQuestionConfig(raw: string | null): QuestionConfig {
@@ -157,9 +163,18 @@ export default function App() {
   useEffect(() => {
     let disposed = false;
     let retryTimer: number | undefined;
+    let unlistenBackendRequired: (() => void) | undefined;
+    const desktop = isTauri();
 
     async function load() {
       try {
+        if (desktop) {
+          const nextBackend = await invoke<BackendStatus>("start_backend");
+          if (disposed) return;
+          setBackend(nextBackend);
+        } else {
+          setBackend({status: "jvm-dev", detail: "127.0.0.1:18080"});
+        }
         const [nextHealth, existingJourneys] = await Promise.all([
           api.health(),
           api.journeys(),
@@ -182,16 +197,26 @@ export default function App() {
         setError(null);
       } catch (cause) {
         if (!disposed) {
-          setError(errorMessage(cause, "Backend unavailable"));
+          setError(desktop ? backendConnectionError(cause) : errorMessage(cause, "Backend unavailable"));
           retryTimer = window.setTimeout(() => void load(), 1000);
         }
       }
     }
 
+    if (desktop) {
+      void listen<string>("backend-required", (event) => {
+        if (disposed) return;
+        setBackend({status: "error", detail: "127.0.0.1:18080"});
+        setError(`本地 JVM 后端启动失败（127.0.0.1:18080）：${event.payload}`);
+      }).then((stop) => {
+        if (disposed) stop();
+        else unlistenBackendRequired = stop;
+      }).catch(() => undefined);
+    }
     void load();
-    void invoke<BackendStatus>("backend_status").then(setBackend).catch(() => setBackend({status: "jvm-dev"}));
     return () => {
       disposed = true;
+      unlistenBackendRequired?.();
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       eventSource.current?.close();
     };
@@ -768,7 +793,7 @@ export default function App() {
           {journey && <button className="link-button" onClick={newJourney}>新建</button>}
           <span className={`dot ${health?.status === "UP" ? "ok" : "warn"}`} />
           <span>{health?.status ?? "offline"}</span>
-          <span className="muted">{backend.status} · {health?.sqlite ?? "SQLite"}</span>
+          <span className="muted">{backend.status} · {backend.detail ?? "127.0.0.1:18080"}</span>
         </div>
       </header>
       {error && <div className="error-banner" role="alert">{error}</div>}

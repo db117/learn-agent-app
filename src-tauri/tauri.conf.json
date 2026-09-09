@@ -24,9 +24,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": [
-      "binaries/agent-backend"
-    ],
+    "resources": {
+      "../backend/target/agent-backend.jar": "agent-backend.jar"
+    },
     "icon": [
       "icons/icon.png"
     ]

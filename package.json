@@ -5,20 +5,22 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n backend,web,tauri -c blue,green,magenta \"pnpm dev:backend\" \"pnpm dev:web\" \"pnpm dev:tauri\"",
+    "dev": "concurrently -k -n web,tauri -c green,magenta \"pnpm dev:web\" \"pnpm dev:tauri\"",
     "dev:backend": "node scripts/dev-backend.mjs",
     "dev:web": "vite --host 127.0.0.1 --port 1420",
-    "dev:tauri": "wait-on http://127.0.0.1:1420 && node scripts/tauri-dev.mjs",
+    "dev:tauri": "wait-on http://127.0.0.1:1420 && pnpm backend:package && node scripts/tauri-dev.mjs",
     "build": "vite build",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "cargo:check": "node scripts/cargo-check.mjs",
     "backend:test": "node scripts/maven.mjs test",
+    "backend:package": "node scripts/maven.mjs package -DskipTests",
+    "desktop:smoke": "pnpm backend:package && node scripts/desktop-smoke.mjs",
     "check": "pnpm typecheck && pnpm lint && pnpm build && pnpm cargo:check && pnpm backend:test",
     "native:build": "node scripts/maven.mjs -Pnative native:compile",
     "native:check": "node scripts/native-check.mjs",
-    "package:desktop": "pnpm native:build && node scripts/prepare-sidecar.mjs && pnpm exec tauri build"
+    "package:desktop": "pnpm backend:package && pnpm exec tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",

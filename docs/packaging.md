@@ -1,36 +1,24 @@
-# 打包
+# JVM 桌面打包
 
-打包后的应用包含 Tauri 前端和一个 Native 后端 sidecar。不包含 JRE，也不依赖系统
-Java 安装。
+当前正式目标是 macOS arm64 的 Tauri + Spring Boot WebFlux JVM。应用包包含前端和
+`agent-backend.jar`，不包含 JRE；运行包的机器需要 Java 21，且 `java` 可在 PATH 中找到。
 
 ## 构建
 
-在每个目标操作系统/架构上执行：
-
 ```bash
-pnpm native:build
-pnpm native:check
-pnpm build
-pnpm exec tauri build
+pnpm package:desktop
 ```
 
-类 Unix 系统上的 Native 可执行文件是 `backend/target/agent-backend`，Windows 上
-是 `backend/target/agent-backend.exe`。执行 `tauri build` 前，必须将 Tauri 外部
-sidecar 复制到 `src-tauri/binaries/agent-backend-<target-triple>`；后缀是本次构建的
-Rust 目标三元组，例如 `aarch64-apple-darwin`、`x86_64-pc-windows-msvc` 或
-`x86_64-unknown-linux-gnu`。
-
-`src-tauri/tauri.conf.json` 声明不带后缀的逻辑 sidecar 名称，Tauri 会在打包时解析
-平台后缀。`src-tauri/binaries/` 被忽略，因为二进制文件是目标产物而不是源文件。
-
-macOS arm64 第一阶段包已通过 `pnpm exec tauri build --debug` 在本地验证，同时生成
-`.app` 和 `.dmg`；包内的 Tauri 可执行文件旁边包含 `agent-backend`。Tauri 初始化时
-由 Rust 启动该 sidecar，并在应用正常退出时停止受管理的子进程。
+该命令先用 Maven 构建 `backend/target/agent-backend.jar`，再由
+`src-tauri/tauri.conf.json` 将 JAR 作为 Tauri resource 打入应用。
 
 ## 运行时生命周期
 
-Rust 壳负责管理 sidecar 子进程，并暴露 `backend_status`、`start_backend` 和
-`stop_backend` 命令。Tauri 进程退出时会停止子进程。开发环境可以将 JVM 后端作为
-独立进程运行；生产环境使用 Native sidecar，并复用同一个固定回环地址。
+Rust 壳只管理 JVM 子进程，并暴露 `backend_status`、`start_backend` 和 `stop_backend`
+命令。启动时执行 `java -jar agent-backend.jar`，等待固定的 `127.0.0.1:18080` 可用；
+启动失败会传给 React 显示。Tauri 退出时停止并等待受管理的 JVM 子进程；已由其他进程
+占用的后端不会被壳误杀。
 
-第一阶段不包含更新器、安装器专用服务、远程后端或 JRE 打包。
+`pnpm desktop:smoke` 使用隔离 SQLite 数据目录验证 JVM 启动、健康接口、固定端口和
+退出后的端口回收。Native executable、Native sidecar、JRE 打包和其他平台构建不属于
+当前 issue。

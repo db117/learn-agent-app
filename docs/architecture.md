@@ -4,7 +4,7 @@
 React + TypeScript + Vite
           │ HTTP / SSE
           ▼
-Tauri 2 shell ── starts/stops/status of native sidecar
+Tauri 2 shell ── starts/stops/status of JVM process
           │ 127.0.0.1:18080
           ▼
 Spring Boot 4.0.0 backend
@@ -27,7 +27,7 @@ Java 节点、Agent 节点和条件路由；Graph State 只属于当前执行，
 - `LearnUnit` 是按 Journey 由 LLM 生成并持久化的教学知识，不进入 Skill registry。
 - Learning Engine 用 Java 规则决定分数、Pass、Retry、Skip、Next 和 Journey 完成状态。
 - SQLite 是唯一持久化数据库，使用 Spring `JdbcClient`；Question 只能新增或 soft delete。
-- Native Image 是生产后端形态，不随包提供 JRE。
+- JVM JAR 是当前桌面后端形态；应用包不提供 JRE，运行环境需要 Java 21。
 
 ## Learning Journey
 

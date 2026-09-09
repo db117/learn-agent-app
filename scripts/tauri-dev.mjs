@@ -2,7 +2,6 @@ import {spawn} from "node:child_process";
 
 const command = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const child = spawn(command, ["exec", "tauri", "dev"], {
-    env: {...process.env, TAURI_CONFIG: JSON.stringify({bundle: {externalBin: []}})},
     stdio: "inherit",
     shell: process.platform === "win32",
 });
