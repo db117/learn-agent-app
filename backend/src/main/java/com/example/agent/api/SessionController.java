@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -97,19 +98,54 @@ public class SessionController {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
+    /** Cancel one running TutorAgent call. */
+    @PostMapping("/{sessionId}/runs/{runId}/cancel")
+    public Mono<ResponseEntity<Map<String, String>>> cancel(
+            @PathVariable String sessionId, @PathVariable String runId) {
+        return Mono.fromCallable(() -> {
+                    find(sessionId);
+                    if (!tutor.cancel(sessionId, runId, "user_cancelled")) {
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "run not found or finished");
+                    }
+                    return ResponseEntity.accepted().body(Map.of("status", "cancel_requested"));
+                })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
     /** 以 SSE 方式订阅会话事件，已落库事件会先回放。 */
     @GetMapping(value = "/{sessionId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<TutorEvent>> events(@PathVariable String sessionId) {
+    public Flux<ServerSentEvent<TutorEvent>> events(
+            @PathVariable String sessionId,
+            @RequestHeader(name = "Last-Event-ID", required = false) String lastEventId) {
+        long lastSequence = parseLastEventId(lastEventId);
         return Mono.fromCallable(() -> find(sessionId))
                 .subscribeOn(Schedulers.boundedElastic())
-                .thenMany(eventHub.open(sessionId, () -> repository.listEvents(sessionId)))
-                .map(event -> ServerSentEvent.<TutorEvent>builder(event).id(event.id()).build());
+                .thenMany(eventHub.open(
+                        sessionId,
+                        lastSequence,
+                        () -> repository.listEvents(sessionId),
+                        () -> tutor.cancelForClientDisconnect(sessionId)))
+                .map(event -> ServerSentEvent.<TutorEvent>builder(event)
+                        .id(Long.toString(event.sequence()))
+                        .build());
     }
 
     /** Do not turn a missing or corrupt AgentState into a fresh conversation. */
     @ExceptionHandler(AgentStatePersistenceException.class)
     public ResponseEntity<Map<String, String>> agentStateError(AgentStatePersistenceException error) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", error.getMessage()));
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "agent_state_restore_failed"));
+    }
+
+    private long parseLastEventId(String value) {
+        if (value == null || value.isBlank()) return -1L;
+        try {
+            long sequence = Long.parseLong(value);
+            if (sequence < 0) throw new NumberFormatException();
+            return sequence;
+        } catch (NumberFormatException error) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Last-Event-ID must be a non-negative integer");
+        }
     }
 
     private SessionRecord find(String id) {

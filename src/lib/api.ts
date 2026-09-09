@@ -21,6 +21,7 @@ export type Message = {
 };
 
 export type TutorEvent = {
+  sequence: number;
   id: string;
   sessionId: string;
   runId: string;
@@ -33,13 +34,14 @@ export type TutorEvent = {
     | "skill_load_complete"
     | "reasoning_summary"
     | "error"
-    | "complete";
+    | "complete"
+    | "cancelled";
   content: string;
   toolCall?: string;
   toolResult?: string;
   skillName?: string;
   summary?: string;
-  status?: "started" | "completed" | "failed";
+  status?: "started" | "completed" | "failed" | "cancelled";
   timestamp: string;
 };
 
@@ -287,5 +289,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({content}),
     }),
+  cancelRun: (sessionId: string, runId: string) =>
+    request<{status: string}>(`/sessions/${sessionId}/runs/${runId}/cancel`, {method: "POST"}),
   eventsUrl: (id: string) => `${API_BASE}/sessions/${id}/events`,
 };

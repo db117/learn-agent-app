@@ -95,6 +95,7 @@ function eventLabel(event: TutorEvent) {
     case "text_delta": return "回答";
     case "error": return "错误";
     case "complete": return "完成";
+    case "cancelled": return "已取消";
   }
 }
 
@@ -134,6 +135,8 @@ export default function App() {
   const [tutorInput, setTutorInput] = useState("");
   const [events, setEvents] = useState<TutorEvent[]>([]);
   const eventSource = useRef<EventSource | null>(null);
+  const [activeTutorRunId, setActiveTutorRunId] = useState<string | null>(null);
+  const terminalRuns = useRef(new Set<string>());
 
   const journeyId = journey?.journey.id;
   const currentPathItem = journey?.path.find((item) => item.status === "CURRENT") ?? null;
@@ -203,6 +206,8 @@ export default function App() {
     eventSource.current?.close();
     if (!tutor) {
       setEvents([]);
+      setActiveTutorRunId(null);
+      terminalRuns.current.clear();
       return;
     }
     const source = new EventSource(api.eventsUrl(tutor.id));
@@ -210,11 +215,14 @@ export default function App() {
     source.onmessage = (event) => {
       const next = JSON.parse(event.data) as TutorEvent;
       setEvents((current) => current.some((item) => item.id === next.id) ? current : [...current, next]);
+      if (next.eventType === "complete" || next.eventType === "error" || next.eventType === "cancelled") {
+        terminalRuns.current.add(next.runId);
+        setActiveTutorRunId((current) => current === next.runId ? null : current);
+      }
       if (next.eventType === "complete") {
         void api.session(tutor.id).then(setTutor).catch(() => undefined);
       }
     };
-    source.onerror = () => source.close();
     return () => {
       source.close();
       if (eventSource.current === source) eventSource.current = null;
@@ -341,6 +349,7 @@ export default function App() {
       const opened = await api.continueLearnUnit(journeyId, code);
       setLearnUnit(opened);
       setTutor(null);
+      setActiveTutorRunId(null);
       await refreshJourney(journeyId);
       setView("dashboard");
     } catch (cause) {
@@ -459,9 +468,20 @@ export default function App() {
     };
     setTutor((current) => current && {...current, messages: [...current.messages, message]});
     try {
-      await api.sendMessage(tutor.id, content);
+      const sent = await api.sendMessage(tutor.id, content);
+      if (!terminalRuns.current.has(sent.runId)) setActiveTutorRunId(sent.runId);
     } catch (cause) {
       setError(errorMessage(cause, "Unable to send tutor message"));
+    }
+  }
+
+  async function cancelTutorRun() {
+    if (!tutor || !activeTutorRunId) return;
+    try {
+      await api.cancelRun(tutor.id, activeTutorRunId);
+      setActiveTutorRunId(null);
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to cancel tutor message"));
     }
   }
 
@@ -471,6 +491,7 @@ export default function App() {
     setAssessment(null);
     setAssessmentResult(null);
     setTutor(null);
+    setActiveTutorRunId(null);
     setView("welcome");
   }
 
@@ -657,6 +678,7 @@ export default function App() {
             <form className="composer" onSubmit={(event) => void sendTutorMessage(event)}>
               <textarea value={tutorInput} onChange={(event) => setTutorInput(event.target.value)} placeholder="例如：如何理解这个概念？" rows={3} />
               <button className="primary" type="submit" disabled={!tutorInput.trim()}>发送</button>
+              {activeTutorRunId && <button className="secondary" type="button" onClick={() => void cancelTutorRun()}>取消</button>}
             </form>
             <details className="events-details"><summary>Agent events ({events.length})</summary>
               {events.slice(-8).map((event) => isProgressEvent(event) ? (

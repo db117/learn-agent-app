@@ -152,14 +152,15 @@ public class SqliteRepository {
             .update();
   }
 
-  /** 持久化 Agent 事件，并依靠 sequence 保证读取顺序。 */
-  public void insertEvent(TutorEvent event) {
-    jdbc.sql("""
-                    INSERT OR IGNORE INTO "event"
+  /** 持久化 Agent 事件，并返回数据库分配的重放序号。 */
+  public TutorEvent insertEvent(TutorEvent event) {
+    long sequence = jdbc.sql("""
+                    INSERT INTO "event"
                       (id, session_id, run_id, author, event_type, content, tool_call_json,
                        tool_result_json, skill_name, summary, status, timestamp, raw_json)
                     VALUES (:id, :sessionId, :runId, :author, :eventType, :content, :toolCall,
                             :toolResult, :skillName, :summary, :status, :timestamp, :rawJson)
+                    RETURNING sequence
                     """)
             .param("id", event.id())
             .param("sessionId", event.sessionId())
@@ -174,19 +175,22 @@ public class SqliteRepository {
             .param("status", event.status())
             .param("timestamp", event.timestamp().toString())
             .param("rawJson", event.rawJson())
-            .update();
+            .query(Long.class)
+            .single();
+    return event.withSequence(sequence);
   }
 
   /** 按数据库 sequence 读取会话事件。 */
   public List<TutorEvent> listEvents(String sessionId) {
     return jdbc.sql("""
-                    SELECT id, session_id, run_id, author, event_type, content, tool_call_json,
+                    SELECT sequence, id, session_id, run_id, author, event_type, content, tool_call_json,
                       tool_result_json, skill_name, summary, status, timestamp, raw_json
                     FROM "event" WHERE session_id = :sessionId ORDER BY sequence
                     """)
             .param("sessionId", sessionId)
             .query((rs, rowNum) ->
                     new TutorEvent(
+                            rs.getLong("sequence"),
                             rs.getString("id"),
                             rs.getString("session_id"),
                             rs.getString("run_id"),

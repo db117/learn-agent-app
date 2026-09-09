@@ -176,6 +176,10 @@ class AgentBackendApplicationTest {
 
         assertTrue(error.getMessage().contains("AgentState restore failed"));
         assertEquals(1, repository.listMessages(session.id()).size());
+        assertEquals(List.of("agent_state_restore_failed"), repository.listEvents(session.id()).stream()
+                .filter(event -> event.eventType().equals("error"))
+                .map(com.example.agent.persistence.TutorEvent::summary)
+                .toList());
         assertTrue(!agentStateStore.exists(session.userId(), session.id()));
         assertEquals(before, journeys.get(journey.id()));
     }
