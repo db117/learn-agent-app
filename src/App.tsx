@@ -19,6 +19,27 @@ import {
 } from "./lib/api";
 
 type View = "welcome" | "diagnostic" | "result" | "dashboard" | "assessment";
+type Theme = "dark" | "light";
+
+const THEME_STORAGE_KEY = "learning-journey-theme";
+
+function initialTheme(): Theme {
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (storedTheme === "dark" || storedTheme === "light") return storedTheme;
+  } catch {
+    // Storage can be unavailable in restricted webviews; use the system preference instead.
+  }
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function saveTheme(theme: Theme) {
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // The selected theme still applies for this session when storage is unavailable.
+  }
+}
 
 function errorMessage(cause: unknown, fallback: string) {
   return cause instanceof Error ? cause.message : typeof cause === "string" ? cause : fallback;
@@ -70,6 +91,7 @@ export default function App() {
   const [answers, setAnswers] = useState<Record<string, AnswerDraft>>({});
   const [questionIndex, setQuestionIndex] = useState(0);
   const [view, setView] = useState<View>("welcome");
+  const [theme, setTheme] = useState<Theme>(initialTheme);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<JourneyForm>({
@@ -426,8 +448,14 @@ export default function App() {
     setView("welcome");
   }
 
+  function toggleTheme() {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    saveTheme(nextTheme);
+  }
+
   return (
-    <main className="shell">
+      <main className={`shell theme-${theme}`}>
       <header className="topbar">
         <div><span className="eyebrow">DESKTOP LEARNING AGENT</span><h1>Learning Journey</h1></div>
         <div className="status-row">
@@ -442,6 +470,10 @@ export default function App() {
                 <input ref={importInput} type="file" accept=".db" onChange={(event) => void importDatabase(event)}
                        disabled={importStatus === "importing"} hidden/>
             </label>
+          <button className="link-button theme-toggle" type="button" onClick={toggleTheme}
+                  aria-label={theme === "dark" ? "切换到浅色模式" : "切换到暗色模式"}>
+            {theme === "dark" ? "切换到浅色模式" : "切换到暗色模式"}
+          </button>
             {exportStatus !== "idle" &&
                 <span className={exportStatus === "error" ? "warning" : "success"} role="status">{exportMessage}</span>}
             {importStatus !== "idle" &&
