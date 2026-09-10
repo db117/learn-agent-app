@@ -28,7 +28,7 @@
 
 - 保留固定后端地址 `127.0.0.1:18080`。
 - MVP 目标包含一个 TutorAgent、AgentScope Harness、OpenAI provider、HTTP/SSE、SQLite 和 Tauri/React 壳。
-- MVP 不包含应用认证、授权、Token、工作区沙箱、MCP、RAG、Monaco 实现或自动更新系统。
+- MVP 不包含 MCP、RAG、Monaco 实现或自动更新系统。
 - 影响前端、Tauri 或后端完整构建的变更后运行 `pnpm check`；Native 检查不属于当前迁移验收，只有未来明确进入 Native 范围时才运行。
 
 ## Agent skills
@@ -55,4 +55,3 @@
 - CI 使用 Fake/Deterministic Model；macOS arm64 端到端验收使用真实 OpenAI。LLM 生成失败直接报错，不回退到旧题库或其他生成路径。
 - 新链路完整跑通后删除旧 Spring AI/Spring AI Alibaba/ADK Agent Runtime 和 Adapter；不保留运行时回退，也不要求旧 SQLite 数据或
   schema 兼容。发现旧 schema 时明确报错并要求重新初始化。
-- 当前验收不保存运行日志、Prompt、模型响应或密钥；只保留平台、版本、日期和通过/失败结果。

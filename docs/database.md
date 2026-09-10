@@ -1,6 +1,6 @@
 # SQLite 持久化
 
-默认数据库路径为 `${user.home}/.desktop-learning-agent/agent.db`。`AGENT_DATA_DIR`
+默认数据库路径为 `${user.home}/.learning-agent-java/agent.db`。`AGENT_DATA_DIR`
 修改目录，`APP_DATABASE` 修改完整数据库路径。`DatabaseConfiguration` 创建目录并使用
 Xerial SQLite JDBC 驱动，`DatabaseInitializer` 只在空库执行 `schema.sql`。
 

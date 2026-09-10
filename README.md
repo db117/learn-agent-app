@@ -37,7 +37,7 @@ Native、其他平台和 macOS arm64 手工验收不由 Windows 检查替代。
 所有 HTTP 接口仅绑定到 `127.0.0.1:18080`。除会话/SSE 接口外，学习流程位于
 `/api/learning`，包含 Journey、Diagnostic、LearnUnit、Assessment、Attempt 和进度操作。
 
-SQLite 默认路径为 `${user.home}/.desktop-learning-agent/agent.db`；可通过 `AGENT_DATA_DIR`
+SQLite 默认路径为 `${user.home}/.learning-agent-java/agent.db`；可通过 `AGENT_DATA_DIR`
 或 `APP_DATABASE` 覆盖。发现旧 schema 或旧 AgentState 时明确报错并要求使用新数据库路径，
 不迁移、不覆盖、不重置。
 

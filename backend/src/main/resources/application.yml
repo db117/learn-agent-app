@@ -1,6 +1,6 @@
 spring:
   application:
-    name: desktop-learning-agent-backend
+    name: learning-agent-java-backend
   main:
     web-application-type: reactive
   sql:
@@ -15,7 +15,7 @@ app:
     base-url: ${OPENAI_BASE_URL:https://api.openai.com}
     api-key: ${OPENAI_API_KEY:}
     model: ${OPENAI_MODEL:gpt-4.1-mini}
-  data-dir: ${AGENT_DATA_DIR:${user.home}/.desktop-learning-agent}
+  data-dir: ${AGENT_DATA_DIR:${user.home}/.learning-agent-java}
   database: ${APP_DATABASE:${app.data-dir}/agent.db}
   user-id: desktop-user
-  app-name: desktop-learning-agent
+  app-name: learning-agent-java
