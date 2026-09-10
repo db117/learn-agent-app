@@ -8,7 +8,7 @@ import java.util.List;
  * 学习课程目录生成接口。
  *
  * <p>实现可以使用 LLM 生成语言和 LearnUnit 内容；调用方负责校验后写入
- * SQLite。接口不暴露 Spring AI 类型，保证 Learning 领域与模型提供商解耦。</p>
+ * SQLite。接口不暴露模型提供商类型，保证 Learning 领域与模型提供商解耦。</p>
  */
 public interface CurriculumGenerator {
 

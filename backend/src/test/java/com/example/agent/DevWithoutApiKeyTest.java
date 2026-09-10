@@ -1,9 +1,8 @@
 package com.example.agent;
 
+import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.model.Model;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -15,18 +14,19 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
         properties = {
                 "app.data-dir=target/dev-without-key-data",
                 "app.database=target/dev-without-key-data/context.db",
-                "spring.ai.model.chat=none"
+                "app.openai.api-key="
         })
 class DevWithoutApiKeyTest {
 
     @Autowired
-    private ChatModel chatModel;
+    private Model model;
 
     @Test
-    void startsWithoutProviderCredentialsAndFailsOnlyWhenChatIsRequested() {
+    void startsWithoutProviderCredentialsAndFailsOnlyWhenModelIsRequested() {
         IllegalStateException error = assertThrows(
                 IllegalStateException.class,
-                () -> chatModel.call(new Prompt(new UserMessage("health check"))));
+                () -> model.stream(java.util.List.of(new UserMessage("health check")), java.util.List.of(), null)
+                        .blockLast());
 
         assertEquals("LLM is not configured; set OPENAI_API_KEY", error.getMessage());
     }

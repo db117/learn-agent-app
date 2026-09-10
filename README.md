@@ -4,9 +4,8 @@
 学习 Agent MVP。学习领域使用 Journey-scoped `LearnUnit`，Java Learning Engine
 确定性负责评分、路径和状态；`Skill` 只表示 Agent capability。
 
-当前分支仍处于 AgentScope cutover 验收门：Tutor/SSE/AgentState/Tauri 主路径使用
-AgentScope `HarnessAgent`，但 Spring AI/Spring AI Alibaba 的旧配置和适配仍在代码中，
-等待 macOS arm64 + 真实 OpenAI 完整 E2E 后才能删除。它们不是运行时 fallback。
+Tutor/SSE/AgentState/Tauri 主路径和学习内容生成统一使用 AgentScope；
+AgentScope `HarnessAgent` 是唯一 Agent runtime，不保留旧 runtime fallback。
 
 ## 本地运行
 

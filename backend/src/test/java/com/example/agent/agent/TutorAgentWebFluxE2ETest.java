@@ -3,10 +3,12 @@ package com.example.agent.agent;
 import com.example.agent.api.SendMessageResponse;
 import com.example.agent.api.SessionResponse;
 import com.example.agent.persistence.TutorEvent;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.message.ContentBlock;
 import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -15,8 +17,6 @@ import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
 import io.agentscope.harness.agent.HarnessAgent;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,11 +33,11 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -51,8 +51,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
                 "app.database=target/webflux-tutor-e2e-data/tutor.db",
                 "server.address=127.0.0.1",
                 "server.port=18080",
-                "spring.ai.openai.api-key=test-key",
-                "spring.ai.openai.base-url=http://localhost"
+                "app.openai.api-key=test-key",
+                "app.openai.base-url=http://localhost"
         })
 @Import(TutorAgentWebFluxE2ETest.DeterministicModelConfiguration.class)
 class TutorAgentWebFluxE2ETest {

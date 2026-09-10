@@ -27,8 +27,8 @@ HTTP 或 React/Tauri。
 SQLite 继续使用 Xerial JDBC 和 Spring JDBC/JdbcClient。所有 JDBC、AgentState 和事务等阻塞操作必须隔离到工作线程，不引入
 R2DBC、JPA 或 Hibernate 作为本次替代方案。
 
-Spring AI、Spring AI Alibaba、ADK 和旧 Agent adapter 只作为 Legacy Agent Runtime 临时保留。Spring Boot WebFlux + AgentScope
-JVM 新链路完成 macOS arm64 完整 E2E 后，删除旧链路；不保留运行时 fallback，也不兼容旧数据库、旧 schema 或旧 AgentState。
+AgentScope `HarnessAgent` 和官方 OpenAI provider 是唯一 Agent runtime 与模型接入。旧 runtime、旧
+adapter 和旧 schema 不属于兼容边界；不保留运行时 fallback，也不兼容旧数据库或旧 AgentState。
 
 Native Image、其他平台和 Native Skill 资源适配不属于本次 Definition of Done，后续另行决策。
 
@@ -37,5 +37,5 @@ Native Image、其他平台和 Native Skill 资源适配不属于本次 Definiti
 - 可以复用当前 Spring Boot、SQLite、Spring JDBC 和本地桌面边界，迁移范围更小。
 - WebFlux 能直接承接 AgentScope 的流式事件，并保留取消和背压语义。
 - JDBC 阻塞隔离必须成为实现和测试的明确约束；不能把阻塞数据库调用放进 WebFlux event loop。
-- 当前会短期存在 Legacy Agent Runtime 与新 runtime 的代码并存，但它们不是兼容或回退关系；新链路验收后必须删除旧链路。
+- 旧 runtime 已删除；发现旧数据库、旧 schema 或旧 AgentState 时直接报错并要求使用新数据库。
 - Quarkus 规格和任务不再是实现依据，Spring Boot WebFlux 规格成为后续任务的唯一来源。

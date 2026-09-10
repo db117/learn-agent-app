@@ -3,16 +3,14 @@ package com.example.agent.llm.infrastructure;
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.assessment.QuestionType;
-import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.diagnostic.DiagnosticQuestionPlanner;
 import com.example.agent.learning.journey.LearnerProfile;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.Prompt;
+import io.agentscope.core.model.Model;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -23,7 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 使用现有 Spring AI ChatModel 按需规划诊断或 LearnUnit 评估题集的适配器。
+ * 使用 AgentScope Model 按需规划诊断或 LearnUnit 评估题集。
  *
  * <p>模型可以选择活动题目，也可以提出新题；但已有题目只能返回 ID，不能
  * 携带修改后的字段。最终题集仍由 AssessmentService 的 Java 规则校验并写入 SQLite。</p>
@@ -32,10 +30,10 @@ import java.util.UUID;
 public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPlanner {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private final ChatModel chatModel;
+    private final Model model;
 
-    public LlmDiagnosticQuestionPlanner(ChatModel chatModel) {
-        this.chatModel = chatModel;
+    public LlmDiagnosticQuestionPlanner(Model model) {
+        this.model = model;
     }
 
     @Override
@@ -69,7 +67,7 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
                 """.formatted(language.code(), profile, learnUnits, availableQuestions);
         String text;
         try {
-            text = chatModel.call(new Prompt(new UserMessage(prompt))).getResult().getOutput().getText();
+            text = AgentScopeTextGenerator.generate(model, prompt);
         } catch (RuntimeException error) {
             throw new IllegalStateException("Assessment question planner is unavailable", error);
         }

@@ -1,8 +1,8 @@
 package com.example.agent.config;
 
-import com.example.agent.tool.EchoTool;
 import com.example.agent.learning.tutor.TutorContextService;
 import com.example.agent.persistence.SqliteAgentStateStore;
+import com.example.agent.tool.EchoTool;
 import io.agentscope.core.agent.Agent;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.Msg;
@@ -48,9 +48,9 @@ public class AgentScopeConfiguration {
     @Bean
     @ConditionalOnMissingBean(Model.class)
     Model agentScopeOpenAiModel(
-            @Value("${spring.ai.openai.api-key:}") String apiKey,
-            @Value("${spring.ai.openai.base-url:https://api.openai.com}") String baseUrl,
-            @Value("${spring.ai.openai.chat.model:gpt-4.1-mini}") String modelName) {
+            @Value("${app.openai.api-key:}") String apiKey,
+            @Value("${app.openai.base-url:https://api.openai.com}") String baseUrl,
+            @Value("${app.openai.model:gpt-4.1-mini}") String modelName) {
         if (apiKey == null || apiKey.isBlank()) return new UnavailableModel();
         return OpenAIChatModel.builder()
                 .apiKey(apiKey)

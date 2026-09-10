@@ -159,12 +159,6 @@ fn start_backend(
         .arg(jar)
         .arg(format!("--server.address={BACKEND_HOST}"))
         .arg(format!("--server.port={BACKEND_PORT}"));
-    if !std::env::var("OPENAI_API_KEY")
-        .map(|value| !value.trim().is_empty())
-        .unwrap_or(false)
-    {
-        command.arg("--spring.ai.model.chat=none");
-    }
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())

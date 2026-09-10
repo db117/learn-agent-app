@@ -16,8 +16,8 @@ Spring Boot 4.0.0 + WebFlux JVM
   │       ├─ Journey-scoped LearnUnit / Question
   │       ├─ fixed Assessment / Attempt history
   │       └─ deterministic Score / Path / Workflow facts
-  ├─ LlmCurriculum/Diagnostic/Coding adapters → Spring AI ChatModel (legacy seam)
-  └─ ProgressService → SAA LearningWorkflowGraph (legacy bridge)
+  ├─ LlmCurriculum/Diagnostic/Coding → AgentScope Model
+  └─ ProgressService → Java deterministic workflow routing
 ```
 
 Rust 只负责 JVM 进程生命周期，React 只消费项目自有 DTO 和 `TutorEvent`。Java 负责
@@ -29,14 +29,13 @@ AgentScope `HarnessAgent` 是 Tutor HTTP/SSE 的实际运行时，AgentState 使
 表，Learning Engine 负责分数、通过、Retry、Skip、Next、路径和 Journey 完成。`LearnUnit`
 是 Journey-scoped 教学知识；AgentScope `Skill` 是工程能力，两者没有领域关系。
 
-旧 Spring AI/Spring AI Alibaba 目前仍被编译并部分使用：SAA 配置创建旧 Agent/Graph bean，
-`LearningWorkflowGraph` 使用 SAA `StateGraph`，三个 LLM 适配器使用 Spring AI `ChatModel`，
-工具保留两套注解。它们不是 fallback；在 macOS arm64 + 真实 OpenAI 完整 E2E 通过前不得删除。
-当前源码和依赖中没有 ADK runtime。
+AgentScope `HarnessAgent` 是唯一 Agent runtime，AgentScope OpenAI provider 是唯一模型
+接入；学习内容生成、诊断选题和 Coding 评分直接调用 AgentScope `Model`。学习 workflow
+使用 Java 确定性路由，工具只保留 AgentScope 注解，不存在旧 runtime 或运行时 fallback。
 
 ## 持久化与桌面边界
 
-- HTTP、SSE、SQLite 和前端 DTO 不暴露 AgentScope 或 SAA 内部消息类型。
+- HTTP、SSE、SQLite 和前端 DTO 不暴露 AgentScope 内部消息类型。
 - AgentScope 是 Tutor 的目标运行时；Learning Engine 不由 Agent 直接修改分数、通过状态或路径。
 - SQLite 是唯一 durable database，使用 Xerial JDBC 和 Spring `JdbcClient`；JDBC、事务和
   AgentState 等阻塞操作必须在 WebFlux event loop 外执行。

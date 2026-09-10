@@ -5,17 +5,15 @@ import com.example.agent.learning.assessment.CodingEvaluationResult;
 import com.example.agent.learning.assessment.CodingQuestion;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.Prompt;
+import io.agentscope.core.model.Model;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
-import java.util.Set;
 import java.util.List;
+import java.util.Set;
 
 /**
- * 基于 Spring AI ChatModel 的 Coding 评分适配器。
+ * 基于 AgentScope Model 的 Coding 评分实现。
  *
  * <p>它只负责把模型输出转换成领域层的 {@link CodingEvaluationResult}；边界校验和失败回退由领域服务处理。
  */
@@ -25,10 +23,10 @@ public final class LlmCodingAnswerEvaluator implements CodingAnswerEvaluator {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Set<String> ALLOWED_FIELDS = Set.of(
             "correctness", "languageUsage", "clarity", "feedback", "issues");
-    private final ChatModel chatModel;
+    private final Model model;
 
-    public LlmCodingAnswerEvaluator(ChatModel chatModel) {
-        this.chatModel = chatModel;
+    public LlmCodingAnswerEvaluator(Model model) {
+        this.model = model;
     }
 
     @Override
@@ -48,7 +46,7 @@ public final class LlmCodingAnswerEvaluator implements CodingAnswerEvaluator {
                 """.formatted(
                 question.language() == null ? "programming" : question.language(), question.prompt(), question.referenceConceptsJson(), question.rubricJson(),
                 question.starterCode(), submittedCode == null ? "" : submittedCode);
-        String text = chatModel.call(new Prompt(new UserMessage(prompt))).getResult().getOutput().getText();
+        String text = AgentScopeTextGenerator.generate(model, prompt);
         try {
             JsonNode root = MAPPER.readTree(extractJson(text));
             if (root == null || !root.isObject()) throw new IllegalArgumentException("response must be an object");

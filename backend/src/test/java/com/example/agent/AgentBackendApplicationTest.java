@@ -1,8 +1,5 @@
 package com.example.agent;
 
-import com.alibaba.cloud.ai.graph.CompiledGraph;
-import com.alibaba.cloud.ai.graph.agent.ReactAgent;
-import com.alibaba.cloud.ai.graph.skills.registry.SkillRegistry;
 import com.example.agent.agent.TutorAgentService;
 import com.example.agent.learning.assessment.Assessment;
 import com.example.agent.learning.assessment.AssessmentAttempt;
@@ -12,22 +9,24 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.CurriculumGenerator;
+import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
-import com.example.agent.learning.catalog.LearningLanguage;
-import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
 import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.learning.tutor.TutorSessionService;
+import com.example.agent.persistence.AgentStatePersistenceException;
 import com.example.agent.persistence.SessionRecord;
 import com.example.agent.persistence.SqliteRepository;
-import com.example.agent.persistence.AgentStatePersistenceException;
 import com.example.agent.tool.EchoTool;
+import io.agentscope.core.model.Model;
+import io.agentscope.core.skill.repository.ClasspathSkillRepository;
 import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.harness.agent.HarnessAgent;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -53,8 +52,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         properties = {
                 "app.data-dir=target/context-test-data-learn-unit",
                 "app.database=target/context-test-data-learn-unit/context.db",
-                "spring.ai.openai.api-key=test-key",
-                "spring.ai.openai.base-url=http://localhost"
+                "app.openai.api-key=test-key",
+                "app.openai.base-url=http://localhost"
         })
 @Import(AgentBackendApplicationTest.TestCurriculumConfiguration.class)
 class AgentBackendApplicationTest {
@@ -62,13 +61,11 @@ class AgentBackendApplicationTest {
     @Autowired
     private SqliteRepository repository;
     @Autowired
-    private ReactAgent saaTutorAgent;
+    private HarnessAgent tutorAgent;
     @Autowired
-    private SkillRegistry agentSkillRegistry;
+    private ClasspathSkillRepository skillRepository;
     @Autowired
-    private CompiledGraph saaWorkflowGraph;
-    @Autowired
-    private ChatModel chatModel;
+    private Model model;
     @Autowired
     private EchoTool echoTool;
     @Autowired
@@ -92,18 +89,17 @@ class AgentBackendApplicationTest {
         String id = UUID.randomUUID().toString();
         repository.insertSession(new SessionRecord(id, "test-user", "context", now, now));
 
-        assertNotNull(saaTutorAgent);
-        assertEquals(1, agentSkillRegistry.size());
-        assertTrue(agentSkillRegistry.contains("echo-verification"));
-        assertTrue(agentSkillRegistry.readSkillContent("echo-verification").contains("Agent capability"));
-        assertNotNull(saaWorkflowGraph);
-        assertNotNull(chatModel);
+        assertNotNull(tutorAgent);
+        assertEquals(List.of("echo-verification"), skillRepository.getAllSkillNames());
+        assertNotNull(skillRepository.getSkill("echo-verification"));
+        assertNotNull(tutorAgent.getToolkit().getTool("echo"));
+        assertNotNull(model);
         assertEquals(Map.of("echo", "context"), echoTool.echo("context"));
         assertEquals(id, repository.findSession(id).orElseThrow().id());
     }
 
     @Test
-    void restoresPersistedMessagesForASaaSession() {
+    void restoresPersistedMessagesForATutorSession() {
         Instant now = Instant.now();
         String id = UUID.randomUUID().toString();
         SessionRecord session = new SessionRecord(id, "test-user", "history", now, now);

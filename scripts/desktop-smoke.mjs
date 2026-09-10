@@ -106,7 +106,6 @@ try {
     child = spawn("java", [
         "-jar",
         jar,
-        "--spring.ai.model.chat=none",
         `--server.address=${host}`,
         `--server.port=${port}`,
     ], {

@@ -119,11 +119,8 @@ const modelServer = createServer(async (request, response) => {
 await new Promise((resolve) => modelServer.listen(0, "127.0.0.1", resolve));
 const modelUrl = `http://127.0.0.1:${modelServer.address().port}/v1`;
 const child = spawn(executable, [
-    "--app.native-self-test=true",
-    `--spring.ai.openai.base-url=${modelUrl}`,
-    `--spring.ai.openai.chat.base-url=${modelUrl}`,
-    "--spring.ai.openai.chat.max-retries=0",
-    "--spring.ai.openai.chat.timeout=5s",
+    `--app.openai.base-url=${modelUrl}`,
+    "--app.openai.model=native-check",
 ], {
     cwd: backend,
     env: {...process.env, AGENT_DATA_DIR: dataDir, APP_DATABASE: database, OPENAI_API_KEY: "native-check"},
@@ -159,17 +156,6 @@ async function waitForHealth() {
         await new Promise((resolve) => setTimeout(resolve, 500));
     }
     throw new Error(`Native backend did not become healthy: ${lastError}`);
-}
-
-async function waitForSelfTest() {
-    const deadline = Date.now() + 60_000;
-    let lastError = "not ready";
-    while (Date.now() < deadline) {
-        if (output.includes("Native SAA self-test passed")) return {id: "native-self-test"};
-        lastError = "self-test marker not found";
-        await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-    throw new Error(`Native SAA self-test did not complete: ${lastError}`);
 }
 
 async function assertIdleStreamStaysOpen(sessionId) {
@@ -227,7 +213,6 @@ async function waitForAssistantMessage(sessionId) {
 
 try {
     const health = await waitForHealth();
-    const selfTest = await waitForSelfTest();
     const session = await json("http://127.0.0.1:18080/api/sessions", {
         method: "POST",
         headers: {"content-type": "application/json"},
@@ -244,9 +229,9 @@ try {
     });
     const eventStream = await eventStreamPromise;
     if (!eventStream.includes('"eventType":"tool_call"') || !eventStream.includes('"eventType":"tool_result"')) {
-        throw new Error("Formal SSE did not contain SAA tool events");
+        throw new Error("Formal SSE did not contain AgentScope tool events");
     }
-    if (eventStream.includes('"rawJson":"{}"')) throw new Error("Native SAA raw event JSON was empty");
+    if (eventStream.includes('"rawJson":"{}"')) throw new Error("Native AgentScope raw event JSON was empty");
     if (modelRequests.length !== 2 || modelRequests.some((request) => request.stream !== true)) {
         throw new Error("Formal native path did not use streaming model requests");
     }
@@ -258,7 +243,6 @@ try {
     console.log(JSON.stringify({
         native: "UP",
         health,
-        selfTest: selfTest.id,
         sqlite: "UP",
         agent: "UP",
         tool: "UP",

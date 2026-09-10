@@ -1,7 +1,7 @@
 package com.example.agent.tool;
 
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
+import io.agentscope.core.tool.Tool;
+import io.agentscope.core.tool.ToolParam;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -10,10 +10,8 @@ import java.util.Map;
 public class EchoTool {
 
     @Tool(name = "echo", description = "Echo text so the tutor can verify a tool call.")
-    @io.agentscope.core.tool.Tool(name = "echo", description = "Echo text so the tutor can verify a tool call.")
     public Map<String, Object> echo(
-            @ToolParam(description = "Text to echo back.")
-            @io.agentscope.core.tool.ToolParam(name = "text", description = "Text to echo back.") String text) {
+            @ToolParam(name = "text", description = "Text to echo back.") String text) {
         return Map.of("echo", text);
     }
 }

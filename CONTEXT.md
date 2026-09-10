@@ -53,10 +53,10 @@ The target application boundary for the desktop backend. It owns HTTP, SSE, SQLi
 Tauri process boundary; it is not the Agent runtime and does not decide learning outcomes through the model. _Avoid_:
 AgentScope Skill, TutorAgent, Learning Engine
 
-**Legacy Agent Runtime**:
-The previous Spring AI, Spring AI Alibaba, and ADK implementation retained only until the Spring Boot WebFlux +
-AgentScope JVM chain is proven end to end. It is not a fallback contract and does not need to read new data after
-cutover. _Avoid_: current TutorAgent, compatibility layer, rollback backend
+**AgentScope Runtime**:
+The only Agent runtime in the application. It owns `HarnessAgent`, `Skill`, `AgentState`, tool execution, and Agent
+events; Spring Boot WebFlux owns HTTP, SSE, SQLite, and the Learning Engine. _Avoid_: Learning Engine authority,
+HTTP DTOs, framework-specific events
 
 **Native Gate**:
 A future verification checkpoint for the Native executable path. Native is outside the current migration scope and does
@@ -64,6 +64,5 @@ not decide whether the macOS arm64 Spring Boot WebFlux JVM chain is accepted. _A
 chain acceptance, current Definition of Done
 
 **Migration Cutover**:
-The point at which the macOS arm64 Spring Boot WebFlux + AgentScope JVM chain has completed the agreed end-to-end
-acceptance and the Legacy Agent Runtime is removed. This is a replacement, not a compatibility or rollback phase.
-_Avoid_: Native Gate, dual-runtime fallback, old-data migration
+The replacement of the former runtime is complete in the Spring Boot WebFlux + AgentScope JVM chain. This is a
+replacement, not a compatibility or rollback phase. _Avoid_: Native Gate, dual-runtime fallback, old-data migration

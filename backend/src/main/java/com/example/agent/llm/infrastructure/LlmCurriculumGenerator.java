@@ -4,13 +4,11 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.CurriculumGenerator;
-import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.catalog.LearningLanguage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.prompt.Prompt;
+import io.agentscope.core.model.Model;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -21,7 +19,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * 使用 Spring AI 的 ChatModel 按用户指定的目标语言按需生成 LearnUnit 内容。
+ * 使用 AgentScope Model 按用户指定的目标语言按需生成 LearnUnit 内容。
  *
  * <p>这里是唯一的提供商适配边界；生成结果进入领域校验和 SQLite 后，运行时不再
  * 依赖模型响应的临时状态。</p>
@@ -30,10 +28,10 @@ import java.util.UUID;
 public final class LlmCurriculumGenerator implements CurriculumGenerator {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private final ChatModel chatModel;
+    private final Model model;
 
-    public LlmCurriculumGenerator(ChatModel chatModel) {
-        this.chatModel = chatModel;
+    public LlmCurriculumGenerator(Model model) {
+        this.model = model;
     }
 
     @Override
@@ -75,8 +73,7 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                 和对象形式的 rubric。题目只能引用已经生成的 LearnUnit code。
                 """.formatted(requestedLanguage.trim(), learningContext == null ? "" : learningContext.trim());
         try {
-            String response = chatModel.call(new Prompt(new UserMessage(prompt)))
-                    .getResult().getOutput().getText();
+            String response = AgentScopeTextGenerator.generate(model, prompt);
             JsonNode root = MAPPER.readTree(extractJson(response));
             return parse(root);
         } catch (Exception error) {
