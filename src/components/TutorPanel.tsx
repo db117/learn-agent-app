@@ -1,4 +1,4 @@
-import type {FormEvent} from "react";
+import type {SyntheticEvent} from "react";
 import type {LearnUnitResponse, SessionDetail, TutorEvent} from "../lib/api";
 
 export type TutorPanelProps = {
@@ -10,7 +10,7 @@ export type TutorPanelProps = {
     busy: boolean;
     onOpenTutor: () => void | Promise<void>;
     onTutorInputChange: (value: string) => void;
-    onSendTutorMessage: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
+    onSendTutorMessage: (event: SyntheticEvent<HTMLFormElement>) => void | Promise<void>;
     onCancelTutorRun: () => void | Promise<void>;
 };
 

@@ -1,4 +1,4 @@
-import type {FormEvent} from "react";
+import type {SyntheticEvent} from "react";
 import type {JourneyDetail} from "../lib/api";
 
 export type JourneyForm = {
@@ -15,7 +15,7 @@ type WelcomeViewProps = {
     form: JourneyForm;
     busy: boolean;
     onFormChange: (field: keyof JourneyForm, value: string) => void;
-    onCreateJourney: (event: FormEvent<HTMLFormElement>) => void | Promise<void>;
+    onCreateJourney: (event: SyntheticEvent<HTMLFormElement>) => void | Promise<void>;
     onBeginDiagnostic: (journeyId: string) => void | Promise<void>;
     onNewJourney: () => void;
 };
