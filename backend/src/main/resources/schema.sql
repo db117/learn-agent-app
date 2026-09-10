@@ -1,4 +1,4 @@
--- Phase 1：会话主表，保存用户与一次 Tutor 对话的生命周期。
+-- 第一阶段：会话主表，保存用户与一次 Tutor 对话的生命周期。
 CREATE TABLE IF NOT EXISTS "session"
 (
     id
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS "session"
     NULL
 );
 
--- Phase 1：会话消息表，保存用户和助手消息的展示内容。
+-- 第一阶段：会话消息表，保存用户和助手消息的展示内容。
 CREATE TABLE IF NOT EXISTS message
 (
     id
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS message
     created_at TEXT NOT NULL
     );
 
--- Phase 1：Agent 运行记录，保存一次 Runner 执行的状态和错误。
+-- 第一阶段：Agent 运行记录，保存一次 Runner 执行的状态和错误。
 CREATE TABLE IF NOT EXISTS agent_run
 (
     id
@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS agent_run
     completed_at TEXT
     );
 
--- Phase 1：Tutor 事件流水表，sequence 用于按接收顺序恢复 SSE/事件流。
+-- 第一阶段：Tutor 事件流水表，sequence 用于按接收顺序恢复 SSE/事件流。
 CREATE TABLE IF NOT EXISTS "event"
 (
     sequence
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS "event"
     raw_json TEXT NOT NULL
     );
 
--- Phase 1：应用配置表，保存需要跨重启保留的键值配置。
+-- 第一阶段：应用配置表，保存需要跨重启保留的键值配置。
 CREATE TABLE IF NOT EXISTS setting
 (
     key
@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS setting
     NULL
 );
 
--- Phase 1 查询索引：按会话和时间读取消息。
+-- 第一阶段查询索引：按会话和时间读取消息。
 CREATE INDEX IF NOT EXISTS message_session_idx ON message(session_id, created_at);
 CREATE INDEX IF NOT EXISTS event_session_idx ON "event"(session_id, sequence);
 CREATE INDEX IF NOT EXISTS run_session_idx ON agent_run(session_id, started_at);
@@ -300,7 +300,7 @@ CREATE INDEX IF NOT EXISTS question_retirement_idx ON question_retirement(retire
 CREATE INDEX IF NOT EXISTS assessment_journey_idx ON assessment(journey_id, created_at);
 CREATE INDEX IF NOT EXISTS attempt_learn_unit_idx ON assessment_attempt(journey_id, learn_unit_code, completed_at);
 
--- Java-owned workflow facts; payload contains deterministic facts only, never model chain-of-thought.
+-- Java 所有的工作流事实；payload 只包含确定性事实，不包含模型思维链。
 CREATE TABLE IF NOT EXISTS workflow_transition
 (
     id TEXT PRIMARY KEY,
@@ -315,7 +315,7 @@ CREATE TABLE IF NOT EXISTS workflow_transition
 CREATE INDEX IF NOT EXISTS workflow_transition_journey_idx
     ON workflow_transition(journey_id, created_at);
 
--- AgentScope runtime state; it is deliberately separate from learning facts and Tutor messages.
+-- AgentScope 运行时状态；与学习事实和 Tutor 消息刻意分离。
 CREATE TABLE IF NOT EXISTS agent_state
 (
     user_id TEXT NOT NULL,
@@ -330,7 +330,7 @@ CREATE TABLE IF NOT EXISTS agent_state
 
 CREATE INDEX IF NOT EXISTS agent_state_session_idx ON agent_state(user_id, session_id);
 
--- Marker for the replacement database. Existing files without this marker are never migrated.
+-- 替换数据库的标记；没有此标记的已有文件绝不执行迁移。
 CREATE TABLE IF NOT EXISTS schema_metadata
 (
     key TEXT PRIMARY KEY,
@@ -338,4 +338,10 @@ CREATE TABLE IF NOT EXISTS schema_metadata
 );
 
 INSERT INTO schema_metadata (key, value)
-VALUES ('schema.version', 'agentscope-springboot-webflux-v2');
+VALUES ('schema.marker', 'learning-agent-sqlite');
+INSERT INTO schema_metadata (key, value)
+VALUES ('schema.version', '1');
+INSERT INTO schema_metadata (key, value)
+VALUES ('snapshot.created_at', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+INSERT INTO schema_metadata (key, value)
+VALUES ('source.application_id', 'learning-agent-java');

@@ -228,27 +228,78 @@ export type CreateJourneyInput = {
   learningGoal: string;
 };
 
+/** 完整数据库替换成功后的结果；是否重启 Tauri 由界面决定。 */
+export type DatabaseImportResponse = {
+  schemaVersion: string;
+  importedAt: string;
+  restartRequired: boolean;
+};
+
+/** 项目错误信封；过期快照确认需要的两个时间戳也包含在其中。 */
+export type ApiErrorPayload = {
+  error?: string;
+  detail?: string;
+  snapshotCreatedAt?: string;
+  currentDatabaseAt?: string;
+  confirmationRequired?: boolean;
+};
+
+export class ApiError extends Error {
+  constructor(public readonly status: number, public readonly payload: ApiErrorPayload, fallback: string) {
+    super(payload.detail || payload.error || fallback);
+  }
+}
+
 const API_BASE = "http://127.0.0.1:18080/api";
+
+/** 将响应下载为浏览器文件；后端仍然是唯一读取 SQLite 的组件。 */
+async function exportDatabase() {
+  const response = await fetch(`${API_BASE}/database/export`);
+  if (!response.ok) throw await apiError(response, `数据库导出失败（${response.status}）`);
+  const blob = await response.blob();
+  const filename = response.headers.get("Content-Disposition")?.match(/filename="?([^";]+)"?/)?.[1] ?? "learning-agent-java.db";
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
+}
+
+/** 将选中文件作为适合流式处理的请求体发送；过期数据必须显式确认。 */
+async function importDatabase(file: File, confirm = false) {
+  return request<DatabaseImportResponse>(`/database/import${confirm ? "?confirm=true" : ""}`, {
+    method: "POST",
+    headers: {"Content-Type": "application/octet-stream"},
+    body: file,
+  });
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {"Content-Type": "application/json"},
     ...init,
   });
-  if (!response.ok) {
-    const raw = await response.text();
-    try {
-      const parsed = JSON.parse(raw) as { error?: string };
-      throw new Error(parsed.error || `${response.status} ${response.statusText}`);
-    } catch (cause) {
-      if (cause instanceof Error && cause.message !== raw) throw cause;
-      throw new Error(raw || `${response.status} ${response.statusText}`);
-    }
-  }
+  if (!response.ok) throw await apiError(response, `${response.status} ${response.statusText}`);
   return response.json() as Promise<T>;
 }
 
+/** 保留后端错误码，使界面能够展示稳定且可操作的提示。 */
+async function apiError(response: Response, fallback: string): Promise<never> {
+  const raw = await response.text();
+  let payload: ApiErrorPayload = {};
+  try {
+    payload = JSON.parse(raw) as ApiErrorPayload;
+  } catch {
+    payload = {detail: raw};
+  }
+  throw new ApiError(response.status, payload, fallback);
+}
+
 export const api = {
+  exportDatabase,
+  importDatabase,
   health: () => request<BackendHealth>("/health"),
   languages: () => request<LearningLanguage[]>("/learning/languages"),
   journeyLearnUnits: (journeyId: string) => request<LearnUnit[]>(`/learning/journeys/${encodeURIComponent(journeyId)}/learn-units`),

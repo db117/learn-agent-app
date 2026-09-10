@@ -3,6 +3,7 @@ package com.example.agent.api;
 import com.example.agent.agent.EventHub;
 import com.example.agent.agent.TutorAgentService;
 import com.example.agent.config.AppProperties;
+import com.example.agent.config.DatabaseTransferBusyException;
 import com.example.agent.persistence.AgentStatePersistenceException;
 import com.example.agent.persistence.SessionRecord;
 import com.example.agent.persistence.SqliteRepository;
@@ -11,8 +12,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -29,7 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** Phase 1 Tutor 会话和 SSE 事件的 HTTP 接口。 */
+/** 第一阶段 Tutor 会话和 SSE 事件的 HTTP 接口。 */
 @RestController
 @RequestMapping("/api/sessions")
 public class SessionController {
@@ -98,7 +99,7 @@ public class SessionController {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    /** Cancel one running TutorAgent call. */
+    /** 取消一个正在执行的 TutorAgent 调用。 */
     @PostMapping("/{sessionId}/runs/{runId}/cancel")
     public Mono<ResponseEntity<Map<String, String>>> cancel(
             @PathVariable String sessionId, @PathVariable String runId) {
@@ -130,10 +131,17 @@ public class SessionController {
                         .build());
     }
 
-    /** Do not turn a missing or corrupt AgentState into a fresh conversation. */
+    /** 不把缺失或损坏的 AgentState 静默转换成新会话。 */
     @ExceptionHandler(AgentStatePersistenceException.class)
     public ResponseEntity<Map<String, String>> agentStateError(AgentStatePersistenceException error) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "agent_state_restore_failed"));
+    }
+
+    /** 数据库传输持有维护窗口时，新的 Tutor 调用不能启动。 */
+    @ExceptionHandler(DatabaseTransferBusyException.class)
+    public ResponseEntity<Map<String, String>> databaseTransferBusy(DatabaseTransferBusyException error) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("error", "database_transfer_busy", "detail", error.getMessage()));
     }
 
     private long parseLastEventId(String value) {

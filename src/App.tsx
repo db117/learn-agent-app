@@ -3,16 +3,17 @@ import {invoke, isTauri} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {
   api,
-  type TutorEvent,
+  ApiError,
   type AssessmentResponse,
   type AssessmentResultResponse,
   type BackendHealth,
   type CreateJourneyInput,
   type JourneyDetail,
   type LearnUnit,
+  type LearnUnitResponse,
   type Message,
   type SessionDetail,
-  type LearnUnitResponse,
+  type TutorEvent,
 } from "./lib/api";
 
 type BackendStatus = { status: string; detail?: string };
@@ -25,6 +26,28 @@ const emptyDraft: AnswerDraft = {selectedOptionIds: [], submittedCode: ""};
 
 function errorMessage(cause: unknown, fallback: string) {
   return cause instanceof Error ? cause.message : typeof cause === "string" ? cause : fallback;
+}
+
+function databaseErrorMessage(cause: unknown, fallback: string) {
+    if (!(cause instanceof ApiError)) return errorMessage(cause, fallback);
+    switch (cause.payload.error) {
+        case "database_agent_busy":
+            return "TutorAgent 正在运行，请等待本次调用结束后重试导入。";
+        case "database_transfer_busy":
+            return "已有数据库导入或导出正在进行，请稍后重试。";
+        case "database_import_schema_unknown":
+            return "数据库 schema 未知或不兼容，当前数据库未改变。";
+        case "database_import_schema_version":
+            return "数据库 schema 版本不受支持，当前数据库未改变。";
+        case "database_import_invalid_file":
+            return "数据库文件损坏或不是有效快照，当前数据库未改变。";
+        case "database_import_backup_failed":
+            return "无法创建导入前备份，当前数据库未改变。";
+        case "database_import_replace_failed":
+            return "数据库替换失败，原数据库已恢复。";
+        default:
+            return cause.message || fallback;
+    }
 }
 
 function backendConnectionError(cause: unknown) {
@@ -142,7 +165,14 @@ export default function App() {
   const [events, setEvents] = useState<TutorEvent[]>([]);
   const eventSource = useRef<EventSource | null>(null);
   const [activeTutorRunId, setActiveTutorRunId] = useState<string | null>(null);
+    const [exportStatus, setExportStatus] = useState<"idle" | "exporting" | "success" | "error">("idle");
+    const [exportMessage, setExportMessage] = useState("");
+    const [importStatus, setImportStatus] = useState<"idle" | "importing" | "success" | "warning" | "error">("idle");
+    const [importMessage, setImportMessage] = useState("");
+    const importInput = useRef<HTMLInputElement | null>(null);
   const terminalRuns = useRef(new Set<string>());
+    // 使刚被替换数据库产生的延迟 SSE/会话回调失效。
+    const runtimeEpoch = useRef(0);
 
   const journeyId = journey?.journey.id;
   const currentPathItem = journey?.path.find((item) => item.status === "CURRENT") ?? null;
@@ -235,9 +265,11 @@ export default function App() {
       terminalRuns.current.clear();
       return;
     }
+      const epoch = runtimeEpoch.current;
     const source = new EventSource(api.eventsUrl(tutor.id));
     eventSource.current = source;
     source.onmessage = (event) => {
+        if (epoch !== runtimeEpoch.current) return;
       const next = JSON.parse(event.data) as TutorEvent;
       setEvents((current) => current.some((item) => item.id === next.id) ? current : [...current, next]);
       if (next.eventType === "complete" || next.eventType === "error" || next.eventType === "cancelled") {
@@ -245,7 +277,9 @@ export default function App() {
         setActiveTutorRunId((current) => current === next.runId ? null : current);
       }
       if (next.eventType === "complete") {
-        void api.session(tutor.id).then(setTutor).catch(() => undefined);
+          void api.session(tutor.id).then((session) => {
+              if (epoch === runtimeEpoch.current) setTutor(session);
+          }).catch(() => undefined);
       }
     };
     return () => {
@@ -509,6 +543,120 @@ export default function App() {
       setError(errorMessage(cause, "Unable to cancel tutor message"));
     }
   }
+
+    async function exportDatabase() {
+        setExportStatus("exporting");
+        setExportMessage("正在导出…");
+        try {
+            await api.exportDatabase();
+            setExportStatus("success");
+            setExportMessage("数据库已导出");
+        } catch (cause) {
+            setExportStatus("error");
+            setExportMessage(databaseErrorMessage(cause, "数据库导出失败"));
+        }
+    }
+
+    /** 先关闭旧 SSE，再清理所有绑定到已替换数据库的状态对象。 */
+    function clearImportedState() {
+        runtimeEpoch.current += 1;
+        eventSource.current?.close();
+        eventSource.current = null;
+        terminalRuns.current.clear();
+        setJourney(null);
+        setLearnUnits([]);
+        setLearnUnit(null);
+        setAssessment(null);
+        setAssessmentResult(null);
+        setAnswers({});
+        setTutor(null);
+        setTutorInput("");
+        setEvents([]);
+        setActiveTutorRunId(null);
+        setView("welcome");
+    }
+
+    /** Tauri 重启是异步的；只有固定回环后端健康后才重新加载页面。 */
+    async function waitForBackendHealth() {
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+            try {
+                return await api.health();
+            } catch (cause) {
+                lastError = cause;
+                await new Promise((resolve) => window.setTimeout(resolve, 200));
+            }
+        }
+        throw lastError ?? new Error("后端健康检查超时");
+    }
+
+    /** 导入后通过 HTTP 重建页面，不复用导入前的 React 对象。 */
+    async function reloadAfterImport() {
+        clearImportedState();
+        const nextHealth = await waitForBackendHealth();
+        const journeys = await api.journeys();
+        setHealth(nextHealth);
+        const existing = journeys[0];
+        if (!existing) {
+            setView("welcome");
+            return;
+        }
+        const detail = await api.journey(existing.id);
+        setJourney(detail);
+        const current = detail.path.find((item) => item.status === "CURRENT");
+        if (current) setLearnUnit(await api.learnUnit(existing.id, current.learnUnitCode));
+        setView(detail.path.length ? "dashboard" : "welcome");
+    }
+
+    async function importDatabase(event: React.ChangeEvent<HTMLInputElement>) {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (!file) return;
+        setImportStatus("importing");
+        setImportMessage("正在验证并导入…");
+        setError(null);
+        try {
+            let result;
+            try {
+                // 第一次请求有意保持非破坏性，用于识别过期快照。
+                result = await api.importDatabase(file);
+            } catch (cause) {
+                if (!(cause instanceof ApiError) || cause.payload.error !== "database_import_stale") throw cause;
+                setImportStatus("warning");
+                setImportMessage(`快照时间 ${cause.payload.snapshotCreatedAt ?? "未知"}，当前数据库时间 ${cause.payload.currentDatabaseAt ?? "未知"}。请确认是否覆盖当前进度。`);
+                if (!window.confirm("这是较旧的数据库快照。确认后将覆盖当前数据库，是否继续？")) return;
+                setImportStatus("importing");
+                setImportMessage("正在确认并导入…");
+                // 只有学习者显式确认后，才允许执行破坏性的数据库替换。
+                result = await api.importDatabase(file, true);
+            }
+            if (result.restartRequired && !isTauri()) {
+                clearImportedState();
+                setImportStatus("warning");
+                setImportMessage("数据库已导入。开发模式需要手动重启本地后端后，页面才会重新加载。");
+                return;
+            }
+            setImportStatus("success");
+            setImportMessage(result.restartRequired ? "导入成功，正在重新加载…" : "数据库已导入");
+            if (result.restartRequired) {
+                try {
+                    // SQLite 由 Java 边界负责；Tauri 只重启受管的 JVM 进程。
+                    await invoke("stop_backend");
+                    const nextBackend = await invoke<BackendStatus>("start_backend");
+                    setBackend(nextBackend);
+                } catch (cause) {
+                    clearImportedState();
+                    setImportStatus("error");
+                    setImportMessage(`数据库已导入，但后端重启失败，请手动重启后继续：${errorMessage(cause, "重启失败")}`);
+                    return;
+                }
+            }
+            await reloadAfterImport();
+        } catch (cause) {
+            setImportStatus("error");
+            setImportMessage(databaseErrorMessage(cause, "数据库导入失败，原数据库未改变"));
+        }
+    }
 
   function newJourney() {
     setJourney(null);
@@ -791,6 +939,20 @@ export default function App() {
         <div className="status-row">
           {journey && <button className="link-button" onClick={() => setView("dashboard")}>我的 Journey</button>}
           {journey && <button className="link-button" onClick={newJourney}>新建</button>}
+            <button className="link-button" onClick={() => void exportDatabase()}
+                    disabled={exportStatus === "exporting"}>
+                {exportStatus === "exporting" ? "导出中…" : "导出数据库"}
+            </button>
+            <label className="link-button">
+                {importStatus === "importing" ? "导入中…" : "导入数据库"}
+                <input ref={importInput} type="file" accept=".db" onChange={(event) => void importDatabase(event)}
+                       disabled={importStatus === "importing"} hidden/>
+            </label>
+            {exportStatus !== "idle" &&
+                <span className={exportStatus === "error" ? "warning" : "success"} role="status">{exportMessage}</span>}
+            {importStatus !== "idle" &&
+                <span className={importStatus === "error" || importStatus === "warning" ? "warning" : "success"}
+                      role="status">{importMessage}</span>}
           <span className={`dot ${health?.status === "UP" ? "ok" : "warn"}`} />
           <span>{health?.status ?? "offline"}</span>
           <span className="muted">{backend.status} · {backend.detail ?? "127.0.0.1:18080"}</span>

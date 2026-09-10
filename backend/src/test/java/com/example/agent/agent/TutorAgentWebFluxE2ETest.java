@@ -245,6 +245,38 @@ class TutorAgentWebFluxE2ETest {
     }
 
     @Test
+    void databaseImportRejectsAnActiveTutorCallWithoutCancellingIt() throws Exception {
+        DeterministicModel deterministic = (DeterministicModel) model;
+        deterministic.prepareCancellation();
+        SessionResponse session = createSession("Import while tutor is active");
+        SendMessageResponse sent = client.post()
+                .uri("/api/sessions/{id}/messages", session.id())
+                .bodyValue(Map.of("content", "cancel this"))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(SendMessageResponse.class)
+                .returnResult()
+                .getResponseBody();
+        assertNotNull(sent);
+        assertTrue(deterministic.awaitStarted());
+
+        client.post()
+                .uri("/api/database/import")
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .bodyValue(new byte[]{1, 2, 3})
+                .exchange()
+                .expectStatus().isEqualTo(409)
+                .expectBody().jsonPath("$.error").isEqualTo("database_agent_busy");
+        assertFalse(deterministic.cancellationObserved());
+
+        client.post()
+                .uri("/api/sessions/{sessionId}/runs/{runId}/cancel", session.id(), sent.runId())
+                .exchange()
+                .expectStatus().isAccepted();
+        assertTrue(deterministic.awaitCancelled());
+    }
+
+    @Test
     void clientDisconnectCancelsTheAgentWithoutRunningJdbcOnTheSseCaller() throws Exception {
         DeterministicModel deterministic = (DeterministicModel) model;
         deterministic.prepareCancellation();
@@ -413,6 +445,10 @@ class TutorAgentWebFluxE2ETest {
 
         private boolean awaitCancelled() throws InterruptedException {
             return cancelled.await(5, TimeUnit.SECONDS);
+        }
+
+        private boolean cancellationObserved() {
+            return cancelled.getCount() == 0;
         }
 
         @Override

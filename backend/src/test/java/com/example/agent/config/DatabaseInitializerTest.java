@@ -6,8 +6,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 import org.sqlite.JDBC;
 
-import javax.sql.DataSource;
 import java.nio.file.Path;
+import javax.sql.DataSource;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -57,6 +57,9 @@ class DatabaseInitializerTest {
     private void assertEqualsMarker(DataSource dataSource) {
         assertEquals(DatabaseInitializer.SCHEMA_VERSION, JdbcClient.create(dataSource).sql(
                 "SELECT value FROM schema_metadata WHERE key = 'schema.version'")
+                .query(String.class).single());
+        assertEquals(DatabaseSchema.MARKER, JdbcClient.create(dataSource).sql(
+                        "SELECT value FROM schema_metadata WHERE key = 'schema.marker'")
                 .query(String.class).single());
     }
 }

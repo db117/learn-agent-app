@@ -37,6 +37,12 @@ public class DatabaseConfiguration {
         return new DatabaseInitializer(dataSource);
     }
 
+    /** 创建进程级协调器，由 TutorAgent、导入和导出共同使用。 */
+    @Bean
+    DatabaseTransferCoordinator databaseTransferCoordinator() {
+        return new DatabaseTransferCoordinator();
+    }
+
     @Bean
     @DependsOn("databaseInitializer")
     JdbcClient jdbcClient(DataSource dataSource) {

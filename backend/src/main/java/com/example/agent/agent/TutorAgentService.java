@@ -1,5 +1,6 @@
 package com.example.agent.agent;
 
+import com.example.agent.config.DatabaseTransferCoordinator;
 import com.example.agent.persistence.AgentStatePersistenceException;
 import com.example.agent.persistence.MessageRecord;
 import com.example.agent.persistence.RunRecord;
@@ -10,19 +11,19 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockStartEvent;
 import io.agentscope.core.event.ToolCallDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ToolResultState;
-import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.harness.agent.HarnessAgent;
 import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.Disposable;
 import reactor.core.scheduler.Schedulers;
@@ -35,7 +36,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
-/** Runs the single AgentScope TutorAgent and projects framework-neutral events to SQLite/SSE. */
+/** 运行唯一的 AgentScope TutorAgent，并将框架无关事件投影到 SQLite 和 SSE。 */
 @Service
 public class TutorAgentService {
 
@@ -47,6 +48,7 @@ public class TutorAgentService {
     private final EventHub eventHub;
     private final ExecutorService executor;
     private final AgentStateStore stateStore;
+  private final DatabaseTransferCoordinator transferCoordinator;
     private final ConcurrentHashMap<String, ActiveRun> activeRuns = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, StringBuilder> responseText = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, String> skillNames = new ConcurrentHashMap<>();
@@ -59,49 +61,88 @@ public class TutorAgentService {
             EventHub eventHub,
             ExecutorService executor,
             AgentStateStore stateStore) {
+      this(tutorAgent, repository, eventHub, executor, stateStore, new DatabaseTransferCoordinator());
+    }
+
+  @Autowired
+  public TutorAgentService(
+          HarnessAgent tutorAgent,
+          SqliteRepository repository,
+          EventHub eventHub,
+          ExecutorService executor,
+          AgentStateStore stateStore,
+          DatabaseTransferCoordinator transferCoordinator) {
         this.tutorAgent = tutorAgent;
         this.repository = repository;
         this.eventHub = eventHub;
         this.executor = executor;
         this.stateStore = stateStore;
+    this.transferCoordinator = transferCoordinator;
     }
 
-    /** Verify the durable session exists before starting a TutorAgent call. */
+  /** 启动 TutorAgent 调用前，确认会话已经持久化存在。 */
     public void ensureSession(SessionRecord session) {
         repository.findSession(session.id())
                 .orElseThrow(() -> new IllegalArgumentException("session not found: " + session.id()));
     }
 
-    /** Start a call; AgentState owns the runtime conversation while messages remain inspectable. */
+  /**
+   * 启动一次调用，并一直保留 Agent lease，直到终态事件完成持久化。
+   *
+   * <p>这样可以避免数据库替换与最终消息、事件和 AgentState 写入发生竞争；导入路径会拒绝获取
+   * lease，而不是取消提供商流。</p>
+   */
     public RunReceipt start(SessionRecord session, String content) {
         if (shuttingDown) throw new IllegalStateException("agent_unavailable");
+      DatabaseTransferCoordinator.Lease agentLease = transferCoordinator.beginAgentRun();
+      try {
         ensureSession(session);
+        return startWithLease(session, content, agentLease);
+      } catch (RuntimeException error) {
+        agentLease.close();
+        throw error;
+      }
+    }
+
+  private RunReceipt startWithLease(
+          SessionRecord session, String content, DatabaseTransferCoordinator.Lease agentLease) {
         String messageId = UUID.randomUUID().toString();
         String runId = UUID.randomUUID().toString();
         Instant now = Instant.now();
-        try {
-            ensureRuntimeState(session);
-        } catch (RuntimeException error) {
-            recordPreStartFailure(session, runId, now, error);
-            throw error;
-        }
-        repository.insertMessage(new MessageRecord(messageId, session.id(), "user", content, now));
-        repository.insertRun(new RunRecord(runId, session.id(), "RUNNING", null, now, null));
-        ActiveRun run = new ActiveRun(runId, session.id());
-        activeRuns.put(runId, run);
-        try {
-            executor.submit(() -> execute(session, run, content));
-        } catch (RejectedExecutionException error) {
-            finishFailed(run, error);
-        }
-        return new RunReceipt(runId, messageId);
+    boolean handedOff = false;
+    try {
+      try {
+        ensureRuntimeState(session);
+      } catch (RuntimeException error) {
+        recordPreStartFailure(session, runId, now, error);
+        throw error;
+      }
+      repository.insertMessage(new MessageRecord(messageId, session.id(), "user", content, now));
+      repository.insertRun(new RunRecord(runId, session.id(), "RUNNING", null, now, null));
+      ActiveRun run = new ActiveRun(runId, session.id(), agentLease);
+      activeRuns.put(runId, run);
+      handedOff = true;
+      try {
+        executor.submit(() -> execute(session, run, content));
+      } catch (RejectedExecutionException error) {
+        finishFailed(run, error);
+      }
+      return new RunReceipt(runId, messageId);
+    } finally {
+      if (!handedOff) agentLease.close();
+    }
     }
 
     public boolean active(String sessionId) {
         return activeRuns.values().stream().anyMatch(run -> run.sessionId.equals(sessionId));
     }
 
-    /** Cancel a user-requested run; disposal reaches the AgentScope and provider subscriptions. */
+  /** 数据库替换必须等待所有 TutorAgent 调用进入终态。 */
+  public boolean hasActiveRuns() {
+    return !activeRuns.isEmpty();
+  }
+
+  /** 取消用户请求的运行；释放订阅会继续传递到 AgentScope 和提供商订阅。 */
     public boolean cancel(String sessionId, String runId, String reason) {
         ActiveRun run = activeRuns.get(runId);
         if (run == null || !run.sessionId.equals(sessionId) || !run.requestCancellation(reason)) return false;
@@ -110,7 +151,7 @@ public class TutorAgentService {
         return true;
     }
 
-    /** Cancel active work when the last SSE client for a session disconnects. */
+  /** 会话的最后一个 SSE 客户端断开时，取消该会话的活动任务。 */
     public void cancelForClientDisconnect(String sessionId) {
         activeRuns.values().stream()
                 .filter(run -> run.sessionId.equals(sessionId))
@@ -245,7 +286,6 @@ public class TutorAgentService {
                 return value.textValue();
             }
         } catch (Exception ignored) {
-            // Streaming tool arguments can arrive as incomplete JSON; the UI can use the generic label.
         }
         return null;
     }
@@ -281,11 +321,15 @@ public class TutorAgentService {
                             UUID.randomUUID().toString(), run.sessionId, "assistant", finalText, Instant.now()));
                 }
                 synchronized (eventOrderLock) {
+                  try {
                     TutorEvent complete = repository.insertEvent(
                             TutorEvent.complete(run.sessionId, run.runId, Instant.now()));
                     markTerminal(run);
                     eventHub.publish(complete);
                     repository.finishRun(run.runId, "COMPLETED", null, Instant.now());
+                  } finally {
+                    run.agentLease.close();
+                  }
                 }
             } catch (Throwable error) {
                 if (!run.terminal) finishFailedLocked(run, error);
@@ -307,11 +351,15 @@ public class TutorAgentService {
 
     private void finishFailedLocked(ActiveRun run, Throwable error) {
         synchronized (eventOrderLock) {
+          try {
             TutorEvent persisted = repository.insertEvent(
                     TutorEvent.error(run.sessionId, run.runId, error));
             markTerminal(run);
             eventHub.publish(persisted);
             repository.finishRun(run.runId, "FAILED", persisted.content(), Instant.now());
+          } finally {
+            run.agentLease.close();
+          }
         }
     }
 
@@ -324,11 +372,15 @@ public class TutorAgentService {
 
     private void finishCancelledLocked(ActiveRun run) {
         synchronized (eventOrderLock) {
+          try {
             TutorEvent persisted = repository.insertEvent(
                     TutorEvent.cancelled(run.sessionId, run.runId, run.cancellationReason, Instant.now()));
             markTerminal(run);
             eventHub.publish(persisted);
             repository.finishRun(run.runId, "CANCELLED", run.cancellationReason, Instant.now());
+          } finally {
+            run.agentLease.close();
+          }
         }
     }
 
@@ -343,14 +395,16 @@ public class TutorAgentService {
 
         private final String runId;
         private final String sessionId;
+      private final DatabaseTransferCoordinator.Lease agentLease;
         private Disposable subscription;
         private boolean cancelRequested;
         private String cancellationReason = "cancelled";
         private boolean terminal;
 
-        private ActiveRun(String runId, String sessionId) {
+      private ActiveRun(String runId, String sessionId, DatabaseTransferCoordinator.Lease agentLease) {
             this.runId = runId;
             this.sessionId = sessionId;
+        this.agentLease = agentLease;
         }
 
         private synchronized boolean requestCancellation(String reason) {
