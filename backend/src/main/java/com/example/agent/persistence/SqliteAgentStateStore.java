@@ -8,15 +8,19 @@ import io.agentscope.core.state.VersionedState;
 import io.agentscope.core.util.JsonUtils;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
-import javax.sql.DataSource;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import javax.sql.DataSource;
 
-/** SQLite-backed AgentScope state store. JDBC calls are blocking and must be invoked off the event loop. */
+/**
+ * 基于 SQLite 的 AgentScope 状态存储。
+ *
+ * <p>JDBC 调用是阻塞操作，必须在 event loop 之外执行。</p>
+ */
 public final class SqliteAgentStateStore implements AgentStateStore {
 
     private static final String ANONYMOUS_USER = "__anon__";
@@ -55,6 +59,12 @@ public final class SqliteAgentStateStore implements AgentStateStore {
         return new VersionedState<>(decode(row.json(), type, sessionId), row.version());
     }
 
+    /**
+     * 按期望版本执行 AgentState 的乐观并发写入。
+     *
+     * <p>未版本化状态使用 upsert，期望版本为 0 时只尝试插入，正版本使用条件更新；任一步发生版本冲突
+     * 都返回 {@link AgentStateStore#UNVERSIONED}，由 AgentScope 决定后续处理。</p>
+     */
     @Override
     public long saveIfVersion(
             String userId, String sessionId, String key, State value, long expectedVersion) {

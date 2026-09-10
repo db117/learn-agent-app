@@ -36,6 +36,12 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
         this.model = model;
     }
 
+    /**
+     * 请求模型规划评估题集，并将已有题目引用或新题目统一解析为 Question。
+     *
+     * <p>已有题目只能按 ID 复用，新题目必须经过题型和 LearnUnit 规则校验；模型失败或返回非法 JSON
+     * 时直接抛错。</p>
+     */
     @Override
     public List<Question> plan(
             LearningLanguage language,
@@ -85,6 +91,11 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
         }
     }
 
+    /**
+     * 解析一项题目规划结果。
+     *
+     * <p>结果只有一个 existingQuestionId 时复用现有题目；否则按新题目字段构建对象并执行结构校验。</p>
+     */
     private Question parseQuestion(
             JsonNode node, Map<String, Question> existing, Map<String, LearnUnit> learnUnitsByCode) {
         JsonNode existingId = node.get("existingQuestionId");

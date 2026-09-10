@@ -34,6 +34,12 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         this.model = model;
     }
 
+    /**
+     * 请求模型生成课程 JSON，并将响应解析为领域对象。
+     *
+     * <p>模型响应只负责提供候选内容；解析阶段和领域校验会拒绝缺失、重复或不符合题型规则的数据，
+     * 不会把无效响应静默转换为默认课程。</p>
+     */
     @Override
     public GeneratedCurriculum generate(String requestedLanguage, String learningContext) {
         if (requestedLanguage == null || requestedLanguage.isBlank()) {
@@ -81,6 +87,12 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         }
     }
 
+    /**
+     * 将课程 JSON 转换为语言、LearnUnit 和题目领域对象，并校验引用关系。
+     *
+     * @param root 模型返回的 JSON 根节点
+     * @return 可供领域服务继续校验和持久化的课程结果
+     */
     private GeneratedCurriculum parse(JsonNode root) {
         JsonNode languageNodes = root == null ? null : root.get("languages");
         JsonNode learnUnitNodes = root == null ? null : root.get("learnUnits");
@@ -126,6 +138,13 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         return new GeneratedCurriculum(languages, learnUnits, parseQuestions(root, learnUnitCodes));
     }
 
+    /**
+     * 解析题目数组，构建选择题配置或 Coding 题评分规则，并确认题目引用已生成的 LearnUnit。
+     *
+     * @param root 模型返回的 JSON 根节点
+     * @param learnUnitCodes 已生成的 LearnUnit 编码集合
+     * @return 解析并校验后的题目
+     */
     private List<Question> parseQuestions(JsonNode root, Set<String> learnUnitCodes) {
         JsonNode questionNodes = root.get("questions");
         if (questionNodes == null) throw new IllegalArgumentException("questions is required");

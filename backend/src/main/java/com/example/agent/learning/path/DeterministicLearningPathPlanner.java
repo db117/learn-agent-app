@@ -19,6 +19,16 @@ import java.util.UUID;
 @Component
 public class DeterministicLearningPathPlanner {
 
+    /**
+     * 根据排序后的 LearnUnit 生成路径，并在保留历史进度的同时选择首个 CURRENT 节点。
+     *
+     * <p>已完成或已跳过的节点保留原状态，其余节点重置为 PENDING；最后把第一个待处理节点设为 CURRENT。</p>
+     *
+     * @param journeyId Journey 标识
+     * @param learnUnits 当前 Journey 的 LearnUnit
+     * @param existingItems 已持久化的路径节点
+     * @return 新的确定性路径
+     */
     public List<LearningPathItem> plan(
             String journeyId,
             List<LearnUnit> learnUnits,
@@ -58,6 +68,15 @@ public class DeterministicLearningPathPlanner {
         return result;
     }
 
+    /**
+     * 按前置关系执行稳定的拓扑排序。
+     *
+     * <p>每轮从无未完成前置的节点中选择 sequence 最小、code 最小的节点；若输入包含环路，
+     * 将剩余节点按同样的稳定顺序追加，最终由上层课程校验拒绝该非法目录。</p>
+     *
+     * @param learnUnits 待排序的 LearnUnit
+     * @return 排序后的 LearnUnit
+     */
     public List<LearnUnit> order(List<LearnUnit> learnUnits) {
         Map<String, LearnUnit> byCode = new HashMap<>();
         for (LearnUnit learnUnit : learnUnits) byCode.put(learnUnit.code(), learnUnit);

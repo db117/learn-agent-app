@@ -36,7 +36,11 @@ public class CurriculumService {
         return repository.listLanguages();
     }
 
-    /** 为一个新 Journey 生成独立课程；即使数据库已有同语言课程，也不会复用。 */
+    /**
+     * 为一个新 Journey 生成独立课程；即使数据库已有同语言课程，也不会复用。
+     *
+     * <p>生成完成后先执行结构、内容、前置关系和题型覆盖校验，再把业务标识限定到当前 Journey。</p>
+     */
     public CurriculumGenerator.GeneratedCurriculum generateForJourney(
             String journeyId, String requestedLanguage, String learningContext) {
         if (journeyId == null || journeyId.isBlank()) throw new IllegalArgumentException("journeyId must not be blank");
@@ -74,6 +78,13 @@ public class CurriculumService {
         generated.questions().forEach(repository::insertGeneratedQuestion);
     }
 
+    /**
+     * 将生成结果的 LearnUnit 和 Question 标识限定到当前 Journey，并同步重写前置关系。
+     *
+     * @param journeyId Journey 标识
+     * @param generated 未限定范围的生成结果
+     * @return 标识已限定到 Journey 的课程结果
+     */
     private CurriculumGenerator.GeneratedCurriculum scopeToJourney(
             String journeyId, CurriculumGenerator.GeneratedCurriculum generated) {
         Map<String, String> scopedCodes = generated.learnUnits().stream()
@@ -101,6 +112,11 @@ public class CurriculumService {
                 || generated.name().trim().equalsIgnoreCase(requested.trim());
     }
 
+    /**
+     * 校验生成课程的完整结构，确保后续写入 SQLite 的数据满足领域约束。
+     *
+     * <p>校验覆盖语言、LearnUnit 内容、分数规则、重复内容、前置关系、无环路径和题目覆盖。</p>
+     */
     private void validate(CurriculumGenerator.GeneratedCurriculum generated) {
         if (generated == null || generated.languages().isEmpty() || generated.learnUnits().isEmpty()) {
             throw new IllegalStateException("Generated curriculum must contain languages and LearnUnits");
@@ -193,6 +209,7 @@ public class CurriculumService {
         }
     }
 
+    /** 使用深度优先遍历检查 LearnUnit 前置关系是否存在环路。 */
     private void validateAcyclic(Map<String, LearnUnit> learnUnits) {
         Set<String> visiting = new HashSet<>();
         Set<String> visited = new HashSet<>();

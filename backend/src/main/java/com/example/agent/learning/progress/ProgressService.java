@@ -39,6 +39,12 @@ public class ProgressService {
         this.planner = planner;
     }
 
+    /**
+     * 根据 Journey 当前关联的 LearnUnit 生成确定性学习路径并持久化。
+     *
+     * <p>规划器只负责计算路径；本方法负责替换数据库中的路径、同步 Journey 当前状态，并记录工作流
+     * 转换。</p>
+     */
     @Transactional
     public List<LearningPathItem> generatePath(String journeyId) {
         return workflow.execute(
@@ -57,6 +63,11 @@ public class ProgressService {
                 Map.of("complete", ignored -> {}));
     }
 
+    /**
+     * 将指定的当前节点重新写入为 CURRENT，并同步 Journey 的活动时间。
+     *
+     * <p>更新前先清除其他 CURRENT 节点，再复制节点的进度事实，最后记录 START_LEARN_UNIT 转换。</p>
+     */
     @Transactional
     public LearningPathItem startLearnUnit(String journeyId, String learnUnitCode) {
         return workflow.execute(
@@ -80,12 +91,17 @@ public class ProgressService {
                 Map.of("complete", ignored -> {}));
     }
 
-    /** Continue is the server-side entry point for the current LearnUnit. */
+    /** 继续当前 LearnUnit，是服务端进入当前学习单元的入口。 */
     @Transactional
     public LearningPathItem continueLearnUnit(String journeyId, String learnUnitCode) {
         return startLearnUnit(journeyId, learnUnitCode);
     }
 
+    /**
+     * 记录初始诊断结果，并根据通过情况更新 LearnUnit 的掌握度、最好成绩和状态。
+     *
+     * <p>诊断通过会直接关闭节点并记录诊断通过原因；未通过只累积成绩，不提前改变节点状态。</p>
+     */
     @Transactional
     public LearningPathItem recordDiagnosticResult(
             String journeyId, String learnUnitCode, AssessmentScore score, boolean passed) {
@@ -115,6 +131,11 @@ public class ProgressService {
                 Map.of("complete", ignored -> {}));
     }
 
+    /**
+     * 记录 LearnUnit 评估结果，并通过工作流路由到 PASS 或 RETRY。
+     *
+     * <p>通过时推进到下一个节点；未通过时保留当前节点并刷新 Journey 活动时间。</p>
+     */
     @Transactional
     public LearningPathItem recordLearnUnitAssessment(
             String journeyId, String learnUnitCode, AssessmentScore score, boolean passed) {
@@ -150,6 +171,7 @@ public class ProgressService {
                         }));
     }
 
+    /** 将当前 LearnUnit 标记为正在评估，并记录开始评估的工作流转换。 */
     @Transactional
     public void markAssessing(String journeyId, String learnUnitCode) {
         workflow.execute(
@@ -171,6 +193,7 @@ public class ProgressService {
                 Map.of("complete", ignored -> {}));
     }
 
+    /** 记录评估异常，不改变当前节点状态，交由调用方决定后续重试。 */
     @Transactional
     public void markAssessmentFailed(String journeyId, String learnUnitCode) {
         workflow.execute(
@@ -185,6 +208,11 @@ public class ProgressService {
                 Map.of("complete", ignored -> {}));
     }
 
+    /**
+     * 跳过当前 LearnUnit，并在没有未完成评估时推进学习路径。
+     *
+     * <p>跳过只记录为 SKIPPED，不会伪造掌握度或通过原因。</p>
+     */
     @Transactional
     public void skipLearnUnit(String journeyId, String learnUnitCode) {
         activeJourney(journeyId);
@@ -210,8 +238,10 @@ public class ProgressService {
     }
 
     /**
-     * Return the next server-selected item after a closed item. The normal PASS/SKIP path already
-     * advances atomically; this endpoint is therefore an idempotent continuation after a result.
+     * 在一个已关闭节点之后返回服务端选出的下一个节点。
+     *
+     * <p>正常 PASS/SKIP 流程已经原子推进，因此该入口只负责幂等地返回已有 CURRENT 节点，或在尚未推进
+     * 时执行一次推进。</p>
      */
     @Transactional
     public LearningPathItem nextLearnUnit(String journeyId, String closedLearnUnitCode) {
@@ -241,7 +271,7 @@ public class ProgressService {
                 Map.of("complete", ignored -> {}, "advance", ignored -> {}));
     }
 
-    /** Advance only after the caller has already closed the current item. */
+    /** 仅在调用方已经关闭当前节点后推进学习路径。 */
     @Transactional
     public void moveToNextLearnUnit(String journeyId) {
         workflow.execute(
@@ -258,7 +288,7 @@ public class ProgressService {
                 Map.of("complete", ignored -> {}));
     }
 
-    /** Check the server-owned state before an Assessment retry is created. */
+    /** 在创建评估重试前检查服务端持有的当前节点状态。 */
     public LearningPathItem requireCurrentLearnUnit(String journeyId, String learnUnitCode) {
         activeJourney(journeyId);
         LearningPathItem item = pathItem(journeyId, learnUnitCode);
@@ -284,6 +314,12 @@ public class ProgressService {
         return journey;
     }
 
+    /**
+     * 将第一个 PENDING 节点设为 CURRENT；没有下一个节点时完成 Journey。
+     *
+     * <p>调用方已经完成当前节点的关闭，本方法负责清理旧的 CURRENT 状态、更新 Journey，并记录 NEXT
+     * 转换。</p>
+     */
     private LearningPathItem advanceToNextLearnUnit(
             String journeyId, String closedLearnUnitCode, LearningPathItemStatus closedStatus) {
         LearningJourney before = journey(journeyId);
@@ -331,6 +367,20 @@ public class ProgressService {
         }
     }
 
+    /**
+     * 复制路径节点的稳定身份，只替换调用方传入的进度快照字段。
+     *
+     * @param item 原路径节点
+     * @param status 新节点状态
+     * @param masteryScore 新掌握度
+     * @param bestAssessmentScore 新的历史最高评估分数
+     * @param attemptCount 新的评估次数
+     * @param passReason 新的通过原因
+     * @param startedAt 首次开始时间
+     * @param passedAt 最近通过时间
+     * @param skippedAt 跳过时间
+     * @return 保留原身份和顺序的新路径节点
+     */
     private LearningPathItem copy(
             LearningPathItem item,
             LearningPathItemStatus status,
@@ -346,6 +396,15 @@ public class ProgressService {
                 masteryScore, bestAssessmentScore, attemptCount, passReason, startedAt, passedAt, skippedAt);
     }
 
+    /**
+     * 将一次确定性的学习状态转换序列化后写入 workflow_transition。
+     *
+     * @param journeyId Journey 标识
+     * @param fromState 转换前状态
+     * @param action 执行的动作
+     * @param toState 转换后状态
+     * @param payload 转换附带的确定性事实
+     */
     private void transition(
             String journeyId, String fromState, String action, String toState, Map<String, Object> payload) {
         try {

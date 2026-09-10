@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** Builds an immutable, read-only context from the latest durable learning facts. */
+/** 根据最新持久化学习事实构建不可变、只读的 Tutor 上下文。 */
 @Service
 public class TutorContextService {
 
@@ -23,6 +23,7 @@ public class TutorContextService {
         this.repository = repository;
     }
 
+    /** 根据 Tutor Session 关联找到 Journey 和 LearnUnit；没有关联时返回空上下文。 */
     public TutorContext forSession(String sessionId) {
         return repository.findTutorSessionBySessionId(sessionId)
                 .map(link -> context(link.journeyId(), link.learnUnitCode()))
@@ -33,6 +34,11 @@ public class TutorContextService {
         return forSession(sessionId).systemPrompt();
     }
 
+    /**
+     * 汇总 Journey、学习者画像、当前路径、已掌握内容和薄弱点，生成一次 Tutor 调用所需的上下文。
+     *
+     * <p>所有事实都从 SQLite 读取；本方法只组装提示词数据，不修改学习状态。</p>
+     */
     private TutorContext context(String journeyId, String learnUnitCode) {
         LearningJourney journey = repository.findJourney(journeyId).orElse(null);
         LearnerProfile profile = repository.findProfile(journeyId).orElse(null);

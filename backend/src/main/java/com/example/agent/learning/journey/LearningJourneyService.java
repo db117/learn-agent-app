@@ -1,8 +1,8 @@
 package com.example.agent.learning.journey;
 
-import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.CurriculumService;
+import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
 import org.springframework.stereotype.Service;
@@ -31,6 +31,12 @@ public class LearningJourneyService {
         this.progress = progress;
     }
 
+    /**
+     * 创建 Journey 及其专属学习资料。
+     *
+     * <p>先校验用户输入并生成课程，再按外键依赖依次保存语言、Journey、学习者画像、LearnUnit 和题目，
+     * 最后生成初始学习路径。</p>
+     */
     @Transactional
     public LearningJourney create(
             String userId,

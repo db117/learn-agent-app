@@ -1,7 +1,7 @@
 package com.example.agent.learning.assessment;
 
-import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.diagnostic.DiagnosticQuestionPlanner;
 import com.example.agent.learning.journey.LearnerProfile;
 import com.example.agent.learning.persistence.LearningRepository;
@@ -59,6 +59,12 @@ public class AssessmentService {
         this.llmPlanner = llmPlanner;
     }
 
+    /**
+     * 创建或读取 Journey 的初始诊断评估。
+     *
+     * <p>优先复用已固定的评估；首次创建时先筛选可诊断 LearnUnit 和已有题目，不满足覆盖要求时调用
+     * LLM 规划题目，校验后以 insert-only 方式保存题目并固定题目顺序。</p>
+     */
     @Transactional
     public AssessmentState createDiagnostic(String journeyId) {
         return repository.findDiagnosticAssessment(journeyId)
@@ -93,6 +99,11 @@ public class AssessmentService {
                 });
     }
 
+    /**
+     * 创建或读取指定 LearnUnit 的评估。
+     *
+     * <p>已有题目直接规范化并固定；题库为空时调用 LLM 生成题目。评估创建后题集不会因后续题库变化而改变。</p>
+     */
     @Transactional
     public AssessmentState createLearnUnitAssessment(String journeyId, String learnUnitCode) {
         progress.requireCurrentLearnUnit(journeyId, learnUnitCode);
@@ -125,6 +136,11 @@ public class AssessmentService {
                 });
     }
 
+    /**
+     * 开始一次 Assessment Attempt；已有未完成 Attempt 时保持幂等并直接返回当前状态。
+     *
+     * <p>新 Attempt 会递增序号、更新评估状态；LearnUnit 评估还会通知进度服务进入评估阶段。</p>
+     */
     @Transactional
     public AssessmentState start(String assessmentId) {
         Assessment assessment = requireAssessment(assessmentId);
@@ -143,7 +159,7 @@ public class AssessmentService {
         return state(requireAssessment(assessmentId));
     }
 
-    /** Start another Attempt for the same current LearnUnit Assessment after a failed Attempt. */
+    /** 为同一个当前 LearnUnit Assessment 创建一次失败后的新 Attempt。 */
     @Transactional
     public AssessmentState retry(String journeyId, String learnUnitCode) {
         progress.requireCurrentLearnUnit(journeyId, learnUnitCode);
@@ -159,6 +175,11 @@ public class AssessmentService {
         return start(assessment.id());
     }
 
+    /**
+     * 保存一道题的答案，并对选择题立即执行确定性评分。
+     *
+     * <p>Coding 题只保存代码和原始答案，提交评估时再调用评分器，以便把异步或失败的评分纳入统一收尾流程。</p>
+     */
     @Transactional
     public AssessmentState answer(String assessmentId, QuestionAnswer answer) {
         Assessment assessment = requireAssessment(assessmentId);
@@ -181,6 +202,12 @@ public class AssessmentService {
         return state(assessment);
     }
 
+    /**
+     * 补齐未回答题目、评分 Coding 题、计算总分，并提交评估和学习路径结果。
+     *
+     * <p>诊断评估会按 LearnUnit 汇总通过情况并重新生成路径；LearnUnit 评估会依据通过策略更新当前节点。
+     * 最后才写入 Attempt 和 Assessment 的终态，评分异常按约定保留可重试状态。</p>
+     */
     @Transactional(noRollbackFor = AssessmentEvaluationException.class)
     public AssessmentSubmission submit(String assessmentId) {
         Assessment assessment = requireAssessment(assessmentId);
@@ -239,6 +266,7 @@ public class AssessmentService {
                 learnUnitResults, completedQuestions, passScore, codingPassScore);
     }
 
+    /** 从数据库重新组装评估、固定题集、当前 Attempt 和历史 Attempt 的完整状态。 */
     public AssessmentState state(Assessment assessment) {
         var openAttempt = repository.findOpenAttempt(assessment.id());
         return new AssessmentState(
@@ -275,6 +303,12 @@ public class AssessmentService {
         }
     }
 
+    /**
+     * 校验并补齐模型或题库提供的题目集合。
+     *
+     * <p>该步骤拒绝修改既有题目，检查题目归属、题型规则、诊断资格和重复项，并确保每个 LearnUnit
+     * 达到所需证据数量及题型覆盖。</p>
+     */
     private List<Question> normalize(
             List<Question> proposed, List<LearnUnit> learnUnits, List<Question> available, int minimumEvidence) {
         if (proposed == null || proposed.isEmpty()) throw new IllegalStateException("Generated question set is empty");
