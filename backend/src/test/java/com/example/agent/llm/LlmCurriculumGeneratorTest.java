@@ -1,6 +1,7 @@
 package com.example.agent.llm;
 
 import com.example.agent.learning.catalog.CurriculumGenerator;
+import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.llm.infrastructure.LlmCurriculumGenerator;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -16,12 +17,50 @@ import java.util.stream.IntStream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class LlmCurriculumGeneratorTest {
+
+    @Test
+    void generatesAnOutlineWithoutLessonContentOrQuestions() {
+        LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
+                {
+                  "languages":[{"code":"python","name":"Python","description":"Python path"}],
+                  "learnUnits":[
+                    {"languageCode":"python","code":"python.basics","name":"基础","description":"基础语法",
+                     "sequence":1,"prerequisiteLearnUnitCodes":[],"passScore":80,"minCodingScore":70,
+                     "learningObjectives":["掌握基础"],"keyConcepts":["变量"]}
+                  ]
+                }
+                """));
+
+        CurriculumGenerator.GeneratedOutline result = generator.generateOutline("python", "learn backend APIs");
+
+        assertEquals(List.of("python.basics"), result.learnUnits().stream().map(value -> value.code()).toList());
+        assertTrue(result.learnUnits().get(0).lessonIntro().isBlank());
+        assertTrue(result.learnUnits().get(0).examples().isEmpty());
+    }
+
+    @Test
+    void generatesDetailedContentForAnOutline() {
+        LearnUnit outline = new LearnUnit(
+                "unit", "python", "python.basics", "基础", "基础语法", 1, List.of(), 80, 70, true,
+                List.of("掌握基础"), "", List.of("变量"), List.of(), true);
+        LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
+                {"lessonIntro":"从变量开始","learningObjectives":["能定义变量"],
+                 "keyConcepts":["变量绑定"],"examples":["name = 'Ada'"]}
+                """));
+
+        LearnUnit result = generator.generateContent(outline, "learn backend APIs");
+
+        assertEquals("python.basics", result.code());
+        assertEquals("从变量开始", result.lessonIntro());
+        assertEquals(List.of("name = 'Ada'"), result.examples());
+    }
 
     @Test
     void parsesGeneratedLanguagesLearnUnitsAndAssignsServerIds() {

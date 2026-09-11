@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 /** Collects text from one AgentScope model call for synchronous learning operations. */
 final class AgentScopeTextGenerator {
@@ -24,6 +25,11 @@ final class AgentScopeTextGenerator {
     }
 
     static String generate(Model model, String prompt) {
+        return generate(model, prompt, ignored -> {
+        });
+    }
+
+    static String generate(Model model, String prompt, Consumer<String> onText) {
         LOGGER.info("[LLM-TRACE] request model={} responseFormat={} tools=[] prompt={}",
                 model.getModelName(), JSON_OPTIONS.getResponseFormat().getType(), prompt);
         AtomicInteger blockIndex = new AtomicInteger();
@@ -36,6 +42,7 @@ final class AgentScopeTextGenerator {
                 .filter(TextBlock.class::isInstance)
                 .map(TextBlock.class::cast)
                 .map(TextBlock::getText)
+                .doOnNext(onText)
                 .collect(StringBuilder::new, StringBuilder::append)
                 .map(StringBuilder::toString)
                 .doOnSuccess(value -> LOGGER.info("[LLM-TRACE] response.complete chars={} value={}",

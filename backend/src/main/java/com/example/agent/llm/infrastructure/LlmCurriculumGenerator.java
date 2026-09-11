@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * 使用 AgentScope Model 按用户指定的目标语言按需生成 LearnUnit 内容。
@@ -35,6 +36,77 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
 
     public LlmCurriculumGenerator(Model model) {
         this.model = model;
+    }
+
+    @Override
+    public GeneratedOutline generateOutline(String requestedLanguage, String learningContext) {
+        return generateOutline(requestedLanguage, learningContext, ignored -> {
+        });
+    }
+
+    @Override
+    public GeneratedOutline generateOutline(
+            String requestedLanguage, String learningContext, Consumer<String> onText) {
+        if (requestedLanguage == null || requestedLanguage.isBlank()) {
+            throw new IllegalArgumentException("Requested language must not be blank");
+        }
+        String language = requestedLanguage.trim();
+        String prompt = """
+                你是一个学习系统的课程架构师。请只生成学习大纲，返回 JSON，不要返回 Markdown 或解释文字：
+                {
+                  "languages":[{"code":"...","name":"...","description":"..."}],
+                  "learnUnits":[{
+                    "languageCode":"...","code":"...","name":"...","description":"...",
+                    "sequence":1,"prerequisiteLearnUnitCodes":[],"passScore":80,"minCodingScore":70,
+                    "learningObjectives":["..."],"keyConcepts":["..."]
+                  }]
+                }
+                用户指定的目标编程语言是：%s
+                只生成这个目标语言，不要生成其他语言；languages 数组必须只有一个元素。
+                生成足以覆盖学习目标的循序渐进 LearnUnit，数量按内容需要决定，不设上限，也不要为了凑数重复内容。
+                学习者的目标和背景如下，请让知识点顺序和前置关系与其相关：%s
+                至少有一个无前置 LearnUnit 的起点；前置 LearnUnit 只能引用同一语言中已经生成的 code，不能循环。
+                code 使用稳定、简短、适合 URL 的英文标识；每个 LearnUnit 的 code 必须唯一。
+                name、description、learningObjectives、keyConcepts 使用中文，但技术术语和语言名称可以保留英文。
+                每个 LearnUnit 必须提供至少一个学习目标和一个关键知识点。
+                如果上下文包含用户调整要求，只调整知识点、单元说明和学习顺序/前置关系，不修改 passScore、minCodingScore 或诊断规则。
+                不要生成 lessonIntro、examples、questions 或任何考试内容。
+                """.formatted(language, learningContext == null ? "" : learningContext.trim());
+        try {
+            JsonNode root = MAPPER.readTree(extractJson(AgentScopeTextGenerator.generate(model, prompt, onText)));
+            return parseOutline(root);
+        } catch (Exception error) {
+            throw new IllegalArgumentException("Curriculum outline generator returned invalid JSON", error);
+        }
+    }
+
+    @Override
+    public LearnUnit generateContent(LearnUnit outline, String learningContext) {
+        if (outline == null) throw new IllegalArgumentException("LearnUnit outline is required");
+        if (outline.hasDetailedContent()) return outline;
+        String prompt = """
+                你是一个学习系统的教学内容作者。请为下面这个已经确认的 LearnUnit 生成教学正文，返回 JSON，不要返回 Markdown：
+                {
+                  "lessonIntro":"...",
+                  "examples":["..."]
+                }
+                学习者背景：%s
+                LearnUnit 大纲：code=%s, name=%s, description=%s, objectives=%s, concepts=%s
+                内容必须具体、可学习；examples 至少一个；不要生成题目、答案或评分规则。
+                """.formatted(
+                learningContext == null ? "" : learningContext.trim(), outline.code(), outline.name(),
+                outline.description(), outline.learningObjectives(), outline.keyConcepts());
+        try {
+            JsonNode root = MAPPER.readTree(extractJson(AgentScopeTextGenerator.generate(model, prompt)));
+            String intro = requiredText(root, "lessonIntro");
+            List<String> examples = strings(root.get("examples"));
+            if (examples.isEmpty()) {
+                throw new IllegalArgumentException("Detailed LearnUnit content must not be empty");
+            }
+            return outline.withDetailedContent(outline.learningObjectives(), intro, outline.keyConcepts(), examples);
+        } catch (Exception error) {
+            throw new IllegalArgumentException("LearnUnit content generator returned invalid JSON", error);
+        }
     }
 
     /**
@@ -155,6 +227,52 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
             }
         }
         return new GeneratedCurriculum(languages, learnUnits, parseQuestions(root, learnUnitCodes));
+    }
+
+    private GeneratedOutline parseOutline(JsonNode root) {
+        JsonNode languageNodes = root == null ? null : root.get("languages");
+        JsonNode learnUnitNodes = root == null ? null : root.get("learnUnits");
+        if (languageNodes == null || !languageNodes.isArray() || languageNodes.isEmpty()
+                || learnUnitNodes == null || !learnUnitNodes.isArray() || learnUnitNodes.isEmpty()) {
+            throw new IllegalArgumentException("languages and learnUnits must be non-empty arrays");
+        }
+        List<LearningLanguage> languages = new ArrayList<>();
+        Set<String> languageCodes = new HashSet<>();
+        for (JsonNode node : languageNodes) {
+            String code = requiredText(node, "code");
+            if (!languageCodes.add(code)) throw new IllegalArgumentException("Duplicate language code: " + code);
+            languages.add(new LearningLanguage(
+                    "generated-language-" + UUID.randomUUID(), code, requiredText(node, "name"),
+                    requiredText(node, "description"), true));
+        }
+        List<LearnUnit> learnUnits = new ArrayList<>();
+        Set<String> learnUnitCodes = new HashSet<>();
+        for (JsonNode node : learnUnitNodes) {
+            String code = requiredText(node, "code");
+            String languageCode = requiredText(node, "languageCode");
+            if (!languageCodes.contains(languageCode)) {
+                throw new IllegalArgumentException("LearnUnit belongs to unknown language: " + code);
+            }
+            if (!learnUnitCodes.add(code)) throw new IllegalArgumentException("Duplicate LearnUnit code: " + code);
+            List<String> objectives = strings(node.get("learningObjectives"));
+            List<String> concepts = strings(node.get("keyConcepts"));
+            if (objectives.isEmpty() || concepts.isEmpty()) {
+                throw new IllegalArgumentException("Outline LearnUnit needs objectives and keyConcepts");
+            }
+            learnUnits.add(new LearnUnit(
+                    "generated-learn-unit-" + UUID.randomUUID(), languageCode, code, requiredText(node, "name"),
+                    requiredText(node, "description"), requiredBoundedInt(node, "sequence", 1, 1000),
+                    strings(node.get("prerequisiteLearnUnitCodes")), requiredBoundedInt(node, "passScore", 0, 100),
+                    nullableBoundedInt(node, "minCodingScore", 0, 100), true, objectives, "", concepts, List.of(), true));
+        }
+        for (LearnUnit learnUnit : learnUnits) {
+            for (String prerequisite : learnUnit.prerequisiteLearnUnitCodes()) {
+                if (!learnUnitCodes.contains(prerequisite)) {
+                    throw new IllegalArgumentException("Unknown prerequisite LearnUnit: " + prerequisite);
+                }
+            }
+        }
+        return new GeneratedOutline(languages, learnUnits);
     }
 
     /**

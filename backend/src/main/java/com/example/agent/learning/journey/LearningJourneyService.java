@@ -79,6 +79,43 @@ public class LearningJourneyService {
         return get(id);
     }
 
+    /** 用户确认大纲后才把 Journey、画像、LearnUnit 大纲和 Path 一次性写入 SQLite。 */
+    @Transactional
+    public LearningJourney confirmOutline(
+            String userId, String journeyId, JourneyDraftInput input,
+            CurriculumGenerator.GeneratedOutline generated) {
+        validateInput(input);
+        if (generated == null || generated.languages().size() != 1) {
+            throw new IllegalArgumentException("a single generated language is required");
+        }
+        LearningLanguage language = generated.languages().get(0);
+        Instant now = Instant.now();
+        curriculum.persistLanguages(new CurriculumGenerator.GeneratedCurriculum(
+                generated.languages(), List.of(), List.of()));
+        repository.insertJourney(new LearningJourney(
+                journeyId, userId, language.code(), input.goal().trim(), JourneyStatus.ACTIVE, now, now));
+        repository.saveProfile(new LearnerProfile(
+                journeyId, input.primaryLanguage().trim(), input.experienceYears(),
+                input.selfDescription() == null ? "" : input.selfDescription().trim(), input.learningGoal().trim()));
+        curriculum.persistJourneyOutline(journeyId, generated);
+        progress.generatePath(journeyId);
+        return get(journeyId);
+    }
+
+    /** 给大纲和按需内容生成器使用的稳定用户上下文。 */
+    public String learningContext(JourneyDraftInput input) {
+        validateInput(input);
+        return """
+                Journey 目标：%s
+                具体学习目标：%s
+                学习者主要语言：%s
+                相关经验年数：%s
+                当前水平补充：%s
+                """.formatted(input.goal().trim(), input.learningGoal().trim(), input.primaryLanguage().trim(),
+                input.experienceYears() == null ? "未知" : input.experienceYears(),
+                input.selfDescription() == null ? "" : input.selfDescription().trim());
+    }
+
     public LearningJourney get(String id) {
         return repository.findJourney(id)
                 .orElseThrow(() -> new IllegalArgumentException("journey not found: " + id));
@@ -97,5 +134,16 @@ public class LearningJourneyService {
 
     private void requireText(String value, String name) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
+    }
+
+    private void validateInput(JourneyDraftInput input) {
+        if (input == null) throw new IllegalArgumentException("draft input is required");
+        requireText(input.languageCode(), "languageCode");
+        requireText(input.goal(), "goal");
+        requireText(input.primaryLanguage(), "primaryLanguage");
+        requireText(input.learningGoal(), "learningGoal");
+        if (input.experienceYears() != null && (input.experienceYears() < 0 || input.experienceYears() > 100)) {
+            throw new IllegalArgumentException("experienceYears must be between 0 and 100");
+        }
     }
 }

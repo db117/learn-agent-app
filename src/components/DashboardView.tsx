@@ -49,6 +49,7 @@ export function DashboardView({
     const passed = path.filter((item) => item.status === "COMPLETED").length;
     const skipped = path.filter((item) => item.status === "SKIPPED").length;
     const current = learnUnit;
+    const hasDetailedContent = Boolean(current?.learnUnit.lessonIntro.trim() && current.learnUnit.examples.length);
     const next = path.find((item) => item.status === "PENDING");
     const nextStep = next
         ? learnUnitLabel(learnUnits, next.learnUnitCode)
@@ -87,7 +88,10 @@ export function DashboardView({
                             <span
                                 className="status-pill">{pathStatusLabel(current.pathItem?.status ?? "CURRENT")}</span>
                         </div>
-                        <p className="lead">{current.learnUnit.lessonIntro}</p>
+                        <p className="lead">{hasDetailedContent ? current.learnUnit.lessonIntro : current.learnUnit.description}</p>
+                        {!hasDetailedContent && <p className="generation-status" role="status">
+                            这是已确认的大纲。点击“开始学习”后，Agent 才会生成这个单元的详细内容。
+                        </p>}
                         <div className="lesson-stats">
                             <span>掌握度 {current.pathItem?.masteryScore ?? 0}</span>
                             <span>最佳成绩 {current.pathItem?.bestAssessmentScore ?? 0}</span>
@@ -104,8 +108,8 @@ export function DashboardView({
                                     key={item}>{item}</span>)}</div>
                             </div>
                         </div>
-                        <div className="example-block"><h3>Example</h3>{current.learnUnit.examples.map((item) => <p
-                            key={item}>{item}</p>)}</div>
+                        {hasDetailedContent && <div className="example-block"><h3>Example</h3>{current.learnUnit.examples.map((item) => <p
+                            key={item}>{item}</p>)}</div>}
                         {current.questionAttempts.filter((item) => item.feedback?.trim()).slice(0, 3).length > 0 && (
                             <div className="feedback-block">
                                 <h3>最近反馈</h3>{current.questionAttempts.filter((item) => item.feedback?.trim()).slice(0, 3).map((item) =>
@@ -113,13 +117,13 @@ export function DashboardView({
                         )}
                         <div className="button-row">
                             <button className="primary" onClick={() => void onOpenLearnUnit(current.learnUnit.code)}
-                                    disabled={busy || !currentLearnUnit}>Continue
+                                    disabled={busy || !currentLearnUnit}>{hasDetailedContent ? "继续学习" : "开始学习"}
                             </button>
                             <button className="secondary" onClick={() => void onRetryCurrentLearnUnit()}
                                     disabled={busy || !canRetry}>Retry
                             </button>
                             <button className="primary" onClick={() => void onStartLearnUnitAssessment()}
-                                    disabled={busy || !currentLearnUnit}>开始 LearnUnit 评估
+                                    disabled={busy || !currentLearnUnit || !hasDetailedContent}>开始 LearnUnit 评估
                             </button>
                             <button className="secondary" onClick={() => void onSkipCurrentLearnUnit()}
                                     disabled={busy || !currentLearnUnit || hasOpenAttempt}>Skip
@@ -128,7 +132,7 @@ export function DashboardView({
                     </>
                 )}
             </section>
-            <TutorPanel {...tutor} />
+            <TutorPanel {...tutor} learnUnit={hasDetailedContent ? tutor.learnUnit : null} />
         </section>
     );
 }

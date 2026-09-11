@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -70,6 +71,38 @@ public class CurriculumService {
         return scopeToJourney(journeyId, generated);
     }
 
+    /** 为首次确认流程生成只包含知识点和路径信息的草稿。 */
+    public CurriculumGenerator.GeneratedOutline generateOutlineForJourney(
+            String journeyId, String requestedLanguage, String learningContext) {
+        return generateOutlineForJourney(journeyId, requestedLanguage, learningContext, ignored -> {
+        });
+    }
+
+    /** 生成大纲并把模型文本增量转发给 Journey draft 的事件流。 */
+    public CurriculumGenerator.GeneratedOutline generateOutlineForJourney(
+            String journeyId, String requestedLanguage, String learningContext, Consumer<String> onText) {
+        requireJourneyId(journeyId);
+        requireLanguage(requestedLanguage);
+        String requested = requestedLanguage.trim();
+        CurriculumGenerator.GeneratedOutline generated;
+        try {
+            generated = generator.generateOutline(
+                    requested, learningContext == null ? "" : learningContext.trim(), onText);
+        } catch (RuntimeException error) {
+            LOGGER.error("curriculum.outline.failed journeyId={} language={}", journeyId, requested, error);
+            throw new IllegalStateException("Unable to generate learning outline", error);
+        }
+        validateOutline(generated);
+        if (generated.languages().size() != 1) {
+            throw new IllegalStateException("Generated outline must contain exactly one requested language");
+        }
+        LearningLanguage language = generated.languages().get(0);
+        if (!sameLanguage(requested, language)) {
+            throw new IllegalStateException("Generated outline does not match requested language: " + requested);
+        }
+        return scopeToJourney(journeyId, generated);
+    }
+
     /** 先写入语言元数据，满足 Journey 的语言外键约束。 */
     public void persistLanguages(CurriculumGenerator.GeneratedCurriculum generated) {
         repository.insertGeneratedCatalog(generated.languages(), List.of());
@@ -81,6 +114,31 @@ public class CurriculumService {
             String journeyId, CurriculumGenerator.GeneratedCurriculum generated) {
         repository.insertGeneratedCatalogForJourney(journeyId, generated.languages(), generated.learnUnits());
         generated.questions().forEach(repository::insertGeneratedQuestion);
+    }
+
+    /** 只保存用户确认的大纲，不写入教学正文或题目。 */
+    @Transactional
+    public void persistJourneyOutline(String journeyId, CurriculumGenerator.GeneratedOutline generated) {
+        repository.insertGeneratedCatalogForJourney(journeyId, generated.languages(), generated.learnUnits());
+    }
+
+    /** 第一次进入具体 LearnUnit 时才生成并保存教学正文。 */
+    @Transactional
+    public LearnUnit ensureLearnUnitContent(String journeyId, String learnUnitCode) {
+        LearnUnit outline = repository.listLearnUnitsForJourney(journeyId).stream()
+                .filter(unit -> unit.code().equals(learnUnitCode))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("LearnUnit not found: " + learnUnitCode));
+        if (outline.hasDetailedContent()) return outline;
+        String context = repository.findJourney(journeyId)
+                .map(journey -> "Journey 目标：" + journey.goal())
+                .orElse("") + repository.findProfile(journeyId)
+                .map(profile -> "\n学习者背景：" + profile)
+                .orElse("");
+        LearnUnit generated = generator.generateContent(outline, context);
+        validateDetailedContent(outline, generated);
+        repository.updateLearnUnitContent(generated);
+        return repository.findLearnUnit(outline.code()).orElse(generated);
     }
 
     /**
@@ -110,6 +168,75 @@ public class CurriculumService {
                         question.referenceConceptsJson(), question.diagnosticEligible()))
                 .toList();
         return new CurriculumGenerator.GeneratedCurriculum(generated.languages(), learnUnits, questions);
+    }
+
+    private CurriculumGenerator.GeneratedOutline scopeToJourney(
+            String journeyId, CurriculumGenerator.GeneratedOutline generated) {
+        Map<String, String> scopedCodes = generated.learnUnits().stream()
+                .collect(Collectors.toMap(LearnUnit::code, learnUnit -> journeyId + "." + learnUnit.code()));
+        List<LearnUnit> learnUnits = generated.learnUnits().stream()
+                .map(learnUnit -> new LearnUnit(
+                        journeyId + "." + learnUnit.id(), learnUnit.languageCode(), scopedCodes.get(learnUnit.code()),
+                        learnUnit.name(), learnUnit.description(), learnUnit.sequence(),
+                        learnUnit.prerequisiteLearnUnitCodes().stream().map(scopedCodes::get).toList(),
+                        learnUnit.passScore(), learnUnit.minCodingScore(), learnUnit.enabled(),
+                        learnUnit.learningObjectives(), learnUnit.lessonIntro(), learnUnit.keyConcepts(),
+                        learnUnit.examples(), learnUnit.diagnosticEligible()))
+                .toList();
+        return new CurriculumGenerator.GeneratedOutline(generated.languages(), learnUnits);
+    }
+
+    private void validateOutline(CurriculumGenerator.GeneratedOutline generated) {
+        if (generated == null || generated.languages().isEmpty() || generated.learnUnits().isEmpty()) {
+            throw new IllegalStateException("Generated outline must contain languages and LearnUnits");
+        }
+        Map<String, LearningLanguage> languages = generated.languages().stream()
+                .collect(Collectors.toMap(LearningLanguage::code, Function.identity(), (left, right) -> {
+                    throw new IllegalStateException("Duplicate generated language: " + left.code());
+                }));
+        Map<String, LearnUnit> learnUnits = generated.learnUnits().stream()
+                .collect(Collectors.toMap(LearnUnit::code, Function.identity(), (left, right) -> {
+                    throw new IllegalStateException("Duplicate generated LearnUnit: " + left.code());
+                }));
+        for (LearningLanguage language : languages.values()) {
+            if (language.code().isBlank() || language.name().isBlank() || language.description().isBlank()) {
+                throw new IllegalStateException("Generated outline language is incomplete");
+            }
+        }
+        for (LearnUnit learnUnit : learnUnits.values()) {
+            if (learnUnit.code().isBlank() || learnUnit.name().isBlank() || learnUnit.description().isBlank()
+                    || !languages.containsKey(learnUnit.languageCode()) || learnUnit.sequence() < 1
+                    || learnUnit.learningObjectives().isEmpty() || learnUnit.keyConcepts().isEmpty()
+                    || learnUnit.hasDetailedContent()) {
+                throw new IllegalStateException("Generated outline LearnUnit is incomplete: " + learnUnit.code());
+            }
+            if (learnUnit.passScore() < 0 || learnUnit.passScore() > 100
+                    || learnUnit.minCodingScore() != null
+                    && (learnUnit.minCodingScore() < 0 || learnUnit.minCodingScore() > 100)) {
+                throw new IllegalStateException("Generated outline LearnUnit has invalid score rules: " + learnUnit.code());
+            }
+            for (String prerequisite : learnUnit.prerequisiteLearnUnitCodes()) {
+                if (!learnUnits.containsKey(prerequisite)) {
+                    throw new IllegalStateException("Generated outline has unknown prerequisite: " + prerequisite);
+                }
+            }
+        }
+        validateAcyclic(learnUnits);
+    }
+
+    private void validateDetailedContent(LearnUnit outline, LearnUnit generated) {
+        if (generated == null || !generated.hasDetailedContent()
+                || !generated.id().equals(outline.id()) || !generated.code().equals(outline.code())) {
+            throw new IllegalStateException("Generated LearnUnit content does not match the outline");
+        }
+    }
+
+    private void requireJourneyId(String value) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException("journeyId must not be blank");
+    }
+
+    private void requireLanguage(String value) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException("language must not be blank");
     }
 
     private boolean sameLanguage(String requested, LearningLanguage generated) {

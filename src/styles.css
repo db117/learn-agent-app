@@ -267,6 +267,35 @@ h3 { margin-bottom: 10px; font-size: 14px; }
     color: var(--accent-strong);
     font-size: 12px;
 }
+
+.journey-draft {
+    max-width: 1560px;
+    margin: 8px auto 0;
+    padding: 28px;
+}
+.draft-header { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
+.draft-header h2 { margin-top: 7px; font-size: 29px; }
+.draft-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(360px, .9fr); gap: 14px; min-height: 560px; }
+.draft-conversation { display: flex; min-height: 0; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-card); overflow: hidden; }
+.draft-events { flex: 1; min-height: 380px; max-height: 62vh; overflow: auto; padding: 16px; }
+.draft-event { margin-bottom: 10px; border: 1px solid var(--border-message); border-radius: 9px; padding: 10px 12px; background: var(--surface-message); }
+.draft-event-user { background: var(--surface-message-user); border-color: var(--border-message-user); }
+.draft-event > div { display: flex; justify-content: space-between; gap: 12px; color: var(--accent); font-size: 11px; font-weight: 700; }
+.draft-event small { color: var(--text-subtle); font-weight: 400; }
+.draft-event p { margin: 6px 0 0; color: var(--text-content); font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.draft-composer { display: flex; gap: 9px; align-items: end; padding: 12px; border-top: 1px solid var(--border); }
+.draft-composer textarea { min-height: 50px; margin: 0; resize: vertical; }
+.draft-composer button { flex: 0 0 auto; }
+.draft-outline { min-height: 0; }
+.draft-outline-content { overflow: auto; padding: 16px; }
+.draft-unit { border-bottom: 1px solid var(--border-event); padding: 0 0 17px; margin-bottom: 17px; }
+.draft-unit:last-child { border-bottom: 0; margin-bottom: 0; }
+.draft-unit-title { display: flex; align-items: center; gap: 9px; }
+.draft-unit-title > span { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%; color: var(--text-number); background: var(--surface-number); font-size: 11px; }
+.draft-unit p { margin: 8px 0 13px; color: var(--text-content); font-size: 13px; line-height: 1.55; }
+.draft-unit h4 { margin: 12px 0 7px; color: var(--text-panel); font-size: 12px; }
+.draft-unit ul { font-size: 12px; }
+.draft-actions { flex-wrap: wrap; margin-top: 18px; }
 .onboarding form { margin-top: 28px; }
 
 label {
@@ -697,6 +726,7 @@ ul {
 @media (max-width: 1120px) {
     .journey-grid { grid-template-columns: 220px minmax(380px, 1fr); }
     .tutor { grid-column: 1 / -1; min-height: 280px; }
+    .draft-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {
@@ -704,6 +734,9 @@ ul {
     .shell { padding: 16px; }
     .topbar { align-items: start; flex-direction: column; gap: 13px; }
     .journey-grid { display: flex; height: auto; min-height: 0; flex-direction: column; }
+    .journey-draft { padding: 20px; }
+    .draft-header { flex-direction: column; }
+    .draft-events { max-height: 50vh; }
     .path { max-height: 270px; }
     .lesson { min-height: 560px; }
     .form-grid, .lesson-columns { grid-template-columns: 1fr; }

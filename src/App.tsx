@@ -3,6 +3,7 @@ import {invoke, isTauri} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {type AnswerDraft, AssessmentView, emptyDraft} from "./components/AssessmentView";
 import {DashboardView} from "./components/DashboardView";
+import {JourneyDraftView} from "./components/JourneyDraftView";
 import {ResultView} from "./components/ResultView";
 import {type JourneyForm, WelcomeView} from "./components/WelcomeView";
 import {type BackendStatus, type ImportedState, useDatabaseTransfer} from "./hooks/useDatabaseTransfer";
@@ -14,11 +15,13 @@ import {
   type BackendHealth,
   type CreateJourneyInput,
   type JourneyDetail,
+  type JourneyDraftEvent,
+  type JourneyDraftOutline,
   type LearnUnit,
   type LearnUnitResponse,
 } from "./lib/api";
 
-type View = "welcome" | "diagnostic" | "result" | "dashboard" | "assessment";
+type View = "welcome" | "journey-draft" | "diagnostic" | "result" | "dashboard" | "assessment";
 type Theme = "dark" | "light";
 
 const THEME_STORAGE_KEY = "learning-journey-theme";
@@ -94,6 +97,10 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draftRunId, setDraftRunId] = useState<string | null>(null);
+  const [draftEvents, setDraftEvents] = useState<JourneyDraftEvent[]>([]);
+  const [draftOutline, setDraftOutline] = useState<JourneyDraftOutline | null>(null);
+  const [draftStatus, setDraftStatus] = useState("GENERATING");
   const [form, setForm] = useState<JourneyForm>({
     languageCode: "",
     goal: "Build a practical programming foundation",
@@ -117,7 +124,11 @@ export default function App() {
   } = useTutorSession({journeyId, learnUnit, setBusy, setError, errorMessage});
 
   function resetLearningState() {
+    if (draftRunId) void api.cancelJourneyDraft(draftRunId).catch(() => undefined);
     resetTutor();
+    setDraftRunId(null);
+    setDraftEvents([]);
+    setDraftOutline(null);
     setJourney(null);
     setLearnUnits([]);
     setLearnUnit(null);
@@ -225,6 +236,52 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!draftRunId) return;
+    let terminal = false;
+    const source = new EventSource(api.journeyDraftEventsUrl(draftRunId));
+    source.onmessage = (message) => {
+      try {
+        const next = JSON.parse(message.data) as JourneyDraftEvent;
+        setDraftEvents((current) => current.some((item) => item.sequence === next.sequence) ? current : [...current, next]);
+        setDraftStatus(next.status);
+        if (next.outline) setDraftOutline(next.outline);
+        if (next.eventType === "error" || next.eventType === "cancelled") {
+          terminal = true;
+          setBusy(false);
+          if (next.eventType === "error") {
+            setDraftOutline(null);
+            setError(next.content);
+          }
+        }
+        if (next.eventType === "confirmed") {
+          terminal = true;
+          setBusy(false);
+          void (async () => {
+            try {
+              const id = next.journeyId ?? next.runId;
+              const detail = await api.journey(id);
+              setJourney(detail);
+              const current = detail.path.find((item) => item.status === "CURRENT");
+              setLearnUnit(current ? await api.learnUnit(id, current.learnUnitCode) : null);
+              setDraftRunId(null);
+              setView("dashboard");
+            } catch (cause) {
+              setError(errorMessage(cause, "Journey 已保存，但学习路径加载失败"));
+              setBusy(false);
+            }
+          })();
+        }
+      } catch {
+        setError("无法读取 Journey 草稿事件");
+      }
+    };
+    source.onerror = () => {
+      if (!terminal) setError("Agent 对话连接中断，请重试");
+    };
+    return () => source.close();
+  }, [draftRunId]);
+
+  useEffect(() => {
     if (!journey?.journey.id) return;
     void api.journeyLearnUnits(journey.journey.id).then(setLearnUnits).catch(() => undefined);
   }, [journey?.journey.id]);
@@ -248,23 +305,6 @@ export default function App() {
     setAnswers((current) => ({...current, ...answerDrafts(next)}));
   }
 
-  async function beginDiagnostic(id: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      const created = await api.diagnostic(id);
-      const started = created.openAttempt ? created : await api.startAssessment(created.assessment.id);
-      hydrateAssessment(started);
-      setAssessmentResult(null);
-      setQuestionIndex(firstUnanswered(started));
-      setView("diagnostic");
-    } catch (cause) {
-      setError(errorMessage(cause, "Unable to start diagnostic"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function createJourney(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -278,14 +318,58 @@ export default function App() {
       learningGoal: form.learningGoal.trim() || form.goal.trim(),
     };
     try {
-      const created = await api.createJourney(input);
-      const detail = await api.journey(created.id);
-      setJourney(detail);
-      await beginDiagnostic(created.id);
+      const started = await api.startJourneyDraft(input);
+      setDraftRunId(started.runId);
+      setDraftEvents([]);
+      setDraftOutline(null);
+      setDraftStatus("GENERATING");
+      setView("journey-draft");
     } catch (cause) {
       setError(errorMessage(cause, "Journey 生成失败，请检查输入后重试"));
+    } finally {
       setBusy(false);
     }
+  }
+
+  async function sendDraftGuidance(content: string) {
+    if (!draftRunId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.guideJourneyDraft(draftRunId, content);
+    } catch (cause) {
+      setError(errorMessage(cause, "无法把调整要求发送给 Agent"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDraft() {
+    if (!draftRunId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.confirmJourneyDraft(draftRunId);
+    } catch (cause) {
+      setError(errorMessage(cause, "无法确认 Journey 大纲"));
+      setBusy(false);
+    }
+  }
+
+  async function cancelDraft() {
+    if (draftRunId) {
+      try {
+        await api.cancelJourneyDraft(draftRunId);
+      } catch (cause) {
+        setError(errorMessage(cause, "无法取消 Journey 草稿"));
+        return;
+      }
+    }
+    setDraftRunId(null);
+    setDraftEvents([]);
+    setDraftOutline(null);
+    setView("welcome");
+    setBusy(false);
   }
 
   async function saveCurrentAnswer() {
@@ -440,6 +524,10 @@ export default function App() {
   }
 
   function newJourney() {
+    if (draftRunId) void api.cancelJourneyDraft(draftRunId).catch(() => undefined);
+    setDraftRunId(null);
+    setDraftEvents([]);
+    setDraftOutline(null);
     setJourney(null);
     setLearnUnit(null);
     setAssessment(null);
@@ -492,8 +580,19 @@ export default function App() {
               busy={busy}
               onFormChange={(field, value) => setForm((current) => ({...current, [field]: value}))}
               onCreateJourney={createJourney}
-              onBeginDiagnostic={beginDiagnostic}
+              onOpenJourney={continueToDashboard}
               onNewJourney={newJourney}
+          />
+      )}
+      {view === "journey-draft" && (
+          <JourneyDraftView
+              events={draftEvents}
+              outline={draftOutline}
+              status={draftStatus}
+              busy={busy}
+              onSendGuidance={sendDraftGuidance}
+              onConfirm={confirmDraft}
+              onCancel={cancelDraft}
           />
       )}
       {(view === "diagnostic" || view === "assessment") && (

@@ -47,4 +47,18 @@ public record LearnUnit(
         keyConcepts = List.copyOf(keyConcepts == null ? List.of() : keyConcepts);
         examples = List.copyOf(examples == null ? List.of() : examples);
     }
+
+    /** 大纲行在生成教学正文前允许为空；题目也不会在此阶段生成。 */
+    public boolean hasDetailedContent() {
+        return lessonIntro != null && !lessonIntro.isBlank() && !examples.isEmpty();
+    }
+
+    /** 保留稳定的目录身份，只替换模型按需生成的教学正文。 */
+    public LearnUnit withDetailedContent(
+            List<String> objectives, String intro, List<String> concepts, List<String> generatedExamples) {
+        return new LearnUnit(
+                id, languageCode, code, name, description, sequence, prerequisiteLearnUnitCodes,
+                passScore, minCodingScore, enabled, objectives, intro, concepts, generatedExamples,
+                diagnosticEligible);
+    }
 }

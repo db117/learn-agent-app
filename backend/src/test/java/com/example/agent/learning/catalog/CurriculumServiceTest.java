@@ -9,7 +9,11 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -88,6 +92,27 @@ class CurriculumServiceTest {
         verify(repository).insertGeneratedCatalogForJourney(
                 "journey-1", List.of(language), generated.learnUnits());
         verify(repository).insertGeneratedQuestion(generated.questions().get(0));
+    }
+
+    @Test
+    void persistsConfirmedOutlineWithoutQuestionsOrLessonContent() {
+        LearningLanguage language = language("python");
+        LearnUnit outlineUnit = new LearnUnit(
+                "unit", "python", "python.basics", "基础", "基础语法", 1, List.of(), 80, 70, true,
+                List.of("掌握基础"), "", List.of("变量"), List.of(), true);
+        CurriculumGenerator.GeneratedOutline outline = new CurriculumGenerator.GeneratedOutline(
+                List.of(language), List.of(outlineUnit));
+        when(generator.generateOutline(anyString(), eq("learn APIs"), any())).thenReturn(outline);
+
+        CurriculumGenerator.GeneratedOutline scoped = service.generateOutlineForJourney(
+                "journey-1", "python", "learn APIs");
+        service.persistJourneyOutline("journey-1", scoped);
+
+        assertEquals("journey-1.python.basics", scoped.learnUnits().get(0).code());
+        assertTrue(scoped.learnUnits().get(0).lessonIntro().isBlank());
+        assertTrue(scoped.learnUnits().get(0).examples().isEmpty());
+        verify(repository).insertGeneratedCatalogForJourney("journey-1", List.of(language), scoped.learnUnits());
+        verify(repository, org.mockito.Mockito.never()).insertGeneratedQuestion(any());
     }
 
     @Test

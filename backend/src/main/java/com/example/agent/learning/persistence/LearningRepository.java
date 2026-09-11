@@ -164,6 +164,21 @@ public class LearningRepository {
                 .optional();
     }
 
+    /** 只补齐已确认 LearnUnit 的教学正文；目录身份和通过规则不可被正文生成覆盖。 */
+    public void updateLearnUnitContent(LearnUnit learnUnit) {
+        jdbc.sql("""
+                        UPDATE learn_unit SET learning_objectives_json = :objectives,
+                          lesson_intro = :intro, key_concepts_json = :concepts, examples_json = :examples
+                        WHERE code = :code
+                        """)
+                .param("objectives", json(learnUnit.learningObjectives()))
+                .param("intro", learnUnit.lessonIntro())
+                .param("concepts", json(learnUnit.keyConcepts()))
+                .param("examples", json(learnUnit.examples()))
+                .param("code", learnUnit.code())
+                .update();
+    }
+
     /** 查询指定 LearnUnit 的活动题目；已 soft delete 的题目不会出现在新评估中。 */
     public List<Question> listQuestionsForLearnUnit(String learnUnitCode) {
         return jdbc.sql("""

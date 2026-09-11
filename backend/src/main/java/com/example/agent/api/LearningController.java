@@ -12,6 +12,9 @@ import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.journey.LearnerProfile;
+import com.example.agent.learning.journey.JourneyDraftEvent;
+import com.example.agent.learning.journey.JourneyDraftInput;
+import com.example.agent.learning.journey.JourneyDraftRunService;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
 import com.example.agent.learning.path.LearningPathItem;
@@ -22,6 +25,7 @@ import com.example.agent.learning.tutor.TutorSessionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,6 +35,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
@@ -54,6 +59,7 @@ public class LearningController {
     private final ProgressService progress;
     private final AssessmentService assessments;
     private final TutorSessionService tutorSessions;
+    private final JourneyDraftRunService journeyDrafts;
     private final AppProperties properties;
 
     public LearningController(
@@ -63,6 +69,7 @@ public class LearningController {
             ProgressService progress,
             AssessmentService assessments,
             TutorSessionService tutorSessions,
+            JourneyDraftRunService journeyDrafts,
             AppProperties properties) {
         this.learning = learning;
         this.curriculum = curriculum;
@@ -70,6 +77,7 @@ public class LearningController {
         this.progress = progress;
         this.assessments = assessments;
         this.tutorSessions = tutorSessions;
+        this.journeyDrafts = journeyDrafts;
         this.properties = properties;
     }
 
@@ -86,12 +94,46 @@ public class LearningController {
         return learning.listLearnUnitsForJourney(id);
     }
 
-    /** 创建 Journey 和学习者画像。 */
-    @PostMapping("/journeys")
-    public LearningJourney createJourney(@RequestBody CreateJourneyRequest request) {
+    /** 启动首次 Journey 大纲生成；真正写库由确认接口触发。 */
+    @PostMapping("/journey-drafts")
+    public JourneyDraftStartResponse startJourneyDraft(@RequestBody CreateJourneyRequest request) {
         if (request == null) throw new IllegalArgumentException("request is required");
-        return journeys.create(properties.userId(), request.languageCode(), request.goal(), request.primaryLanguage(),
-                request.experienceYears(), request.selfDescription(), request.learningGoal());
+        String runId = journeyDrafts.start(properties.userId(), new JourneyDraftInput(
+                request.languageCode(), request.goal(), request.primaryLanguage(), request.experienceYears(),
+                request.selfDescription(), request.learningGoal()));
+        return new JourneyDraftStartResponse(runId);
+    }
+
+    /** 订阅首次 Journey 的 Agent/模型对话和大纲事件。 */
+    @GetMapping(value = "/journey-drafts/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<org.springframework.http.codec.ServerSentEvent<JourneyDraftEvent>> journeyDraftEvents(
+            @PathVariable String runId) {
+        return journeyDrafts.events(runId)
+                .map(event -> org.springframework.http.codec.ServerSentEvent.<JourneyDraftEvent>builder(event)
+                        .id(Long.toString(event.sequence())).build());
+    }
+
+    /** 把用户的调整要求排入下一轮模型对话。 */
+    @PostMapping("/journey-drafts/{runId}/guidance")
+    public JourneyDraftAck guideJourneyDraft(
+            @PathVariable String runId, @RequestBody JourneyDraftGuidanceRequest request) {
+        if (request == null) throw new IllegalArgumentException("guidance is required");
+        journeyDrafts.guide(runId, request.content());
+        return new JourneyDraftAck("accepted");
+    }
+
+    /** 只有用户确认知识点和路径后才提交 Journey 大纲。 */
+    @PostMapping("/journey-drafts/{runId}/confirm")
+    public JourneyDraftAck confirmJourneyDraft(@PathVariable String runId) {
+        journeyDrafts.confirm(runId);
+        return new JourneyDraftAck("accepted");
+    }
+
+    /** 取消未确认的大纲生成，不写入学习数据。 */
+    @PostMapping("/journey-drafts/{runId}/cancel")
+    public JourneyDraftAck cancelJourneyDraft(@PathVariable String runId) {
+        journeyDrafts.cancel(runId);
+        return new JourneyDraftAck("cancelled");
     }
 
     /** 查询当前本地用户的 Journey 列表。 */
@@ -134,12 +176,6 @@ public class LearningController {
         return journeys.archive(id);
     }
 
-    /** 创建或恢复 Journey 的固定题集诊断。 */
-    @PostMapping("/journeys/{id}/diagnostic")
-    public AssessmentResponse diagnostic(@PathVariable String id) {
-        return AssessmentResponse.from(assessments.createDiagnostic(id));
-    }
-
     /** 查询评估及其进行中/历史答案，用于页面恢复。 */
     @GetMapping("/assessments/{assessmentId}")
     public AssessmentResponse assessment(@PathVariable String assessmentId) {
@@ -172,22 +208,39 @@ public class LearningController {
 
     /** 将当前 Path 节点置为学习中。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/start")
-    public LearnUnitResponse startLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
-        progress.startLearnUnit(journeyId, learnUnitCode);
-        return learnUnit(journeyId, learnUnitCode);
+    public Mono<LearnUnitResponse> startLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        return Mono.fromCallable(() -> {
+                    curriculum.ensureLearnUnitContent(journeyId, learnUnitCode);
+                    progress.startLearnUnit(journeyId, learnUnitCode);
+                    assessments.createLearnUnitAssessment(journeyId, learnUnitCode);
+                    return learnUnit(journeyId, learnUnitCode);
+                })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /** Continue the server-selected current LearnUnit after a restart or result screen. */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/continue")
-    public LearnUnitResponse continueLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
-        progress.continueLearnUnit(journeyId, learnUnitCode);
-        return learnUnit(journeyId, learnUnitCode);
+    public Mono<LearnUnitResponse> continueLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        return Mono.fromCallable(() -> {
+                    curriculum.ensureLearnUnitContent(journeyId, learnUnitCode);
+                    progress.continueLearnUnit(journeyId, learnUnitCode);
+                    assessments.createLearnUnitAssessment(journeyId, learnUnitCode);
+                    return learnUnit(journeyId, learnUnitCode);
+                })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /** 创建或恢复指定 LearnUnit 的固定题集评估。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/assessment")
-    public AssessmentResponse learnUnitAssessment(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
-        return AssessmentResponse.from(assessments.createLearnUnitAssessment(journeyId, learnUnitCode));
+    public Mono<AssessmentResponse> learnUnitAssessment(
+            @PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        return Mono.fromCallable(() -> {
+                    if (progress.requireCurrentLearnUnit(journeyId, learnUnitCode).startedAt() == null) {
+                        throw new IllegalStateException("start learning before generating assessment questions");
+                    }
+                    return AssessmentResponse.from(assessments.createLearnUnitAssessment(journeyId, learnUnitCode));
+                })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /** Retry a failed Attempt without replacing its Assessment or fixed Question set. */
@@ -279,6 +332,15 @@ public class LearningController {
             Integer experienceYears,
             String selfDescription,
             String learningGoal) {
+    }
+
+    public record JourneyDraftStartResponse(String runId) {
+    }
+
+    public record JourneyDraftGuidanceRequest(String content) {
+    }
+
+    public record JourneyDraftAck(String status) {
     }
 
     /**

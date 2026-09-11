@@ -228,6 +228,26 @@ export type CreateJourneyInput = {
   learningGoal: string;
 };
 
+export type JourneyDraftOutline = {
+  languages: LearningLanguage[];
+  learnUnits: LearnUnit[];
+};
+
+export type JourneyDraftEvent = {
+  sequence: number;
+  runId: string;
+  author: string;
+  eventType: "run_started" | "user_message" | "agent_message" | "model_delta" | "outline_ready" | "confirmed" | "error" | "cancelled";
+  content: string;
+  outline: JourneyDraftOutline | null;
+  journeyId: string | null;
+  status: string;
+  timestamp: string;
+};
+
+export type JourneyDraftStartResponse = {runId: string};
+export type JourneyDraftAck = {status: string};
+
 /** 完整数据库替换成功后的结果；是否重启 Tauri 由界面决定。 */
 export type DatabaseImportResponse = {
   schemaVersion: string;
@@ -305,11 +325,19 @@ export const api = {
   journeyLearnUnits: (journeyId: string) => request<LearnUnit[]>(`/learning/journeys/${encodeURIComponent(journeyId)}/learn-units`),
   journeys: () => request<LearningJourney[]>("/learning/journeys"),
   journey: (id: string) => request<JourneyDetail>(`/learning/journeys/${id}`),
-  createJourney: (input: CreateJourneyInput) => request<LearningJourney>("/learning/journeys", {
+  startJourneyDraft: (input: CreateJourneyInput) => request<JourneyDraftStartResponse>("/learning/journey-drafts", {
     method: "POST",
     body: JSON.stringify(input),
   }),
-  diagnostic: (journeyId: string) => request<AssessmentResponse>(`/learning/journeys/${journeyId}/diagnostic`, {method: "POST"}),
+  guideJourneyDraft: (runId: string, content: string) => request<JourneyDraftAck>(
+    `/learning/journey-drafts/${encodeURIComponent(runId)}/guidance`, {
+      method: "POST",
+      body: JSON.stringify({content}),
+    }),
+  confirmJourneyDraft: (runId: string) => request<JourneyDraftAck>(
+    `/learning/journey-drafts/${encodeURIComponent(runId)}/confirm`, {method: "POST"}),
+  cancelJourneyDraft: (runId: string) => request<JourneyDraftAck>(
+    `/learning/journey-drafts/${encodeURIComponent(runId)}/cancel`, {method: "POST"}),
   assessment: (id: string) => request<AssessmentResponse>(`/learning/assessments/${id}`),
   startAssessment: (id: string) => request<AssessmentResponse>(`/learning/assessments/${id}/start`, {method: "POST"}),
   answer: (id: string, answer: { questionId: string; selectedOptionIds: string[]; submittedCode: string }) =>
@@ -343,4 +371,5 @@ export const api = {
   cancelRun: (sessionId: string, runId: string) =>
     request<{status: string}>(`/sessions/${sessionId}/runs/${runId}/cancel`, {method: "POST"}),
   eventsUrl: (id: string) => `${API_BASE}/sessions/${id}/events`,
+  journeyDraftEventsUrl: (runId: string) => `${API_BASE}/learning/journey-drafts/${encodeURIComponent(runId)}/events`,
 };
