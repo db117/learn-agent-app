@@ -24,6 +24,7 @@ export function ResultView({
     if (!assessmentResult) return null;
     const diagnostic = assessmentResult.assessment.type === "DIAGNOSTIC";
     const resultStatus = assessmentResult.passed ? "Passed" : diagnostic ? "Not Yet" : "Retry Required";
+    const feedbackAttempts = assessmentResult.questionAttempts.filter((item) => item.feedback?.trim());
 
     return (
         <section className="result panel">
@@ -41,6 +42,16 @@ export function ResultView({
                 <span>通过阈值 {assessmentResult.passScore}</span>
                 <span>{assessmentResult.codingPassScore === null ? "编码阈值不适用" : `编码阈值 ${assessmentResult.codingPassScore}`}</span>
             </div>
+            {feedbackAttempts.length > 0 && (
+                <div className="feedback-block">
+                    <h3>逐题反馈</h3>
+                    {feedbackAttempts.map((item) => (
+                        <p key={`${item.assessmentAttemptId}-${item.questionId}`}>
+                            {item.feedback} <span className="muted">({item.score ?? 0}/{item.maxScore})</span>
+                        </p>
+                    ))}
+                </div>
+            )}
             {assessmentResult.learnUnitResults.length > 0 && (
                 <div className="result-list">
                     {assessmentResult.learnUnitResults.map((item) => (

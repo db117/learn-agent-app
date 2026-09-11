@@ -9,6 +9,8 @@ import com.example.agent.learning.catalog.LearningLanguage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.Model;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -28,6 +30,7 @@ import java.util.UUID;
 public final class LlmCurriculumGenerator implements CurriculumGenerator {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Logger LOGGER = LoggerFactory.getLogger(LlmCurriculumGenerator.class);
     private final Model model;
 
     public LlmCurriculumGenerator(Model model) {
@@ -45,6 +48,9 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         if (requestedLanguage == null || requestedLanguage.isBlank()) {
             throw new IllegalArgumentException("Requested language must not be blank");
         }
+        String language = requestedLanguage.trim();
+        long startedAt = System.nanoTime();
+        LOGGER.info("curriculum.generate.start language={} model={}", language, model.getClass().getSimpleName());
         String prompt = """
                 你是一个学习系统的课程架构师。请为编程学习者生成一份可执行的课程目录，
                 返回 JSON，不要返回 Markdown 或解释文字：
@@ -77,14 +83,27 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                 没有编码学习目标时至少生成一道有效的 MULTIPLE_CHOICE 题。
                 questions 中的选择题必须包含 options、correctOptionIds 和 multiple；Coding 题必须包含非空 language
                 和对象形式的 rubric。题目只能引用已经生成的 LearnUnit code。
-                """.formatted(requestedLanguage.trim(), learningContext == null ? "" : learningContext.trim());
+                """.formatted(language, learningContext == null ? "" : learningContext.trim());
         try {
             String response = AgentScopeTextGenerator.generate(model, prompt);
-            JsonNode root = MAPPER.readTree(extractJson(response));
-            return parse(root);
+            LOGGER.info("curriculum.generate.response language={} chars={} elapsedMs={}",
+                    language, response.length(), elapsedMillis(startedAt));
+            String extractedJson = extractJson(response);
+            LOGGER.info("[LLM-TRACE] curriculum.extract language={} chars={} value={}",
+                    language, extractedJson.length(), extractedJson);
+            JsonNode root = MAPPER.readTree(extractedJson);
+            GeneratedCurriculum generated = parse(root);
+            LOGGER.info("curriculum.generate.success language={} learnUnits={} questions={} elapsedMs={}",
+                    language, generated.learnUnits().size(), generated.questions().size(), elapsedMillis(startedAt));
+            return generated;
         } catch (Exception error) {
+            LOGGER.error("curriculum.generate.failed language={} elapsedMs={}", language, elapsedMillis(startedAt), error);
             throw new IllegalArgumentException("Curriculum generator returned invalid JSON", error);
         }
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     /**

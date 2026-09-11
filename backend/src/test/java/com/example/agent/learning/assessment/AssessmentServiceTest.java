@@ -20,16 +20,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 
 class AssessmentServiceTest {
 
@@ -210,29 +210,41 @@ class AssessmentServiceTest {
     }
 
     @Test
-    void codingScoreAboveQuestionMaximumCannotCompleteAttempt() {
-        AssessmentService rejectingService = new AssessmentService(
+    void codingEvaluationIsScaledToQuestionMaximum() {
+        AssessmentService scaledService = new AssessmentService(
                 repository, progress, new AssessmentScoreEngine(), new LearnUnitPassPolicy(),
-                (question, submittedCode) -> new CodingEvaluationResult(60, 20, 20, "feedback", List.of()), planner);
+                (question, submittedCode) -> new CodingEvaluationResult(45, 18, 18,
+                        "末尾多了感叹号。", List.of("移除末尾的感叹号")), planner);
         Assessment assessment = new Assessment(
                 "assessment", "journey", "learnUnit-a", AssessmentType.LEARN_UNIT,
                 AssessmentStatus.IN_PROGRESS, Instant.EPOCH, null);
         AssessmentAttempt openAttempt = attempt("attempt-1");
+        LearnUnit learnUnit = new LearnUnit(
+                "learnUnit-a", "typescript", "learnUnit-a", "LearnUnit A", "description", 1, List.of(),
+                80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), true);
         Question coding = new Question(
-                "coding", "learnUnit-a", QuestionType.CODING, 1, "Implement", 50,
+                "coding", "learnUnit-a", QuestionType.CODING, 1, "Implement", 30,
                 null, "{\"correctness\":60,\"languageUsage\":20,\"clarity\":20}",
                 "typescript", "", "[]", false);
         when(repository.findAssessment("assessment")).thenReturn(Optional.of(assessment));
         when(repository.findOpenAttempt("assessment")).thenReturn(Optional.of(openAttempt));
         when(repository.listQuestionsForAssessment("assessment")).thenReturn(List.of(coding));
         when(repository.listQuestionAttempts("attempt-1")).thenReturn(List.of(
-                new QuestionAttempt("coding", "attempt-1", "{}", null, 50, null, null, "answer", null, null)));
+                new QuestionAttempt("coding", "attempt-1", "{}", null, 30, null, null, "answer", null, null)));
+        when(repository.findLearnUnit("learnUnit-a")).thenReturn(Optional.of(learnUnit));
+        when(repository.findAttempt("attempt-1")).thenReturn(Optional.of(new AssessmentAttempt(
+                "attempt-1", "assessment", "journey", "learnUnit-a", 1,
+                0, 24, 80, true, Instant.EPOCH, Instant.now())));
 
-        assertThrows(AssessmentService.AssessmentEvaluationException.class,
-                () -> rejectingService.submit("assessment"));
+        AssessmentService.AssessmentSubmission result = scaledService.submit("assessment");
 
-        verify(repository, never()).updateAttempt(anyString(), any(), any(), any(), any(), any(Instant.class));
-        verify(repository, never()).updateAssessment(anyString(), any(), any(Instant.class));
+        assertTrue(result.passed());
+        assertEquals(80, result.score().codingScore());
+        assertEquals(80, result.score().totalScore());
+        verify(repository).saveQuestionAttempt(argThat(value -> value.score() == 24
+                && value.feedback().equals("末尾多了感叹号。")
+                && value.evaluationJson().contains("移除末尾的感叹号")));
+        verify(repository).updateAttempt(eq("attempt-1"), eq(0), eq(80), eq(80), eq(true), any(Instant.class));
     }
 
     @Test

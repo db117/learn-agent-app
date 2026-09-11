@@ -4,6 +4,7 @@ import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.llm.infrastructure.LlmCurriculumGenerator;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -16,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -139,7 +140,9 @@ class LlmCurriculumGeneratorTest {
 
     private Model model(String response) {
         Model model = mock(Model.class);
-        when(model.stream(anyList(), anyList(), isNull())).thenReturn(
+        when(model.stream(anyList(), anyList(), argThat((GenerateOptions options) ->
+                options != null && options.getResponseFormat() != null
+                        && "json_object".equals(options.getResponseFormat().getType())))).thenReturn(
                 Flux.just(ChatResponse.builder()
                         .content(List.of(TextBlock.builder().text(response).build()))
                         .build()));

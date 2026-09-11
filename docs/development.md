@@ -15,6 +15,10 @@ export OPENAI_MODEL=gpt-5-mini       # 可选
 `pnpm dev` 默认使用项目内的 `.data/dev/agent.db`；设置 `APP_DATABASE` 或 `AGENT_DATA_DIR`
 可覆盖这个开发环境默认值。
 
+后端日志默认写入 `${app.data-dir}/backend.log`（桌面模式通常为
+`~/.learning-agent-java/backend.log`）；可用 `APP_LOG_FILE` 指定完整路径。结构化 LLM 调用会以 `[LLM-TRACE]`
+记录完整 prompt、response format、响应块和最终模型原文，便于区分模型输出与代码解析问题；不会记录 API key。
+
 ## 命令
 
 ```bash

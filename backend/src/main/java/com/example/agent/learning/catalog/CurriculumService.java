@@ -4,6 +4,8 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.persistence.LearningRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class CurriculumService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(CurriculumService.class);
 
     private final LearningRepository repository;
     private final CurriculumGenerator generator;
@@ -52,6 +56,7 @@ public class CurriculumService {
         try {
             generated = generator.generate(requested, learningContext == null ? "" : learningContext.trim());
         } catch (RuntimeException error) {
+            LOGGER.error("curriculum.generate.failed journeyId={} language={}", journeyId, requested, error);
             throw new IllegalStateException("Unable to generate learning curriculum", error);
         }
         validate(generated);

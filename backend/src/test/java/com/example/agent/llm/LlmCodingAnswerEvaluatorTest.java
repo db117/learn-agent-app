@@ -4,6 +4,7 @@ import com.example.agent.learning.assessment.CodingQuestion;
 import com.example.agent.llm.infrastructure.LlmCodingAnswerEvaluator;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
+import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -12,8 +13,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -71,7 +72,7 @@ class LlmCodingAnswerEvaluatorTest {
 
     private Model model(String response) {
         Model model = mock(Model.class);
-        when(model.stream(anyList(), anyList(), isNull())).thenReturn(
+        when(model.stream(anyList(), anyList(), any(GenerateOptions.class))).thenReturn(
                 Flux.just(ChatResponse.builder()
                         .content(List.of(TextBlock.builder().text(response).build()))
                         .build()));

@@ -10,6 +10,10 @@ server:
   address: 127.0.0.1
   port: 18080
 
+logging:
+  file:
+    name: ${APP_LOG_FILE:${app.data-dir}/backend.log}
+
 app:
   openai:
     base-url: ${OPENAI_BASE_URL:https://api.openai.com}

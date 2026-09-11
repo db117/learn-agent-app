@@ -428,11 +428,9 @@ public class AssessmentService {
         try {
             CodingEvaluationResult evaluation = codingEvaluator.evaluate(
                     CodingQuestion.from(question), current.submittedCode());
-            if (evaluation.totalScore() > question.points()) {
-                throw new IllegalArgumentException("Coding score exceeds question maximum: " + question.id());
-            }
+            int score = (int) Math.round(evaluation.totalScore() * question.points() / 100.0);
             return new QuestionAttempt(
-                    current.questionId(), current.assessmentAttemptId(), current.answerJson(), evaluation.totalScore(),
+                    current.questionId(), current.assessmentAttemptId(), current.answerJson(), score,
                     current.maxScore(), evaluation.feedback(), null, current.submittedCode(),
                     json(evaluation), current.selectedOptionIdsJson());
         } catch (RuntimeException error) {
