@@ -10,8 +10,10 @@ type DashboardViewProps = {
     currentLearnUnit: boolean;
     hasOpenAttempt: boolean;
     canRetry: boolean;
-    learnUnitLabel: (learnUnits: LearnUnit[], code: string) => string;
+    learnUnitLabel: (learnUnits: LearnUnit[], code: string | null) => string;
     onOpenLearnUnit: (code: string) => void | Promise<void>;
+    onOpenReviewLearnUnit: (code: string) => void | Promise<void>;
+    onStartChapterSynthesis: (chapterCode: string) => void | Promise<void>;
     onRetryCurrentLearnUnit: () => void | Promise<void>;
     onStartLearnUnitAssessment: () => void | Promise<void>;
     onAdvancePhase: (phase: LearningPhase) => void | Promise<void>;
@@ -53,6 +55,8 @@ export function DashboardView({
                                   canRetry,
                                   learnUnitLabel,
                                   onOpenLearnUnit,
+                                  onOpenReviewLearnUnit,
+                                  onStartChapterSynthesis,
                                   onRetryCurrentLearnUnit,
                                   onStartLearnUnitAssessment,
                                   onAdvancePhase,
@@ -76,9 +80,10 @@ export function DashboardView({
     const [guidedResponse, setGuidedResponse] = useState("");
     useEffect(() => setGuidedResponse(""), [current?.learnUnit.code, phase]);
     const next = path.find((item) => item.status === "PENDING");
+    const availableSynthesis = chapters.filter((entry) => entry.synthesisAvailable && !entry.synthesisCompleted);
     const nextStep = next
         ? learnUnitLabel(learnUnits, next.learnUnitCode)
-        : current?.pathItem?.status === "CURRENT" ? "完成当前 LearnUnit" : "完成 Journey";
+        : availableSynthesis.length ? "完成 Chapter synthesis" : current?.pathItem?.status === "CURRENT" ? "完成当前 LearnUnit" : "完成 Journey";
 
     return (
         <section className="journey-grid">
@@ -92,29 +97,51 @@ export function DashboardView({
                                                      open={entry.path.some((item) => item.status === "CURRENT")}>
                     <summary>
                         <span><strong>{entry.chapter.sequence}. {entry.chapter.name}</strong><small>{entry.chapter.goal}</small></span>
-                        <span className="muted">{entry.completedCount}/{entry.learnUnits.length} passed</span>
+                        <span className="muted">{entry.completedCount}/{entry.learnUnits.length} passed · {entry.unresolvedCount} unresolved</span>
                     </summary>
                     <div className="path-list">
                         {entry.path.map((item) => {
                             const actionable = item.status === "CURRENT";
+                            const reviewable = item.needsReview && item.status !== "PENDING";
                             const name = entry.learnUnits.find((unit) => unit.code === item.learnUnitCode)?.name
                                 ?? learnUnitLabel(learnUnits, item.learnUnitCode);
                             return <button className={`path-item ${item.status.toLowerCase()}`} key={item.learnUnitCode}
-                                           onClick={() => actionable && void onOpenLearnUnit(item.learnUnitCode)}
-                                           disabled={!actionable || busy}>
+                                           onClick={() => actionable
+                                               ? void onOpenLearnUnit(item.learnUnitCode)
+                                               : reviewable && void onOpenReviewLearnUnit(item.learnUnitCode)}
+                                           disabled={(!actionable && !reviewable) || busy}>
                                 <span className="path-number">{item.sequence}</span>
-                                <span><strong>{name}</strong><small>{item.needsReview ? "Review needed" : pathStatusLabel(item.status)}</small></span>
+                                <span>
+                                    <strong>{name}</strong>
+                                    <small>{item.needsReview ? "Review needed" : pathStatusLabel(item.status)}</small>
+                                    {item.skippedPhases.length > 0 &&
+                                        <small>Skipped phases: {item.skippedPhases.map(phaseLabel).join(", ")}</small>}
+                                </span>
                                 <span className="path-mark">{item.status === "COMPLETED" ? "✓" : item.status === "SKIPPED" ? "–" : item.status === "CURRENT" ? "→" : "·"}</span>
                             </button>;
                         })}
+                        {entry.synthesisAvailable && !entry.synthesisCompleted && <button className="secondary chapter-synthesis-button"
+                                                                                         onClick={() => void onStartChapterSynthesis(entry.chapter.code)}
+                                                                                         disabled={busy}>
+                            开始 Chapter synthesis
+                        </button>}
+                        {entry.synthesisCompleted && <p className="success">Chapter synthesis 已通过</p>}
                     </div>
                 </details>)}
                 {!chapters.length && <p className="empty">完成 Journey 大纲后生成 Chapter 路径。</p>}
             </aside>
             <section className="lesson panel">
                 {!current ? (
-                    <div
-                        className="empty">{journey?.journey.status === "COMPLETED" ? "恭喜，你已完成这条学习路径。" : "正在加载当前 LearnUnit…"}</div>
+                    <div className="empty">
+                        {journey?.journey.status === "COMPLETED" ? "恭喜，你已完成这条学习路径。" : availableSynthesis.length > 0 ? <>
+                            <p>本章 LearnUnit 已 traversed。请完成 Chapter synthesis。</p>
+                            {availableSynthesis.map((entry) => <button className="primary" key={entry.chapter.code}
+                                                                        onClick={() => void onStartChapterSynthesis(entry.chapter.code)}
+                                                                        disabled={busy}>
+                                {entry.chapter.name} · 开始 synthesis
+                            </button>)}
+                        </> : "正在加载当前 LearnUnit…"}
+                    </div>
                 ) : (
                     <>
                         <div className="lesson-header">

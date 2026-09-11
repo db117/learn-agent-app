@@ -9,6 +9,7 @@ type ResultViewProps = {
     onNext: () => void | Promise<void>;
     onContinue: () => void | Promise<void>;
     onRetry: () => void | Promise<void>;
+    onOpenReview: (code: string) => void | Promise<void>;
 };
 
 export function ResultView({
@@ -20,22 +21,31 @@ export function ResultView({
                                onNext,
                                onContinue,
                                onRetry,
+                               onOpenReview,
                            }: ResultViewProps) {
     if (!assessmentResult) return null;
     const diagnostic = assessmentResult.assessment.type === "DIAGNOSTIC";
-    const resultStatus = assessmentResult.passed ? "Passed" : diagnostic ? "Not Yet" : "Retry Required";
+    const synthesis = assessmentResult.assessment.type === "CHAPTER_SYNTHESIS";
+    const resultStatus = assessmentResult.passed
+        ? synthesis && !assessmentResult.chapterCompleted ? "Synthesis passed · Chapter unresolved" : "Passed"
+        : diagnostic ? "Not Yet" : "Retry Required";
     const feedbackAttempts = assessmentResult.questionAttempts.filter((item) => item.feedback?.trim());
 
     return (
         <section className="result panel">
             <div className="section-kicker">ASSESSMENT COMPLETE</div>
-            <h2>{diagnostic ? "你的学习路径已经准备好了" : "LearnUnit 评估完成"}</h2>
+            <h2>{diagnostic ? "你的学习路径已经准备好了" : synthesis ? "Chapter synthesis 完成" : "LearnUnit 评估完成"}</h2>
             <div className="score-summary">
                 <strong>{assessmentResult.score.totalScore}</strong><span>/ 100</span>
                 <p className={assessmentResult.passed ? "success" : "warning"}>{resultStatus}</p>
             </div>
             {!diagnostic && !assessmentResult.passed && <p className="warning" role="status">
-                本次独立检查未通过。Review 当前能力后可用相同题集 Retry；这次结果不会记为掌握。
+                {synthesis
+                    ? "本次 Chapter synthesis 未通过。请回到服务端选出的薄弱 LearnUnit 做 remediation，再 Retry。"
+                    : "本次独立检查未通过。Review 当前能力后可用相同题集 Retry；这次结果不会记为掌握。"}
+            </p>}
+            {synthesis && assessmentResult.passed && !assessmentResult.chapterCompleted && <p className="warning" role="status">
+                Synthesis 达标，但 Chapter 仍有 skipped、未通过或 review debt 的 LearnUnit，不能宣称 Chapter 已完成。
             </p>}
             <div className="score-breakdown">
                 {assessmentResult.score.hasChoiceQuestions && <span>选择题 {assessmentResult.score.choiceScore}</span>}
@@ -67,12 +77,17 @@ export function ResultView({
             )}
             <div className="button-row result-actions">
                 <button className="primary" onClick={() => void (canNext ? onNext() : onContinue())} disabled={busy}>
-                    {busy ? "加载路径…" : canNext ? "Next LearnUnit" : "Continue"}
+                    {busy ? "加载路径…" : canNext ? "Next LearnUnit" : synthesis ? "返回 Chapter" : "Continue"}
                 </button>
                 {!diagnostic && !assessmentResult.passed && (
                     <button className="secondary" onClick={() => void onRetry()}
                             disabled={busy || !canRetry}>Retry</button>
                 )}
+                {synthesis && assessmentResult.reviewLearnUnitCode && <button className="secondary"
+                                                                            onClick={() => void onOpenReview(assessmentResult.reviewLearnUnitCode!)}
+                                                                            disabled={busy}>
+                    查看薄弱 LearnUnit
+                </button>}
             </div>
         </section>
     );

@@ -1,5 +1,7 @@
 package com.example.agent.learning.progress;
 
+import com.example.agent.learning.catalog.Chapter;
+import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.journey.JourneyStatus;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.PassReason;
@@ -24,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -44,8 +47,8 @@ class ProgressServiceTest {
     }
 
     @Test
-    void skipKeepsMasteryAndMovesToTheNextLearnUnitInTheSamePath() {
-        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 72, 78, 2);
+    void skipKeepsMasteryReviewDebtAndMovesToTheNextLearnUnitInTheSamePath() {
+        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 72, 78, 2, true);
         LearningPathItem next = item("learnUnit-b", 2, LearningPathItemStatus.PENDING, 0, 0, 0);
         when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
         when(repository.listPath("journey")).thenReturn(List.of(current, next));
@@ -63,6 +66,7 @@ class ProgressServiceTest {
         assertEquals(78, skipped.bestAssessmentScore());
         assertEquals(2, skipped.attemptCount());
         assertEquals(null, skipped.passReason());
+        assertTrue(skipped.needsReview());
         assertEquals(LearningPathItemStatus.CURRENT, advanced.status());
         verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.ACTIVE), any(Instant.class));
     }
@@ -126,6 +130,46 @@ class ProgressServiceTest {
 
         assertEquals(Optional.of(earliest), service.nextReviewTask("journey"));
         verify(repository, never()).updatePathItem(any(LearningPathItem.class));
+    }
+
+    @Test
+    void failedSynthesisMarksOnlyRelevantUnitsAndReturnsTheFirstWeakUnit() {
+        Chapter chapter = new Chapter("chapter-id", "chapter-a", "Chapter A", "goal", 1, List.of());
+        LearnUnit firstUnit = unit("learnUnit-a", 1);
+        LearnUnit secondUnit = unit("learnUnit-b", 2);
+        LearningPathItem first = item("learnUnit-a", 1, LearningPathItemStatus.COMPLETED, 100, 100, 1);
+        LearningPathItem second = item("learnUnit-b", 2, LearningPathItemStatus.COMPLETED, 80, 80, 1);
+        when(repository.listChaptersForJourney("journey")).thenReturn(List.of(chapter));
+        when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(firstUnit, secondUnit));
+        when(repository.listPath("journey")).thenReturn(List.of(first, second));
+
+        ProgressService.ChapterSynthesisOutcome result = service.recordChapterSynthesis(
+                "journey", "chapter-a", new AssessmentScore(0, 0, 40, true, false), false,
+                List.of("learnUnit-b"));
+
+        assertEquals("learnUnit-b", result.firstWeakLearnUnitCode());
+        assertEquals(false, result.chapterCompleted());
+        verify(repository).updatePathItem(argThat(item -> item.learnUnitCode().equals("learnUnit-b")
+                && item.status() == LearningPathItemStatus.COMPLETED && item.needsReview()));
+        verify(repository, never()).updatePathItem(argThat(item -> item.learnUnitCode().equals("learnUnit-a")));
+    }
+
+    @Test
+    void passingSynthesisCompletesAChapterAndJourneyOnlyAfterAllUnitsPass() {
+        Chapter chapter = new Chapter("chapter-id", "chapter-a", "Chapter A", "goal", 1, List.of());
+        LearnUnit firstUnit = unit("learnUnit-a", 1);
+        LearningPathItem first = item("learnUnit-a", 1, LearningPathItemStatus.COMPLETED, 100, 100, 1);
+        when(repository.listChaptersForJourney("journey")).thenReturn(List.of(chapter));
+        when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(firstUnit));
+        when(repository.listPath("journey")).thenReturn(List.of(first));
+
+        ProgressService.ChapterSynthesisOutcome result = service.recordChapterSynthesis(
+                "journey", "chapter-a", new AssessmentScore(100, 0, 100, true, false), true,
+                List.of("learnUnit-a"));
+
+        assertTrue(result.chapterCompleted());
+        assertEquals(null, result.firstWeakLearnUnitCode());
+        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.COMPLETED), any(Instant.class));
     }
 
     @Test
@@ -193,7 +237,7 @@ class ProgressServiceTest {
     }
 
     @Test
-    void passingTheLastPathItemCompletesTheJourney() {
+    void passingTheLastPathItemWaitsForChapterSynthesis() {
         LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 0, 0, 0);
         when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
         when(repository.listPath("journey")).thenReturn(List.of(current));
@@ -201,7 +245,8 @@ class ProgressServiceTest {
         service.recordLearnUnitAssessment(
                 "journey", "learnUnit-a", new AssessmentScore(100, 100, 100, true, true), true);
 
-        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.COMPLETED), any(Instant.class));
+        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.ACTIVE), any(Instant.class));
+        verify(repository, never()).updateJourney(eq("journey"), eq(JourneyStatus.COMPLETED), any(Instant.class));
     }
 
     @Test
@@ -226,7 +271,7 @@ class ProgressServiceTest {
     }
 
     @Test
-    void skippingEveryPathItemCompletesTheJourneyWithoutPassingThem() {
+    void skippingEveryPathItemKeepsTheJourneyUnresolved() {
         LearningPathItem first = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 0, 0, 0);
         LearningPathItem second = item("learnUnit-b", 2, LearningPathItemStatus.PENDING, 0, 0, 0);
         when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(first));
@@ -240,7 +285,8 @@ class ProgressServiceTest {
         service.skipLearnUnit("journey", "learnUnit-a");
         service.skipLearnUnit("journey", "learnUnit-b");
 
-        verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.COMPLETED), any(Instant.class));
+        verify(repository, times(2)).updateJourney(eq("journey"), eq(JourneyStatus.ACTIVE), any(Instant.class));
+        verify(repository, never()).updateJourney(eq("journey"), eq(JourneyStatus.COMPLETED), any(Instant.class));
     }
 
     @Test
@@ -309,5 +355,11 @@ class ProgressServiceTest {
                 learnUnitCode + "-item", "journey", learnUnitCode, sequence, status,
                 masteryScore, bestAssessmentScore, attemptCount, null, Instant.EPOCH, null, null,
                 LearningPhase.EXPLANATION, List.of(), List.of(), needsReview);
+    }
+
+    private LearnUnit unit(String code, int sequence) {
+        return new LearnUnit(
+                code, "typescript", code, "chapter-a", code, "description", sequence, List.of(),
+                80, null, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), false);
     }
 }

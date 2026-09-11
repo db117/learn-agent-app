@@ -53,7 +53,7 @@ export type JourneyStatus = "ACTIVE" | "COMPLETED" | "ARCHIVED";
 export type LearningPathItemStatus = "PENDING" | "CURRENT" | "COMPLETED" | "SKIPPED";
 export type LearningPhase = "EXPLANATION" | "EXAMPLE" | "GUIDED_PRACTICE" | "INDEPENDENT_CHECK";
 export type QuestionType = "MULTIPLE_CHOICE" | "CODING";
-export type AssessmentType = "DIAGNOSTIC" | "LEARN_UNIT";
+export type AssessmentType = "DIAGNOSTIC" | "LEARN_UNIT" | "CHAPTER_SYNTHESIS";
 export type AssessmentStatus = "CREATED" | "IN_PROGRESS" | "COMPLETED";
 
 export type LearningLanguage = {
@@ -142,7 +142,8 @@ export type GuidedPracticeEntry = {
 
 export type Question = {
   id: string;
-  learnUnitCode: string;
+  learnUnitCode: string | null;
+  chapterCode: string | null;
   type: QuestionType;
   difficulty: number;
   prompt: string;
@@ -158,6 +159,7 @@ export type Assessment = {
   id: string;
   journeyId: string;
   learnUnitCode: string | null;
+  chapterCode: string | null;
   type: AssessmentType;
   status: AssessmentStatus;
   createdAt: string;
@@ -223,6 +225,8 @@ export type AssessmentResultResponse = {
   questionAttempts: QuestionAttempt[];
   passScore: number;
   codingPassScore: number | null;
+  reviewLearnUnitCode: string | null;
+  chapterCompleted: boolean;
 };
 
 export type LearnUnitResponse = {
@@ -246,6 +250,10 @@ export type JourneyChapter = {
   path: LearningPathItem[];
   completedCount: number;
   skippedCount: number;
+  unresolvedCount: number;
+  synthesisAvailable: boolean;
+  synthesisCompleted: boolean;
+  synthesisAssessmentId: string | null;
 };
 
 export type TutorSessionResponse = {
@@ -390,6 +398,10 @@ export const api = {
     request<AssessmentResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/assessment`, {method: "POST"}),
   retryLearnUnit: (journeyId: string, learnUnitCode: string) =>
     request<AssessmentResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/retry`, {method: "POST"}),
+  chapterSynthesis: (journeyId: string, chapterCode: string) =>
+    request<AssessmentResponse>(`/learning/journeys/${journeyId}/chapters/${encodeURIComponent(chapterCode)}/synthesis`, {method: "POST"}),
+  retryChapterSynthesis: (journeyId: string, chapterCode: string) =>
+    request<AssessmentResponse>(`/learning/journeys/${journeyId}/chapters/${encodeURIComponent(chapterCode)}/synthesis/retry`, {method: "POST"}),
   learnUnit: (journeyId: string, learnUnitCode: string) =>
     request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}`),
   advancePhase: (journeyId: string, learnUnitCode: string, phase: LearningPhase) =>

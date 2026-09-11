@@ -2,6 +2,10 @@ package com.example.agent.learning.assessment;
 
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
+import com.example.agent.learning.catalog.Chapter;
+import com.example.agent.learning.path.LearningPathItem;
+import com.example.agent.learning.path.LearningPathItemStatus;
+import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.diagnostic.DiagnosticQuestionPlanner;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.persistence.LearningRepository;
@@ -277,6 +281,44 @@ class AssessmentServiceTest {
         assertEquals(List.of(coding), state.questions());
         verify(repository, never()).insertGeneratedQuestion(any(Question.class));
         verify(repository).insertAssessment(any(Assessment.class));
+    }
+
+    @Test
+    void chapterSynthesisUsesChapterOwnedQuestionsAndDoesNotGenerateLearnUnitContent() {
+        Chapter chapter = new Chapter("chapter-id", "chapter-a", "Chapter A", "goal", 1, List.of());
+        LearnUnit learnUnit = new LearnUnit(
+                "learnUnit-a", "typescript", "learnUnit-a", "chapter-a", "LearnUnit A", "outline only", 1,
+                List.of(), 80, null, true, List.of("objective"), "", List.of("concept"), List.of(), false);
+        LearningPathItem pathItem = new LearningPathItem(
+                "path-item", "journey", learnUnit.code(), 1, LearningPathItemStatus.SKIPPED,
+                0, 0, 0, null, null, null, Instant.EPOCH, LearningPhase.EXPLANATION, List.of(), List.of());
+        Question synthesisQuestion = new Question(
+                "synthesis-question", null, "chapter-a", QuestionType.MULTIPLE_CHOICE, 1,
+                "Synthesize", 20,
+                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
+                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
+                null, null, null, "[\"learnUnit-a\"]", false, QuestionRole.SYNTHESIS);
+        LearningJourney journey = new LearningJourney(
+                "journey", "user", "typescript", "goal", com.example.agent.learning.journey.JourneyStatus.ACTIVE,
+                Instant.EPOCH, Instant.EPOCH);
+        when(repository.findLatestChapterSynthesisAssessment("journey", "chapter-a")).thenReturn(Optional.empty());
+        when(repository.findJourney("journey")).thenReturn(Optional.of(journey));
+        when(repository.listChaptersForJourney("journey")).thenReturn(List.of(chapter));
+        when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(learnUnit));
+        when(repository.listPath("journey")).thenReturn(List.of(pathItem));
+        when(repository.listQuestionsForChapter("journey", "chapter-a")).thenReturn(List.of(synthesisQuestion));
+        when(repository.listQuestionsForAssessment(anyString())).thenReturn(List.of(synthesisQuestion));
+        when(repository.listAttemptsForAssessment(anyString())).thenReturn(List.of());
+
+        AssessmentService.AssessmentState result = service.createChapterSynthesis("journey", "chapter-a");
+
+        assertEquals(AssessmentType.CHAPTER_SYNTHESIS, result.assessment().type());
+        assertEquals("chapter-a", result.assessment().chapterCode());
+        assertEquals(null, result.assessment().learnUnitCode());
+        assertEquals(List.of(synthesisQuestion), result.questions());
+        verify(repository).insertAssessment(argThat(value -> value.type() == AssessmentType.CHAPTER_SYNTHESIS
+                && value.chapterCode().equals("chapter-a") && value.learnUnitCode() == null));
+        verify(repository).insertAssessmentQuestion(anyString(), eq(synthesisQuestion.id()), eq(0));
     }
 
     @Test

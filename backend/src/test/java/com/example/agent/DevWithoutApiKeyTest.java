@@ -12,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
-                "app.data-dir=target/dev-without-key-data-v8",
-                "app.database=target/dev-without-key-data-v8/context.db",
+                "app.data-dir=target/dev-without-key-data-v9",
+                "app.database=target/dev-without-key-data-v9/context.db",
                 "app.openai.api-key="
         })
 class DevWithoutApiKeyTest {

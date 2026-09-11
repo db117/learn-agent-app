@@ -38,8 +38,8 @@ class DatabaseExportServiceTest {
         activeJdbc.sql("INSERT INTO learning_journey_learn_unit VALUES ('journey-1', 'python.basics')").update();
         activeJdbc.sql("INSERT INTO learner_profile VALUES ('journey-1', '中文', 1, 'beginner', 'learn')").update();
         activeJdbc.sql("INSERT INTO learning_path_item (id, journey_id, learn_unit_code, sequence, status) VALUES ('path-1', 'journey-1', 'python.basics', 1, 'CURRENT')").update();
-        activeJdbc.sql("INSERT INTO question VALUES ('question-1', 'python.basics', 'MULTIPLE_CHOICE', 1, 'What?', 10, '{}', NULL, NULL, NULL, NULL, 1, 'DIAGNOSTIC')").update();
-        activeJdbc.sql("INSERT INTO assessment VALUES ('assessment-1', 'journey-1', 'python.basics', 'LEARN_UNIT', 'CREATED', 'now', NULL)").update();
+        activeJdbc.sql("INSERT INTO question (id, learn_unit_code, chapter_code, type, difficulty, prompt, points, config_json, rubric_json, language, starter_code, reference_concepts_json, diagnostic_eligible, role) VALUES ('question-1', 'python.basics', NULL, 'MULTIPLE_CHOICE', 1, 'What?', 10, '{}', NULL, NULL, NULL, NULL, 1, 'DIAGNOSTIC')").update();
+        activeJdbc.sql("INSERT INTO assessment (id, journey_id, learn_unit_code, chapter_code, type, status, created_at, completed_at) VALUES ('assessment-1', 'journey-1', 'python.basics', NULL, 'LEARN_UNIT', 'CREATED', 'now', NULL)").update();
         activeJdbc.sql("INSERT INTO assessment_question VALUES ('assessment-1', 'question-1', 1)").update();
         activeJdbc.sql("INSERT INTO assessment_attempt VALUES ('attempt-1', 'assessment-1', 'journey-1', 'python.basics', 1, 10, NULL, 10, 1, 'now', 'now')").update();
         activeJdbc.sql("INSERT INTO question_attempt VALUES ('question-1', 'attempt-1', '{}', 10, 10, 'good', 1, NULL, NULL, NULL)").update();

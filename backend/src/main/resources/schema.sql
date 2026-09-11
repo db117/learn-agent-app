@@ -227,7 +227,8 @@ CREATE TABLE IF NOT EXISTS learning_path_item
 CREATE TABLE IF NOT EXISTS question
 (
     id TEXT PRIMARY KEY,
-    learn_unit_code TEXT NOT NULL REFERENCES learn_unit(code),
+    learn_unit_code TEXT REFERENCES learn_unit(code),
+    chapter_code TEXT REFERENCES chapter(code),
     type TEXT NOT NULL,
     difficulty INTEGER NOT NULL,
     prompt TEXT NOT NULL,
@@ -238,7 +239,9 @@ CREATE TABLE IF NOT EXISTS question
     starter_code TEXT,
     reference_concepts_json TEXT,
     diagnostic_eligible INTEGER NOT NULL DEFAULT 0,
-    role TEXT NOT NULL DEFAULT 'INDEPENDENT'
+    role TEXT NOT NULL DEFAULT 'INDEPENDENT',
+    CHECK ((role = 'SYNTHESIS' AND chapter_code IS NOT NULL AND learn_unit_code IS NULL)
+        OR (role <> 'SYNTHESIS' AND chapter_code IS NULL AND learn_unit_code IS NOT NULL))
 );
 
 -- 题目软删除标记；不物理删除 question，以保持历史 Attempt 可读。
@@ -254,6 +257,7 @@ CREATE TABLE IF NOT EXISTS assessment
     id TEXT PRIMARY KEY,
     journey_id TEXT NOT NULL REFERENCES learning_journey(id),
     learn_unit_code TEXT REFERENCES learn_unit(code),
+    chapter_code TEXT REFERENCES chapter(code),
     type TEXT NOT NULL,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -320,6 +324,7 @@ CREATE INDEX IF NOT EXISTS path_journey_idx ON learning_path_item(journey_id, se
 CREATE UNIQUE INDEX IF NOT EXISTS path_one_current_idx
     ON learning_path_item(journey_id) WHERE status = 'CURRENT';
 CREATE INDEX IF NOT EXISTS question_learn_unit_idx ON question(learn_unit_code, diagnostic_eligible);
+CREATE INDEX IF NOT EXISTS question_chapter_idx ON question(chapter_code, role);
 CREATE INDEX IF NOT EXISTS question_retirement_idx ON question_retirement(retired_at);
 CREATE INDEX IF NOT EXISTS assessment_journey_idx ON assessment(journey_id, created_at);
 CREATE INDEX IF NOT EXISTS attempt_learn_unit_idx ON assessment_attempt(journey_id, learn_unit_code, completed_at);
@@ -364,7 +369,7 @@ CREATE TABLE IF NOT EXISTS schema_metadata
 INSERT INTO schema_metadata (key, value)
 VALUES ('schema.marker', 'learning-agent-sqlite');
 INSERT INTO schema_metadata (key, value)
-VALUES ('schema.version', '5');
+VALUES ('schema.version', '6');
 INSERT INTO schema_metadata (key, value)
 VALUES ('snapshot.created_at', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 INSERT INTO schema_metadata (key, value)

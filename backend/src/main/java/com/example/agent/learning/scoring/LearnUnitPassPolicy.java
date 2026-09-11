@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 public class LearnUnitPassPolicy {
 
     public static final int DIAGNOSTIC_PASS_SCORE = 85;
+    public static final int SYNTHESIS_PASS_SCORE = 80;
 
     public boolean passed(AssessmentScore score, LearnUnit learnUnit) {
         return passed(score, learnUnit.passScore(), learnUnit.minCodingScore());
@@ -28,5 +29,9 @@ public class LearnUnitPassPolicy {
 
     public boolean diagnosticPassed(AssessmentScore score, int evidenceCount) {
         return evidenceCount >= 2 && score.totalScore() >= DIAGNOSTIC_PASS_SCORE;
+    }
+
+    public boolean synthesisPassed(AssessmentScore score) {
+        return score.totalScore() >= SYNTHESIS_PASS_SCORE;
     }
 }

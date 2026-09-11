@@ -235,7 +235,7 @@ public class LearningRepository {
     /** 查询指定 LearnUnit 的活动题目；已 soft delete 的题目不会出现在新评估中。 */
     public List<Question> listQuestionsForLearnUnit(String learnUnitCode) {
         return jdbc.sql("""
-                        SELECT id, learn_unit_code, type, difficulty, prompt, points, config_json, rubric_json,
+                        SELECT id, learn_unit_code, chapter_code, type, difficulty, prompt, points, config_json, rubric_json,
                           language, starter_code, reference_concepts_json, diagnostic_eligible, role
                         FROM question
                         WHERE learn_unit_code = :learnUnitCode
@@ -251,7 +251,7 @@ public class LearningRepository {
     /** 查询一个 Journey 课程中的活动诊断题，避免混入同语言其他 Journey 的题目。 */
     public List<Question> listDiagnosticQuestionsForJourney(String journeyId) {
         return jdbc.sql("""
-                        SELECT q.id, q.learn_unit_code, q.type, q.difficulty, q.prompt, q.points, q.config_json,
+                        SELECT q.id, q.learn_unit_code, q.chapter_code, q.type, q.difficulty, q.prompt, q.points, q.config_json,
                           q.rubric_json, q.language, q.starter_code, q.reference_concepts_json, q.diagnostic_eligible, q.role
                         FROM question q
                         JOIN learning_journey_learn_unit js ON js.learn_unit_code = q.learn_unit_code
@@ -267,17 +267,35 @@ public class LearningRepository {
                 .list();
     }
 
+    /** 查询一个 Journey Chapter 的活动 synthesis 题目；题目归属和退役状态均由服务端校验。 */
+    public List<Question> listQuestionsForChapter(String journeyId, String chapterCode) {
+        return jdbc.sql("""
+                        SELECT q.id, q.learn_unit_code, q.chapter_code, q.type, q.difficulty, q.prompt, q.points, q.config_json,
+                          q.rubric_json, q.language, q.starter_code, q.reference_concepts_json, q.diagnostic_eligible, q.role
+                        FROM question q
+                        JOIN chapter c ON c.code = q.chapter_code
+                        WHERE c.journey_id = :journeyId AND c.code = :chapterCode AND q.role = 'SYNTHESIS'
+                          AND NOT EXISTS (SELECT 1 FROM question_retirement r WHERE r.question_id = q.id)
+                        ORDER BY q.id
+                        """)
+                .param("journeyId", journeyId)
+                .param("chapterCode", chapterCode)
+                .query((rs, rowNum) -> mapQuestion(rs))
+                .list();
+    }
+
     /** 插入 LLM 生成的新题；已有题目 ID 不允许覆盖。 */
     public void insertGeneratedQuestion(Question question) {
         jdbc.sql("""
                         INSERT OR IGNORE INTO question
-                          (id, learn_unit_code, type, difficulty, prompt, points, config_json, rubric_json,
+                          (id, learn_unit_code, chapter_code, type, difficulty, prompt, points, config_json, rubric_json,
                            language, starter_code, reference_concepts_json, diagnostic_eligible, role)
-                        VALUES (:id, :learnUnitCode, :type, :difficulty, :prompt, :points, :configJson, :rubricJson,
+                        VALUES (:id, :learnUnitCode, :chapterCode, :type, :difficulty, :prompt, :points, :configJson, :rubricJson,
                           :language, :starterCode, :referenceConcepts, :diagnosticEligible, :role)
                         """)
                 .param("id", question.id())
                 .param("learnUnitCode", question.learnUnitCode())
+                .param("chapterCode", question.chapterCode())
                 .param("type", question.type().name())
                 .param("difficulty", question.difficulty())
                 .param("prompt", question.prompt())
@@ -490,12 +508,13 @@ public class LearningRepository {
     /** 新增 Assessment 定义；题目关联由 insertAssessmentQuestion 单独写入。 */
     public void insertAssessment(Assessment assessment) {
         jdbc.sql("""
-                        INSERT INTO assessment (id, journey_id, learn_unit_code, type, status, created_at, completed_at)
-                        VALUES (:id, :journeyId, :learnUnitCode, :type, :status, :createdAt, :completedAt)
+                        INSERT INTO assessment (id, journey_id, learn_unit_code, chapter_code, type, status, created_at, completed_at)
+                        VALUES (:id, :journeyId, :learnUnitCode, :chapterCode, :type, :status, :createdAt, :completedAt)
                         """)
                 .param("id", assessment.id())
                 .param("journeyId", assessment.journeyId())
                 .param("learnUnitCode", assessment.learnUnitCode())
+                .param("chapterCode", assessment.chapterCode())
                 .param("type", assessment.type().name())
                 .param("status", assessment.status().name())
                 .param("createdAt", assessment.createdAt().toString())
@@ -506,7 +525,7 @@ public class LearningRepository {
     /** 按 Assessment 主键查询评估定义。 */
     public Optional<Assessment> findAssessment(String id) {
         return jdbc.sql("""
-                        SELECT id, journey_id, learn_unit_code, type, status, created_at, completed_at
+                        SELECT id, journey_id, learn_unit_code, chapter_code, type, status, created_at, completed_at
                         FROM assessment WHERE id = :id
                         """)
                 .param("id", id)
@@ -517,7 +536,7 @@ public class LearningRepository {
     /** 查询 Journey 最近的一份诊断，确保重启和 Retry 使用固定题集。 */
     public Optional<Assessment> findDiagnosticAssessment(String journeyId) {
         return jdbc.sql("""
-                        SELECT id, journey_id, learn_unit_code, type, status, created_at, completed_at
+                        SELECT id, journey_id, learn_unit_code, chapter_code, type, status, created_at, completed_at
                         FROM assessment
                         WHERE journey_id = :journeyId AND type = 'DIAGNOSTIC'
                         ORDER BY created_at DESC LIMIT 1
@@ -530,7 +549,7 @@ public class LearningRepository {
     /** 查询某 LearnUnit 最近的一份评估，Retry 沿用该 Assessment 的题集。 */
     public Optional<Assessment> findLatestLearnUnitAssessment(String journeyId, String learnUnitCode) {
         return jdbc.sql("""
-                        SELECT id, journey_id, learn_unit_code, type, status, created_at, completed_at
+                        SELECT id, journey_id, learn_unit_code, chapter_code, type, status, created_at, completed_at
                         FROM assessment
                         WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode AND type = 'LEARN_UNIT'
                         ORDER BY created_at DESC LIMIT 1
@@ -539,6 +558,35 @@ public class LearningRepository {
                 .param("learnUnitCode", learnUnitCode)
                 .query((rs, rowNum) -> mapAssessment(rs))
                 .optional();
+    }
+
+    /** 查询某 Journey Chapter 最近的一份 synthesis，Retry 沿用其固定题集。 */
+    public Optional<Assessment> findLatestChapterSynthesisAssessment(String journeyId, String chapterCode) {
+        return jdbc.sql("""
+                        SELECT id, journey_id, learn_unit_code, chapter_code, type, status, created_at, completed_at
+                        FROM assessment
+                        WHERE journey_id = :journeyId AND chapter_code = :chapterCode AND type = 'CHAPTER_SYNTHESIS'
+                        ORDER BY created_at DESC LIMIT 1
+                        """)
+                .param("journeyId", journeyId)
+                .param("chapterCode", chapterCode)
+                .query((rs, rowNum) -> mapAssessment(rs))
+                .optional();
+    }
+
+    /** 查询是否已经存在通过该 Chapter synthesis 的历史 Attempt。 */
+    public boolean hasPassedChapterSynthesis(String journeyId, String chapterCode) {
+        Integer count = jdbc.sql("""
+                        SELECT COUNT(*)
+                        FROM assessment a JOIN assessment_attempt aa ON aa.assessment_id = a.id
+                        WHERE a.journey_id = :journeyId AND a.chapter_code = :chapterCode
+                          AND a.type = 'CHAPTER_SYNTHESIS' AND aa.completed_at IS NOT NULL AND aa.passed = 1
+                        """)
+                .param("journeyId", journeyId)
+                .param("chapterCode", chapterCode)
+                .query(Integer.class)
+                .single();
+        return count > 0;
     }
 
     /** 更新评估生命周期，不修改其固定题集。 */
@@ -565,7 +613,7 @@ public class LearningRepository {
     /** 查询 Assessment 的固定题集；故意包含已退役题目以支持历史读取。 */
     public List<Question> listQuestionsForAssessment(String assessmentId) {
         return jdbc.sql("""
-                        SELECT q.id, q.learn_unit_code, q.type, q.difficulty, q.prompt, q.points, q.config_json,
+                        SELECT q.id, q.learn_unit_code, q.chapter_code, q.type, q.difficulty, q.prompt, q.points, q.config_json,
                           q.rubric_json, q.language, q.starter_code, q.reference_concepts_json, q.diagnostic_eligible, q.role
                         FROM assessment_question aq JOIN question q ON q.id = aq.question_id
                         WHERE aq.assessment_id = :assessmentId ORDER BY aq.sequence
@@ -843,7 +891,8 @@ public class LearningRepository {
 
     private Question mapQuestion(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Question(
-                rs.getString("id"), rs.getString("learn_unit_code"), QuestionType.valueOf(rs.getString("type")),
+                rs.getString("id"), rs.getString("learn_unit_code"), rs.getString("chapter_code"),
+                QuestionType.valueOf(rs.getString("type")),
                 rs.getInt("difficulty"), rs.getString("prompt"), rs.getInt("points"), rs.getString("config_json"),
                 rs.getString("rubric_json"), rs.getString("language"), rs.getString("starter_code"),
                 rs.getString("reference_concepts_json"), rs.getInt("diagnostic_eligible") != 0,
@@ -873,7 +922,8 @@ public class LearningRepository {
     private Assessment mapAssessment(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Assessment(
                 rs.getString("id"), rs.getString("journey_id"), rs.getString("learn_unit_code"),
-                AssessmentType.valueOf(rs.getString("type")), AssessmentStatus.valueOf(rs.getString("status")),
+                rs.getString("chapter_code"), AssessmentType.valueOf(rs.getString("type")),
+                AssessmentStatus.valueOf(rs.getString("status")),
                 Instant.parse(rs.getString("created_at")), instant(rs.getString("completed_at")));
     }
 

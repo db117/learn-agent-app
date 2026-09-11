@@ -2,6 +2,7 @@ package com.example.agent.learning.assessment;
 
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.diagnostic.DiagnosticQuestionPlanner;
 import com.example.agent.learning.journey.LearnerProfile;
 import com.example.agent.learning.persistence.LearningRepository;
@@ -10,6 +11,7 @@ import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.learning.scoring.AssessmentScoreEngine;
 import com.example.agent.learning.scoring.LearnUnitPassPolicy;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -134,6 +136,36 @@ public class AssessmentService {
                 });
     }
 
+    /** 创建或读取一个 Chapter 的固定 synthesis 题集；不会触发 LearnUnit 正文生成。 */
+    @Transactional
+    public AssessmentState createChapterSynthesis(String journeyId, String chapterCode) {
+        return repository.findLatestChapterSynthesisAssessment(journeyId, chapterCode)
+                .map(this::state)
+                .orElseGet(() -> {
+                    requireJourney(journeyId);
+                    Chapter chapter = repository.listChaptersForJourney(journeyId).stream()
+                            .filter(value -> value.code().equals(chapterCode))
+                            .findFirst()
+                            .orElseThrow(() -> new IllegalArgumentException("Chapter is not in the Journey: " + chapterCode));
+                    progress.requireChapterSynthesisEligible(journeyId, chapterCode);
+                    List<LearnUnit> learnUnits = repository.listLearnUnitsForJourney(journeyId).stream()
+                            .filter(unit -> chapterCode.equals(unit.chapterCode()))
+                            .toList();
+                    List<Question> available = repository.listQuestionsForChapter(journeyId, chapterCode);
+                    List<Question> selected = available.isEmpty()
+                            ? synthesisQuestions(chapter, learnUnits) : validateSynthesisQuestions(available, chapterCode);
+                    insertNewQuestions(selected, available);
+                    Assessment assessment = new Assessment(
+                            UUID.randomUUID().toString(), journeyId, null, chapterCode,
+                            AssessmentType.CHAPTER_SYNTHESIS, AssessmentStatus.CREATED, Instant.now(), null);
+                    repository.insertAssessment(assessment);
+                    for (int index = 0; index < selected.size(); index++) {
+                        repository.insertAssessmentQuestion(assessment.id(), selected.get(index).id(), index);
+                    }
+                    return state(assessment);
+                });
+    }
+
     /**
      * 开始一次 Assessment Attempt；已有未完成 Attempt 时保持幂等并直接返回当前状态。
      *
@@ -169,6 +201,21 @@ public class AssessmentService {
                 .orElseThrow(() -> new IllegalArgumentException("LearnUnit has no completed attempt to retry: " + learnUnitCode));
         if (latest.completedAt() == null || !Boolean.FALSE.equals(latest.passed())) {
             throw new IllegalArgumentException("LearnUnit assessment is not retryable: " + learnUnitCode);
+        }
+        return start(assessment.id());
+    }
+
+    /** 为同一个 Chapter synthesis Assessment 创建一次失败后的新 Attempt。 */
+    @Transactional
+    public AssessmentState retryChapterSynthesis(String journeyId, String chapterCode) {
+        Assessment assessment = repository.findLatestChapterSynthesisAssessment(journeyId, chapterCode)
+                .orElseThrow(() -> new IllegalArgumentException("Chapter has no synthesis to retry: " + chapterCode));
+        AssessmentState current = state(assessment);
+        if (current.openAttempt() != null) return current;
+        AssessmentAttempt latest = current.attempts().stream().findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Chapter synthesis has no completed attempt to retry: " + chapterCode));
+        if (latest.completedAt() == null || !Boolean.FALSE.equals(latest.passed())) {
+            throw new IllegalArgumentException("Chapter synthesis is not retryable: " + chapterCode);
         }
         return start(assessment.id());
     }
@@ -243,12 +290,26 @@ public class AssessmentService {
         List<DiagnosticLearnUnitResult> learnUnitResults = List.of();
         int passScore;
         Integer codingPassScore;
+        String reviewLearnUnitCode = null;
+        boolean chapterCompleted = false;
         if (assessment.type() == AssessmentType.DIAGNOSTIC) {
             learnUnitResults = diagnosticResults(assessment.journeyId(), questions, completedQuestions);
             passed = learnUnitResults.stream().allMatch(DiagnosticLearnUnitResult::passed);
             passScore = LearnUnitPassPolicy.DIAGNOSTIC_PASS_SCORE;
             codingPassScore = null;
             progress.generatePath(assessment.journeyId());
+        } else if (assessment.type() == AssessmentType.CHAPTER_SYNTHESIS) {
+            passed = passPolicy.synthesisPassed(score);
+            passScore = LearnUnitPassPolicy.SYNTHESIS_PASS_SCORE;
+            codingPassScore = null;
+            List<LearnUnit> chapterUnits = repository.listLearnUnitsForJourney(assessment.journeyId()).stream()
+                    .filter(unit -> assessment.chapterCode().equals(unit.chapterCode()))
+                    .toList();
+            ProgressService.ChapterSynthesisOutcome outcome = progress.recordChapterSynthesis(
+                    assessment.journeyId(), assessment.chapterCode(), score, passed,
+                    coveredLearnUnitCodes(questions, chapterUnits));
+            reviewLearnUnitCode = outcome.firstWeakLearnUnitCode();
+            chapterCompleted = outcome.chapterCompleted();
         } else {
             LearnUnit learnUnit = repository.findLearnUnit(assessment.learnUnitCode()).orElseThrow();
             passed = passPolicy.passed(score, learnUnit);
@@ -261,7 +322,8 @@ public class AssessmentService {
         repository.updateAssessment(assessment.id(), AssessmentStatus.COMPLETED, completedAt);
         return new AssessmentSubmission(
                 requireAssessment(assessmentId), repository.findAttempt(attempt.id()).orElseThrow(), score, passed,
-                learnUnitResults, completedQuestions, passScore, codingPassScore);
+                learnUnitResults, completedQuestions, passScore, codingPassScore,
+                reviewLearnUnitCode, chapterCompleted);
     }
 
     /** 从数据库重新组装评估、固定题集、当前 Attempt 和历史 Attempt 的完整状态。 */
@@ -299,6 +361,63 @@ public class AssessmentService {
                 repository.insertGeneratedQuestion(question);
             }
         }
+    }
+
+    private List<Question> validateSynthesisQuestions(List<Question> questions, String chapterCode) {
+        if (questions == null || questions.isEmpty()) {
+            throw new IllegalStateException("Chapter synthesis question set is empty: " + chapterCode);
+        }
+        Set<String> ids = new HashSet<>();
+        for (Question question : questions) {
+            if (question == null || question.role() != QuestionRole.SYNTHESIS
+                    || !chapterCode.equals(question.chapterCode()) || question.learnUnitCode() != null
+                    || !ids.add(question.id())) {
+                throw new IllegalArgumentException("Invalid Chapter synthesis question ownership: "
+                        + (question == null ? "null" : question.id()));
+            }
+            QuestionStructureValidator.validate(question);
+        }
+        return questions;
+    }
+
+    private List<Question> synthesisQuestions(Chapter chapter, List<LearnUnit> learnUnits) {
+        if (learnUnits.isEmpty()) throw new IllegalStateException("Chapter has no LearnUnits: " + chapter.code());
+        List<Question> result = new ArrayList<>();
+        for (LearnUnit learnUnit : learnUnits) {
+            Map<String, Object> config = new LinkedHashMap<>();
+            config.put("options", List.of(
+                    Map.of("id", "A", "text", "能够独立运用本章目标中的能力"),
+                    Map.of("id", "B", "text", "只记住一个术语的名称")));
+            config.put("correctOptionIds", List.of("A"));
+            config.put("multiple", false);
+            Question question = new Question(
+                    "generated-synthesis-question-" + UUID.randomUUID(), null, chapter.code(),
+                    QuestionType.MULTIPLE_CHOICE, 1,
+                    "围绕“" + learnUnit.name() + "”，哪项表现符合 Chapter 的综合目标？", 20,
+                    json(config), null, null, null, json(List.of(learnUnit.code())), false,
+                    QuestionRole.SYNTHESIS);
+            QuestionStructureValidator.validate(question);
+            result.add(question);
+        }
+        return result;
+    }
+
+    private List<String> coveredLearnUnitCodes(List<Question> questions, List<LearnUnit> learnUnits) {
+        Set<String> codes = learnUnits.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
+        Set<String> covered = new java.util.LinkedHashSet<>();
+        for (Question question : questions) {
+            try {
+                JsonNode concepts = MAPPER.readTree(question.referenceConceptsJson());
+                if (concepts != null && concepts.isArray()) {
+                    for (JsonNode concept : concepts) {
+                        if (concept.isTextual() && codes.contains(concept.textValue())) covered.add(concept.textValue());
+                    }
+                }
+            } catch (Exception ignored) {
+                return List.of();
+            }
+        }
+        return List.copyOf(covered);
     }
 
     /**
@@ -517,7 +636,22 @@ public class AssessmentService {
             List<DiagnosticLearnUnitResult> learnUnitResults,
             List<QuestionAttempt> questionAttempts,
             int passScore,
-            Integer codingPassScore) {
+            Integer codingPassScore,
+            String reviewLearnUnitCode,
+            boolean chapterCompleted) {
+
+        public AssessmentSubmission(
+                Assessment assessment,
+                AssessmentAttempt attempt,
+                AssessmentScore score,
+                boolean passed,
+                List<DiagnosticLearnUnitResult> learnUnitResults,
+                List<QuestionAttempt> questionAttempts,
+                int passScore,
+                Integer codingPassScore) {
+            this(assessment, attempt, score, passed, learnUnitResults, questionAttempts, passScore,
+                    codingPassScore, null, false);
+        }
     }
 
     /**

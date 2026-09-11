@@ -8,6 +8,7 @@ package com.example.agent.learning.assessment;
  *
  * @param id 题目稳定主键
  * @param learnUnitCode 题目所属 LearnUnit
+ * @param chapterCode Synthesis 题目所属 Chapter；普通题目为空
  * @param type 选择题或 Coding 题
  * @param difficulty 题目难度
  * @param prompt 题干
@@ -23,6 +24,7 @@ package com.example.agent.learning.assessment;
 public record Question(
         String id,
         String learnUnitCode,
+        String chapterCode,
         QuestionType type,
         int difficulty,
         String prompt,
@@ -47,19 +49,48 @@ public record Question(
             String language,
             String starterCode,
             String referenceConceptsJson,
+            boolean diagnosticEligible,
+            QuestionRole role) {
+        this(id, learnUnitCode, null, type, difficulty, prompt, points, configJson, rubricJson, language,
+                starterCode, referenceConceptsJson, diagnosticEligible, role);
+    }
+
+    public Question(
+            String id,
+            String learnUnitCode,
+            QuestionType type,
+            int difficulty,
+            String prompt,
+            int points,
+            String configJson,
+            String rubricJson,
+            String language,
+            String starterCode,
+            String referenceConceptsJson,
             boolean diagnosticEligible) {
-        this(id, learnUnitCode, type, difficulty, prompt, points, configJson, rubricJson, language, starterCode,
+        this(id, learnUnitCode, null, type, difficulty, prompt, points, configJson, rubricJson, language, starterCode,
                 referenceConceptsJson, diagnosticEligible,
                 diagnosticEligible ? QuestionRole.DIAGNOSTIC : QuestionRole.INDEPENDENT);
     }
 
     public Question {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("Question id is required");
-        if (learnUnitCode == null || learnUnitCode.isBlank()) throw new IllegalArgumentException("Question learnUnit is required");
         if (type == null) throw new IllegalArgumentException("Question type is required");
         if (prompt == null || prompt.isBlank()) throw new IllegalArgumentException("Question prompt is required");
         if (points <= 0) throw new IllegalArgumentException("Question points must be positive");
         if (role == null) throw new IllegalArgumentException("Question role is required");
+        if (role == QuestionRole.SYNTHESIS) {
+            if (chapterCode == null || chapterCode.isBlank()) throw new IllegalArgumentException("Synthesis question Chapter is required");
+            if (learnUnitCode != null && !learnUnitCode.isBlank()) {
+                throw new IllegalArgumentException("Synthesis question cannot belong to a LearnUnit");
+            }
+            if (diagnosticEligible) throw new IllegalArgumentException("Synthesis question cannot be diagnostic");
+        } else {
+            if (learnUnitCode == null || learnUnitCode.isBlank()) throw new IllegalArgumentException("Question learnUnit is required");
+            if (chapterCode != null && !chapterCode.isBlank()) {
+                throw new IllegalArgumentException("Non-synthesis question cannot belong to a Chapter");
+            }
+        }
         if ((role == QuestionRole.DIAGNOSTIC) != diagnosticEligible) {
             throw new IllegalArgumentException("Question role and diagnostic eligibility must agree");
         }

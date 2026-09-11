@@ -80,7 +80,8 @@ function firstUnanswered(response: AssessmentResponse) {
   return index < 0 ? 0 : index;
 }
 
-function learnUnitLabel(learnUnits: LearnUnit[], code: string) {
+function learnUnitLabel(learnUnits: LearnUnit[], code: string | null) {
+  if (!code) return "Chapter synthesis";
   return learnUnits.find((learnUnit) => learnUnit.code === code)?.name ?? code.split(".").pop() ?? code;
 }
 
@@ -443,6 +444,21 @@ export default function App() {
     }
   }
 
+  async function openReviewLearnUnit(code: string) {
+    if (!journeyId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setLearnUnit(await api.learnUnit(journeyId, code));
+      closeTutor();
+      setView("dashboard");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to open review LearnUnit"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function retryCurrentLearnUnit() {
     if (!journeyId || !learnUnit || !currentLearnUnit || !canRetry) return;
     setBusy(true);
@@ -473,6 +489,42 @@ export default function App() {
       setView("assessment");
     } catch (cause) {
       setError(errorMessage(cause, "Unable to start LearnUnit assessment"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startChapterSynthesis(chapterCode: string) {
+    if (!journeyId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await api.chapterSynthesis(journeyId, chapterCode);
+      const started = created.openAttempt ? created : await api.startAssessment(created.assessment.id);
+      hydrateAssessment(started);
+      setAssessmentResult(null);
+      setQuestionIndex(firstUnanswered(started));
+      setView("assessment");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to start Chapter synthesis"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retryChapterSynthesis() {
+    const chapterCode = assessmentResult?.assessment.chapterCode;
+    if (!journeyId || !chapterCode || !assessmentResult || assessmentResult.passed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const retried = await api.retryChapterSynthesis(journeyId, chapterCode);
+      hydrateAssessment(retried);
+      setAssessmentResult(null);
+      setQuestionIndex(firstUnanswered(retried));
+      setView("assessment");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to retry Chapter synthesis"));
     } finally {
       setBusy(false);
     }
@@ -647,8 +699,16 @@ export default function App() {
               currentQuestion={currentQuestion}
               questionIndex={questionIndex}
               currentDraft={currentDraft}
-              learnUnitName={learnUnit?.learnUnit.name ?? "LearnUnit 评估"}
-              questionLearnUnitName={currentQuestion ? learnUnitLabel(learnUnits, currentQuestion.learnUnitCode) : ""}
+              learnUnitName={assessment?.assessment.chapterCode
+                  ? journey?.chapters.find((entry) => entry.chapter.code === assessment.assessment.chapterCode)?.chapter.name
+                  ?? "Chapter synthesis"
+                  : learnUnit?.learnUnit.name ?? "LearnUnit 评估"}
+              questionLearnUnitName={currentQuestion
+                  ? currentQuestion.chapterCode
+                      ? journey?.chapters.find((entry) => entry.chapter.code === currentQuestion.chapterCode)?.chapter.name
+                      ?? currentQuestion.chapterCode
+                      : learnUnitLabel(learnUnits, currentQuestion.learnUnitCode)
+                  : ""}
               busy={busy}
               onSelectedOptionIds={(selectedOptionIds) => {
                 if (!currentQuestion) return;
@@ -680,10 +740,13 @@ export default function App() {
                   journey?.journey.status === "ACTIVE" &&
                   journey.path.some((item) => item.status === "CURRENT"),
               )}
-              canRetry={Boolean(canRetry)}
+              canRetry={Boolean(assessmentResult && !assessmentResult.passed &&
+                  (assessmentResult.assessment.type === "CHAPTER_SYNTHESIS" || canRetry))}
               onNext={nextLearnUnit}
               onContinue={continueToDashboard}
-              onRetry={retryCurrentLearnUnit}
+              onRetry={() => assessmentResult?.assessment.type === "CHAPTER_SYNTHESIS"
+                  ? retryChapterSynthesis() : retryCurrentLearnUnit()}
+              onOpenReview={openReviewLearnUnit}
           />
       )}
       {view === "dashboard" && (
@@ -697,6 +760,8 @@ export default function App() {
               canRetry={Boolean(canRetry)}
               learnUnitLabel={learnUnitLabel}
               onOpenLearnUnit={openLearnUnit}
+              onOpenReviewLearnUnit={openReviewLearnUnit}
+              onStartChapterSynthesis={startChapterSynthesis}
               onRetryCurrentLearnUnit={retryCurrentLearnUnit}
               onStartLearnUnitAssessment={startLearnUnitAssessment}
               onAdvancePhase={advancePhase}

@@ -1,5 +1,6 @@
 package com.example.agent.learning.progress;
 
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.journey.JourneyStatus;
 import com.example.agent.learning.journey.LearningJourney;
@@ -352,7 +353,85 @@ public class ProgressService {
         return repository.listPath(journeyId).stream()
                 .filter(LearningPathItem::needsReview)
                 .min(Comparator.comparingInt(LearningPathItem::sequence)
-                        .thenComparing(LearningPathItem::learnUnitCode));
+                .thenComparing(LearningPathItem::learnUnitCode));
+    }
+
+    /** Chapter synthesis 只能在该 Chapter 的所有 LearnUnit 都已 traversed/attempted 后创建。 */
+    public void requireChapterSynthesisEligible(String journeyId, String chapterCode) {
+        activeJourney(journeyId);
+        List<LearnUnit> units = chapterUnits(journeyId, chapterCode);
+        List<LearningPathItem> path = repository.listPath(journeyId);
+        if (units.stream().anyMatch(unit -> path.stream()
+                .filter(item -> item.learnUnitCode().equals(unit.code()))
+                .noneMatch(this::traversed))) {
+            throw new IllegalStateException("Chapter synthesis is not available until every LearnUnit is attempted: " + chapterCode);
+        }
+    }
+
+    /** Journey 详情使用的无副作用 eligibility 查询。 */
+    public boolean isChapterSynthesisEligible(String journeyId, String chapterCode) {
+        try {
+            requireChapterSynthesisEligible(journeyId, chapterCode);
+            return true;
+        } catch (IllegalArgumentException | IllegalStateException error) {
+            return false;
+        }
+    }
+
+    /** 记录 Chapter synthesis 结果；失败只增加相关 review debt，不创建新的路径节点。 */
+    @Transactional
+    public ChapterSynthesisOutcome recordChapterSynthesis(
+            String journeyId,
+            String chapterCode,
+            AssessmentScore score,
+            boolean passed,
+            List<String> relevantLearnUnitCodes) {
+        activeJourney(journeyId);
+        List<LearnUnit> units = chapterUnits(journeyId, chapterCode);
+        List<LearningPathItem> path = repository.listPath(journeyId);
+        java.util.Set<String> unitCodes = units.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
+        java.util.Set<String> relevant = relevantLearnUnitCodes == null || relevantLearnUnitCodes.isEmpty()
+                ? unitCodes
+                : relevantLearnUnitCodes.stream().filter(unitCodes::contains).collect(java.util.stream.Collectors.toSet());
+        if (relevant.isEmpty()) relevant = unitCodes;
+        java.util.Set<String> targetRelevant = relevant;
+
+        if (!passed) {
+            for (LearningPathItem item : path) {
+                if (targetRelevant.contains(item.learnUnitCode()) && !item.needsReview()) {
+                    repository.updatePathItem(copy(
+                            item, item.status(), item.masteryScore(), item.bestAssessmentScore(), item.attemptCount(),
+                            item.passReason(), item.startedAt(), item.passedAt(), item.skippedAt(), true));
+                }
+            }
+        }
+
+        List<LearningPathItem> chapterPath = path.stream()
+                .filter(item -> unitCodes.contains(item.learnUnitCode()))
+                .sorted(Comparator.comparingInt(LearningPathItem::sequence)
+                        .thenComparing(LearningPathItem::learnUnitCode))
+                .toList();
+        String firstWeak = chapterPath.stream()
+                .filter(item -> !passed && targetRelevant.contains(item.learnUnitCode())
+                        || passed && (item.status() != LearningPathItemStatus.COMPLETED || item.needsReview()))
+                .map(LearningPathItem::learnUnitCode)
+                .findFirst()
+                .orElse(null);
+        boolean chapterCompleted = passed && chapterPath.size() == units.size()
+                && chapterPath.stream().allMatch(item -> item.status() == LearningPathItemStatus.COMPLETED
+                && !item.needsReview());
+        boolean journeyCompleted = chapterCompleted && allChaptersComplete(
+                journeyId, chapterCode, path, true);
+        JourneyStatus target = journeyCompleted ? JourneyStatus.COMPLETED : JourneyStatus.ACTIVE;
+        repository.updateJourney(journeyId, target, Instant.now());
+        transition(journeyId, JourneyStatus.ACTIVE.name(),
+                passed ? "CHAPTER_SYNTHESIS_PASS" : "CHAPTER_SYNTHESIS_FAIL", target.name(),
+                Map.of("chapterCode", chapterCode, "score", score.totalScore(), "passed", passed,
+                        "chapterCompleted", chapterCompleted, "firstWeakLearnUnitCode", firstWeak == null ? "" : firstWeak));
+        return new ChapterSynthesisOutcome(chapterCompleted, firstWeak);
+    }
+
+    public record ChapterSynthesisOutcome(boolean chapterCompleted, String firstWeakLearnUnitCode) {
     }
 
     /** 仅在调用方已经关闭当前节点后推进学习路径。 */
@@ -414,9 +493,14 @@ public class ProgressService {
                 .findFirst()
                 .orElse(null);
         if (next == null) {
-            if (before.status() != JourneyStatus.COMPLETED) {
-                repository.updateJourney(journeyId, JourneyStatus.COMPLETED, Instant.now());
+            JourneyStatus target = canCompleteJourney(journeyId, path)
+                    ? JourneyStatus.COMPLETED : JourneyStatus.ACTIVE;
+            repository.updateJourney(journeyId, target, Instant.now());
+            if (target == JourneyStatus.COMPLETED && before.status() != JourneyStatus.COMPLETED) {
                 transition(journeyId, before.status().name(), "COMPLETED", JourneyStatus.COMPLETED.name(),
+                        Map.of("closedLearnUnitCode", closedLearnUnitCode == null ? "" : closedLearnUnitCode));
+            } else if (target == JourneyStatus.ACTIVE) {
+                transition(journeyId, before.status().name(), "WAIT_FOR_CHAPTER_SYNTHESIS", JourneyStatus.ACTIVE.name(),
                         Map.of("closedLearnUnitCode", closedLearnUnitCode == null ? "" : closedLearnUnitCode));
             }
             return null;
@@ -439,7 +523,52 @@ public class ProgressService {
                 .findFirst()
                 .orElse(null);
         repository.updateJourney(
-                journeyId, current == null ? JourneyStatus.COMPLETED : JourneyStatus.ACTIVE, Instant.now());
+                journeyId, current == null && canCompleteJourney(journeyId, path)
+                        ? JourneyStatus.COMPLETED : JourneyStatus.ACTIVE, Instant.now());
+    }
+
+    private List<LearnUnit> chapterUnits(String journeyId, String chapterCode) {
+        if (chapterCode == null || chapterCode.isBlank()) throw new IllegalArgumentException("chapterCode is required");
+        if (repository.listChaptersForJourney(journeyId).stream().noneMatch(chapter -> chapter.code().equals(chapterCode))) {
+            throw new IllegalArgumentException("Chapter is not in the Journey: " + chapterCode);
+        }
+        List<LearnUnit> units = repository.listLearnUnitsForJourney(journeyId).stream()
+                .filter(unit -> chapterCode.equals(unit.chapterCode()))
+                .toList();
+        if (units.isEmpty()) throw new IllegalStateException("Chapter has no LearnUnits: " + chapterCode);
+        return units;
+    }
+
+    private boolean traversed(LearningPathItem item) {
+        return item.status() == LearningPathItemStatus.COMPLETED
+                || item.status() == LearningPathItemStatus.SKIPPED
+                || item.attemptCount() > 0;
+    }
+
+    private boolean canCompleteJourney(String journeyId, List<LearningPathItem> path) {
+        if (path.isEmpty() || path.stream().anyMatch(item -> item.status() != LearningPathItemStatus.COMPLETED
+                || item.needsReview())) return false;
+        List<Chapter> chapters = repository.listChaptersForJourney(journeyId);
+        return chapters.isEmpty() || chapters.stream().allMatch(chapter ->
+                chapterPathComplete(journeyId, chapter.code(), path, false));
+    }
+
+    private boolean allChaptersComplete(
+            String journeyId, String currentChapterCode, List<LearningPathItem> path, boolean currentPassed) {
+        return repository.listChaptersForJourney(journeyId).stream().allMatch(chapter ->
+                chapterPathComplete(journeyId, chapter.code(), path,
+                        chapter.code().equals(currentChapterCode) && currentPassed));
+    }
+
+    private boolean chapterPathComplete(
+            String journeyId, String chapterCode, List<LearningPathItem> path, boolean currentSynthesisPassed) {
+        List<LearnUnit> units = repository.listLearnUnitsForJourney(journeyId).stream()
+                .filter(unit -> chapterCode.equals(unit.chapterCode())).toList();
+        java.util.Set<String> codes = units.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
+        return path.stream().filter(item -> codes.contains(item.learnUnitCode())).count() == units.size()
+                && path.stream().filter(item -> codes.contains(item.learnUnitCode()))
+                .allMatch(item -> item.status() == LearningPathItemStatus.COMPLETED && !item.needsReview())
+                && (currentSynthesisPassed || repository.hasPassedChapterSynthesis(journeyId, chapterCode));
     }
 
     private void requireCurrent(LearningPathItem item) {

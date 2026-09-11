@@ -52,13 +52,14 @@ export function AssessmentView({
                                }: AssessmentViewProps) {
     if (!assessment || !currentQuestion) return <p className="empty">正在准备题目…</p>;
     const diagnostic = assessment.assessment.type === "DIAGNOSTIC";
+    const synthesis = assessment.assessment.type === "CHAPTER_SYNTHESIS";
     const questionConfig = parseQuestionConfig(currentQuestion.configJson);
 
     return (
         <section className="assessment panel">
             <div className="assessment-header">
                 <div>
-                    <div className="section-kicker">{diagnostic ? "DIAGNOSTIC" : "LEARN UNIT CHECK"}</div>
+                    <div className="section-kicker">{diagnostic ? "DIAGNOSTIC" : synthesis ? "CHAPTER SYNTHESIS" : "LEARN UNIT CHECK"}</div>
                     <h2>{diagnostic ? "了解你的起点" : learnUnitName}</h2>
                 </div>
                 <span className="muted">{questionIndex + 1} / {assessment.questions.length}</span>

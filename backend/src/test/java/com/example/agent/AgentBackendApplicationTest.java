@@ -3,6 +3,7 @@ package com.example.agent;
 import com.example.agent.agent.TutorAgentService;
 import com.example.agent.learning.assessment.Assessment;
 import com.example.agent.learning.assessment.AssessmentAttempt;
+import com.example.agent.learning.assessment.AssessmentService;
 import com.example.agent.learning.assessment.AssessmentStatus;
 import com.example.agent.learning.assessment.AssessmentType;
 import com.example.agent.learning.assessment.Question;
@@ -16,6 +17,7 @@ import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
+import com.example.agent.learning.journey.JourneyStatus;
 import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
@@ -53,8 +55,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
-                "app.data-dir=target/context-test-data-learn-unit-v8",
-                "app.database=target/context-test-data-learn-unit-v8/context.db",
+                "app.data-dir=target/context-test-data-learn-unit-v9",
+                "app.database=target/context-test-data-learn-unit-v9/context.db",
                 "app.openai.api-key=test-key",
                 "app.openai.base-url=http://localhost"
         })
@@ -81,6 +83,8 @@ class AgentBackendApplicationTest {
     private CurriculumService curriculum;
     @Autowired
     private ProgressService progress;
+    @Autowired
+    private AssessmentService assessments;
     @Autowired
     private TutorSessionService tutorSessions;
     @Autowired
@@ -225,6 +229,29 @@ class AgentBackendApplicationTest {
                 .findFirst().orElseThrow().learnUnitCode();
         progress.skipLearnUnit(journey.id(), skipped);
         assertEquals(LearningPathItemStatus.SKIPPED, learning.findPathItem(journey.id(), skipped).orElseThrow().status());
+
+        String chapterCode = learning.listChaptersForJourney(journey.id()).get(0).code();
+        AssessmentService.AssessmentState synthesis = assessments.createChapterSynthesis(journey.id(), chapterCode);
+        assertEquals(AssessmentType.CHAPTER_SYNTHESIS, synthesis.assessment().type());
+        assertEquals(chapterCode, synthesis.assessment().chapterCode());
+        assertTrue(synthesis.questions().stream().allMatch(question ->
+                question.role() == QuestionRole.SYNTHESIS && chapterCode.equals(question.chapterCode())
+                        && question.learnUnitCode() == null));
+        assessments.start(synthesis.assessment().id());
+        AssessmentService.AssessmentSubmission failedSynthesis = assessments.submit(synthesis.assessment().id());
+        assertFalse(failedSynthesis.passed());
+        assertEquals(learnUnits.get(0).code(), failedSynthesis.reviewLearnUnitCode());
+        AssessmentService.AssessmentState retry = assessments.retryChapterSynthesis(journey.id(), chapterCode);
+        assertEquals(synthesis.questions(), retry.questions());
+        for (Question question : retry.questions()) {
+            assessments.answer(retry.assessment().id(), new com.example.agent.learning.assessment.QuestionAnswer(
+                    question.id(), List.of("A"), ""));
+        }
+        AssessmentService.AssessmentSubmission passedSynthesis = assessments.submit(retry.assessment().id());
+        assertTrue(passedSynthesis.passed());
+        assertFalse(passedSynthesis.chapterCompleted());
+        assertEquals(JourneyStatus.ACTIVE, journeys.get(journey.id()).status());
+        assertEquals(2, learning.listAttemptsForAssessment(synthesis.assessment().id()).size());
 
         Question question = new Question(
                 "integration-question-" + UUID.randomUUID(), current, QuestionType.MULTIPLE_CHOICE, 1,

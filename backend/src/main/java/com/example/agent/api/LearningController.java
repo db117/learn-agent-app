@@ -160,12 +160,20 @@ public class LearningController {
                             .filter(item -> chapterUnits.stream()
                                     .anyMatch(unit -> unit.code().equals(item.learnUnitCode())))
                             .toList();
+                    int unresolvedCount = (int) chapterPath.stream()
+                            .filter(item -> item.status() != com.example.agent.learning.path.LearningPathItemStatus.COMPLETED
+                                    || item.needsReview())
+                            .count();
+                    var synthesis = learning.findLatestChapterSynthesisAssessment(id, chapter.code());
                     return new ChapterDetail(
                             chapter, chapterUnits, chapterPath,
                             (int) chapterPath.stream().filter(item -> item.status()
                                     == com.example.agent.learning.path.LearningPathItemStatus.COMPLETED).count(),
                             (int) chapterPath.stream().filter(item -> item.status()
-                                    == com.example.agent.learning.path.LearningPathItemStatus.SKIPPED).count());
+                                    == com.example.agent.learning.path.LearningPathItemStatus.SKIPPED).count(),
+                            unresolvedCount, progress.isChapterSynthesisEligible(id, chapter.code()),
+                            learning.hasPassedChapterSynthesis(id, chapter.code()),
+                            synthesis.map(Assessment::id).orElse(null));
                 })
                 .toList();
         return new JourneyDetailResponse(
@@ -304,6 +312,24 @@ public class LearningController {
                     }
                     return AssessmentResponse.from(assessments.createLearnUnitAssessment(journeyId, learnUnitCode));
                 })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /** 创建或恢复 Chapter 的固定 synthesis 题集。 */
+    @PostMapping("/journeys/{journeyId}/chapters/{chapterCode}/synthesis")
+    public Mono<AssessmentResponse> chapterSynthesis(
+            @PathVariable String journeyId, @PathVariable String chapterCode) {
+        return Mono.fromCallable(() -> AssessmentResponse.from(
+                        assessments.createChapterSynthesis(journeyId, chapterCode)))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /** Retry Chapter synthesis，保留原 Assessment 和固定题集。 */
+    @PostMapping("/journeys/{journeyId}/chapters/{chapterCode}/synthesis/retry")
+    public Mono<AssessmentResponse> retryChapterSynthesis(
+            @PathVariable String journeyId, @PathVariable String chapterCode) {
+        return Mono.fromCallable(() -> AssessmentResponse.from(
+                        assessments.retryChapterSynthesis(journeyId, chapterCode)))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
@@ -461,7 +487,20 @@ public class LearningController {
             List<LearnUnit> learnUnits,
             List<LearningPathItem> path,
             int completedCount,
-            int skippedCount) {
+            int skippedCount,
+            int unresolvedCount,
+            boolean synthesisAvailable,
+            boolean synthesisCompleted,
+            String synthesisAssessmentId) {
+
+        public ChapterDetail(
+                Chapter chapter,
+                List<LearnUnit> learnUnits,
+                List<LearningPathItem> path,
+                int completedCount,
+                int skippedCount) {
+            this(chapter, learnUnits, path, completedCount, skippedCount, 0, false, false, null);
+        }
     }
 
     /**
@@ -528,6 +567,7 @@ public class LearningController {
     public record QuestionResponse(
             String id,
             String learnUnitCode,
+            String chapterCode,
             QuestionType type,
             int difficulty,
             String prompt,
@@ -540,7 +580,7 @@ public class LearningController {
 
         static QuestionResponse from(Question question) {
             return new QuestionResponse(
-                    question.id(), question.learnUnitCode(), question.type(), question.difficulty(), question.prompt(),
+                    question.id(), question.learnUnitCode(), question.chapterCode(), question.type(), question.difficulty(), question.prompt(),
                     question.points(), publicConfig(question.configJson()), null, question.language(),
                     question.starterCode(), question.referenceConceptsJson());
         }
@@ -575,14 +615,16 @@ public class LearningController {
             List<AssessmentService.DiagnosticLearnUnitResult> learnUnitResults,
             List<QuestionAttempt> questionAttempts,
             int passScore,
-            Integer codingPassScore) {
+            Integer codingPassScore,
+            String reviewLearnUnitCode,
+            boolean chapterCompleted) {
 
         static AssessmentResultResponse from(AssessmentService.AssessmentSubmission submission) {
             return new AssessmentResultResponse(
                     submission.assessment(), submission.attempt(), submission.score(), submission.passed(),
                     submission.learnUnitResults(), submission.questionAttempts().stream()
                             .map(attempt -> publicQuestionAttempt(attempt, false)).toList(), submission.passScore(),
-                    submission.codingPassScore());
+                    submission.codingPassScore(), submission.reviewLearnUnitCode(), submission.chapterCompleted());
         }
     }
 
