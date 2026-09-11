@@ -65,6 +65,7 @@ export function DashboardView({
     const chapters = journey?.chapters ?? [];
     const passed = path.filter((item) => item.status === "COMPLETED").length;
     const skipped = path.filter((item) => item.status === "SKIPPED").length;
+    const reviewDebt = path.find((item) => item.needsReview);
     const current = learnUnit;
     const phase = current?.pathItem?.learningPhase ?? "EXPLANATION";
     const hasDetailedContent = Boolean(
@@ -84,6 +85,9 @@ export function DashboardView({
             <aside className="path panel">
                 <div className="panel-title"><span>Learning path</span><span
                     className="muted">{passed} passed · {skipped} skipped</span></div>
+                {reviewDebt && <p className="warning" role="status">
+                    Review needed: {learnUnitLabel(learnUnits, reviewDebt.learnUnitCode)}
+                </p>}
                 {chapters.map((entry) => <details className="path-chapter" key={entry.chapter.code}
                                                      open={entry.path.some((item) => item.status === "CURRENT")}>
                     <summary>
@@ -99,7 +103,7 @@ export function DashboardView({
                                            onClick={() => actionable && void onOpenLearnUnit(item.learnUnitCode)}
                                            disabled={!actionable || busy}>
                                 <span className="path-number">{item.sequence}</span>
-                                <span><strong>{name}</strong><small>{pathStatusLabel(item.status)}</small></span>
+                                <span><strong>{name}</strong><small>{item.needsReview ? "Review needed" : pathStatusLabel(item.status)}</small></span>
                                 <span className="path-mark">{item.status === "COMPLETED" ? "✓" : item.status === "SKIPPED" ? "–" : item.status === "CURRENT" ? "→" : "·"}</span>
                             </button>;
                         })}
@@ -130,6 +134,9 @@ export function DashboardView({
                             <span>评估次数 {current.pathItem?.attemptCount ?? 0}</span>
                         </div>
                         <p className="next-step">下一步：{nextStep}</p>
+                        {current.pathItem?.needsReview && <p className="warning" role="status">
+                            Independent check 未通过。先针对“{current.learnUnit.ability || current.learnUnit.name}”进行 remediation，再用相同题集 Retry；这项能力仍未掌握。
+                        </p>}
                         {hasDetailedContent && <>
                             <div className="phase-header">
                                 <span className="section-kicker">PHASE {phaseLabel(phase)}</span>

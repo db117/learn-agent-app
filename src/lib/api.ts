@@ -131,6 +131,7 @@ export type LearningPathItem = {
   learningPhase: LearningPhase;
   skippedPhases: LearningPhase[];
   guidedPracticeEntries: GuidedPracticeEntry[];
+  needsReview: boolean;
 };
 
 export type GuidedPracticeEntry = {

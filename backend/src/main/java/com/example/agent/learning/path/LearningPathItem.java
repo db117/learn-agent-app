@@ -23,6 +23,7 @@ import java.util.List;
  * @param learningPhase 当前教学阶段
  * @param skippedPhases 已显式跳过的教学阶段
  * @param guidedPracticeEntries 不计分的引导练习记录
+ * @param needsReview 是否存在尚未通过独立检查清除的 review debt
  */
 public record LearningPathItem(
         String id,
@@ -39,12 +40,34 @@ public record LearningPathItem(
         Instant skippedAt,
         LearningPhase learningPhase,
         List<LearningPhase> skippedPhases,
-        List<GuidedPracticeEntry> guidedPracticeEntries) {
+        List<GuidedPracticeEntry> guidedPracticeEntries,
+        boolean needsReview) {
 
     public LearningPathItem {
         learningPhase = learningPhase == null ? LearningPhase.EXPLANATION : learningPhase;
         skippedPhases = List.copyOf(skippedPhases == null ? List.of() : skippedPhases);
         guidedPracticeEntries = List.copyOf(guidedPracticeEntries == null ? List.of() : guidedPracticeEntries);
+    }
+
+    public LearningPathItem(
+            String id,
+            String journeyId,
+            String learnUnitCode,
+            int sequence,
+            LearningPathItemStatus status,
+            int masteryScore,
+            int bestAssessmentScore,
+            int attemptCount,
+            PassReason passReason,
+            Instant startedAt,
+            Instant passedAt,
+            Instant skippedAt,
+            LearningPhase learningPhase,
+            List<LearningPhase> skippedPhases,
+            List<GuidedPracticeEntry> guidedPracticeEntries) {
+        this(id, journeyId, learnUnitCode, sequence, status, masteryScore, bestAssessmentScore, attemptCount,
+                passReason, startedAt, passedAt, skippedAt, learningPhase, skippedPhases, guidedPracticeEntries,
+                false);
     }
 
     public LearningPathItem(

@@ -7,6 +7,7 @@ import com.example.agent.learning.journey.LearnerProfile;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
+import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.persistence.LearningRepository;
 import org.junit.jupiter.api.Test;
 
@@ -60,6 +61,36 @@ class TutorContextServiceTest {
         assertEquals(List.of("Review generics"), context.weakPoints());
         assertTrue(context.systemPrompt().contains("unit-b"));
         assertThrows(UnsupportedOperationException.class, () -> context.weakPoints().add("mutate"));
+    }
+
+    @Test
+    void suppliesPhaseAndRemediationFactsWithoutGrantingTutorMutationRights() {
+        LearningJourney journey = new LearningJourney(
+                "journey", "user", "typescript", "goal", JourneyStatus.ACTIVE,
+                Instant.EPOCH, Instant.EPOCH);
+        LearnUnit current = learnUnit("unit-a", 1).withStructuredContent(
+                "Explain generic constraints", 10, "intro", List.of("example"),
+                "practice", List.of("hint"), "check");
+        LearningPathItem currentPath = new LearningPathItem(
+                "path-a", "journey", "unit-a", 1, LearningPathItemStatus.CURRENT,
+                40, 40, 1, null, Instant.EPOCH, null, null, LearningPhase.INDEPENDENT_CHECK,
+                List.of(), List.of(), true);
+        when(repository.findTutorSessionBySessionId("review-session"))
+                .thenReturn(Optional.of(new LearningRepository.TutorSessionLink("journey", "unit-a", "review-session")));
+        when(repository.findJourney("journey")).thenReturn(Optional.of(journey));
+        when(repository.findProfile("journey")).thenReturn(Optional.empty());
+        when(repository.findLearnUnit("unit-a")).thenReturn(Optional.of(current));
+        when(repository.findPathItem("journey", "unit-a")).thenReturn(Optional.of(currentPath));
+        when(repository.listPath("journey")).thenReturn(List.of(currentPath));
+        when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(current));
+        when(repository.listQuestionAttemptsForLearnUnit("journey", "unit-a")).thenReturn(List.of());
+
+        TutorContext context = service.forSession("review-session");
+
+        assertEquals(LearningPhase.INDEPENDENT_CHECK, context.learningPhase());
+        assertEquals("Explain generic constraints", context.failedAbility());
+        assertTrue(context.remediationNeeded());
+        assertTrue(context.systemPrompt().contains("remediation"));
     }
 
     private LearnUnit learnUnit(String code, int sequence) {

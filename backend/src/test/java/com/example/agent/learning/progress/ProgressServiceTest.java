@@ -99,8 +99,33 @@ class ProgressServiceTest {
         assertEquals(85, result.masteryScore());
         assertEquals(90, result.bestAssessmentScore());
         assertEquals(4, result.attemptCount());
+        assertTrue(result.needsReview());
         verify(repository).updatePathItem(result);
         verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.ACTIVE), any(Instant.class));
+    }
+
+    @Test
+    void successfulAssessmentClearsReviewDebtBeforeAdvancing() {
+        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 60, 60, 1, true);
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
+        when(repository.listPath("journey")).thenReturn(List.of(current));
+
+        LearningPathItem result = service.recordLearnUnitAssessment(
+                "journey", "learnUnit-a", new AssessmentScore(100, 100, 100, true, true), true);
+
+        assertEquals(LearningPathItemStatus.COMPLETED, result.status());
+        assertEquals(false, result.needsReview());
+        verify(repository).updatePathItem(result);
+    }
+
+    @Test
+    void selectsOnlyTheEarliestReviewDebtAsTheTargetedTask() {
+        LearningPathItem earliest = item("learnUnit-a", 1, LearningPathItemStatus.SKIPPED, 0, 0, 1, true);
+        LearningPathItem later = item("learnUnit-b", 2, LearningPathItemStatus.SKIPPED, 0, 0, 1, true);
+        when(repository.listPath("journey")).thenReturn(List.of(earliest, later));
+
+        assertEquals(Optional.of(earliest), service.nextReviewTask("journey"));
+        verify(repository, never()).updatePathItem(any(LearningPathItem.class));
     }
 
     @Test
@@ -274,8 +299,15 @@ class ProgressServiceTest {
     private LearningPathItem item(
             String learnUnitCode, int sequence, LearningPathItemStatus status,
             int masteryScore, int bestAssessmentScore, int attemptCount) {
+        return item(learnUnitCode, sequence, status, masteryScore, bestAssessmentScore, attemptCount, false);
+    }
+
+    private LearningPathItem item(
+            String learnUnitCode, int sequence, LearningPathItemStatus status,
+            int masteryScore, int bestAssessmentScore, int attemptCount, boolean needsReview) {
         return new LearningPathItem(
                 learnUnitCode + "-item", "journey", learnUnitCode, sequence, status,
-                masteryScore, bestAssessmentScore, attemptCount, null, Instant.EPOCH, null, null);
+                masteryScore, bestAssessmentScore, attemptCount, null, Instant.EPOCH, null, null,
+                LearningPhase.EXPLANATION, List.of(), List.of(), needsReview);
     }
 }

@@ -219,6 +219,7 @@ CREATE TABLE IF NOT EXISTS learning_path_item
     learning_phase TEXT NOT NULL DEFAULT 'EXPLANATION',
     skipped_phases_json TEXT NOT NULL DEFAULT '[]',
     guided_practice_entries_json TEXT NOT NULL DEFAULT '[]',
+    needs_review INTEGER NOT NULL DEFAULT 0,
     UNIQUE (journey_id, learn_unit_code)
 );
 
@@ -363,7 +364,7 @@ CREATE TABLE IF NOT EXISTS schema_metadata
 INSERT INTO schema_metadata (key, value)
 VALUES ('schema.marker', 'learning-agent-sqlite');
 INSERT INTO schema_metadata (key, value)
-VALUES ('schema.version', '4');
+VALUES ('schema.version', '5');
 INSERT INTO schema_metadata (key, value)
 VALUES ('snapshot.created_at', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 INSERT INTO schema_metadata (key, value)

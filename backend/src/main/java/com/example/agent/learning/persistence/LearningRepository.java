@@ -400,10 +400,10 @@ public class LearningRepository {
                         INSERT INTO learning_path_item
                           (id, journey_id, learn_unit_code, sequence, status, mastery_score,
                            best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at,
-                           learning_phase, skipped_phases_json, guided_practice_entries_json)
+                           learning_phase, skipped_phases_json, guided_practice_entries_json, needs_review)
                         VALUES (:id, :journeyId, :learnUnitCode, :sequence, :status, :masteryScore,
                           :bestScore, :attemptCount, :passReason, :startedAt, :passedAt, :skippedAt,
-                          :learningPhase, :skippedPhases, :guidedPracticeEntries)
+                          :learningPhase, :skippedPhases, :guidedPracticeEntries, :needsReview)
                         """)
                 .param("id", item.id())
                 .param("journeyId", item.journeyId())
@@ -420,6 +420,7 @@ public class LearningRepository {
                 .param("learningPhase", item.learningPhase().name())
                 .param("skippedPhases", json(item.skippedPhases()))
                 .param("guidedPracticeEntries", json(item.guidedPracticeEntries()))
+                .param("needsReview", item.needsReview() ? 1 : 0)
                 .update();
     }
 
@@ -428,7 +429,7 @@ public class LearningRepository {
         return jdbc.sql("""
                         SELECT id, journey_id, learn_unit_code, sequence, status, mastery_score,
                           best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at,
-                          learning_phase, skipped_phases_json, guided_practice_entries_json
+                          learning_phase, skipped_phases_json, guided_practice_entries_json, needs_review
                         FROM learning_path_item WHERE journey_id = :journeyId ORDER BY sequence
                         """)
                 .param("journeyId", journeyId)
@@ -441,7 +442,7 @@ public class LearningRepository {
         return jdbc.sql("""
                         SELECT id, journey_id, learn_unit_code, sequence, status, mastery_score,
                           best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at,
-                          learning_phase, skipped_phases_json, guided_practice_entries_json
+                          learning_phase, skipped_phases_json, guided_practice_entries_json, needs_review
                         FROM learning_path_item WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode
                         """)
                 .param("journeyId", journeyId)
@@ -465,7 +466,8 @@ public class LearningRepository {
                           pass_reason = :passReason, started_at = :startedAt, passed_at = :passedAt,
                           skipped_at = :skippedAt, learning_phase = :learningPhase,
                           skipped_phases_json = :skippedPhases,
-                          guided_practice_entries_json = :guidedPracticeEntries
+                          guided_practice_entries_json = :guidedPracticeEntries,
+                          needs_review = :needsReview
                         WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode
                         """)
                 .param("status", item.status().name())
@@ -479,6 +481,7 @@ public class LearningRepository {
                 .param("learningPhase", item.learningPhase().name())
                 .param("skippedPhases", json(item.skippedPhases()))
                 .param("guidedPracticeEntries", json(item.guidedPracticeEntries()))
+                .param("needsReview", item.needsReview() ? 1 : 0)
                 .param("journeyId", item.journeyId())
                 .param("learnUnitCode", item.learnUnitCode())
                 .update();
@@ -863,7 +866,8 @@ public class LearningRepository {
                 reason == null ? null : PassReason.valueOf(reason), instant(rs.getString("started_at")),
                 instant(rs.getString("passed_at")), instant(rs.getString("skipped_at")),
                 LearningPhase.valueOf(rs.getString("learning_phase")), phases(rs.getString("skipped_phases_json")),
-                guidedPracticeEntries(rs.getString("guided_practice_entries_json")));
+                guidedPracticeEntries(rs.getString("guided_practice_entries_json")),
+                rs.getInt("needs_review") != 0);
     }
 
     private Assessment mapAssessment(java.sql.ResultSet rs) throws java.sql.SQLException {

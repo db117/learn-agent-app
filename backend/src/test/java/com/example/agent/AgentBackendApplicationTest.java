@@ -53,8 +53,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
-                "app.data-dir=target/context-test-data-learn-unit-v6",
-                "app.database=target/context-test-data-learn-unit-v6/context.db",
+                "app.data-dir=target/context-test-data-learn-unit-v8",
+                "app.database=target/context-test-data-learn-unit-v8/context.db",
                 "app.openai.api-key=test-key",
                 "app.openai.base-url=http://localhost"
         })
@@ -213,9 +213,11 @@ class AgentBackendApplicationTest {
         progress.recordLearnUnitAssessment(
                 journey.id(), current, new AssessmentScore(100, 60, 70, true, true), false);
         assertEquals(LearningPathItemStatus.CURRENT, learning.findPathItem(journey.id(), current).orElseThrow().status());
+        assertTrue(learning.findPathItem(journey.id(), current).orElseThrow().needsReview());
         progress.recordLearnUnitAssessment(
                 journey.id(), current, new AssessmentScore(100, 100, 90, true, true), true);
         assertEquals(LearningPathItemStatus.COMPLETED, learning.findPathItem(journey.id(), current).orElseThrow().status());
+        assertFalse(learning.findPathItem(journey.id(), current).orElseThrow().needsReview());
         assertTrue(learning.listWorkflowTransitions(journey.id()).size() >= 5);
 
         String skipped = learning.listPath(journey.id()).stream()

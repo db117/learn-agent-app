@@ -2,6 +2,7 @@ package com.example.agent.learning.tutor;
 
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.journey.LearnerProfile;
+import com.example.agent.learning.path.LearningPhase;
 
 import java.util.List;
 
@@ -11,20 +12,24 @@ public record TutorContext(
         String targetLanguage,
         LearnerProfile learnerProfile,
         LearnUnit currentLearnUnit,
+        LearningPhase learningPhase,
         MasterySummary mastery,
         List<String> weakPoints,
+        String failedAbility,
+        boolean remediationNeeded,
         LearnUnit nextLearnUnit,
         String nextStep) {
 
     public TutorContext {
         weakPoints = List.copyOf(weakPoints == null ? List.of() : weakPoints);
         mastery = mastery == null ? MasterySummary.empty() : mastery;
+        failedAbility = failedAbility == null ? "" : failedAbility;
         nextStep = nextStep == null || nextStep.isBlank() ? "Continue the current LearnUnit." : nextStep;
     }
 
     public static TutorContext empty() {
         return new TutorContext(
-                null, "unknown", null, null, MasterySummary.empty(), List.of(), null,
+                null, "unknown", null, null, null, MasterySummary.empty(), List.of(), "", false, null,
                 "Ask the learner what they want to practice.");
     }
 
@@ -45,14 +50,18 @@ public record TutorContext(
                 Learner background: %s
                 Learning goal: %s
                 Current LearnUnit: %s
+                Current phase: %s
                 Mastery summary: %s
                 Known weak points: %s
+                Failed ability: %s
+                Remediation needed: %s
                 Next LearnUnit: %s
                 Next step: %s
                 Do not modify scores, pass/fail, skip status, or the Learning Path.
                 """.formatted(
                 targetLanguage, background, learnerProfile == null ? "not provided" : learnerProfile.learningGoal(),
-                current, mastery, weakPoints, next, nextStep);
+                current, learningPhase == null ? "not started" : learningPhase, mastery, weakPoints,
+                failedAbility.isBlank() ? "none" : failedAbility, remediationNeeded, next, nextStep);
     }
 
     public record MasterySummary(

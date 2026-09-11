@@ -52,6 +52,12 @@ public class TutorContextService {
                 .findFirst()
                 .orElse(null);
         LearnUnit next = nextPath == null ? null : unitsByCode.get(nextPath.learnUnitCode());
+        LearningPathItem reviewPath = path.stream()
+                .filter(LearningPathItem::needsReview)
+                .min(java.util.Comparator.comparingInt(LearningPathItem::sequence)
+                        .thenComparing(LearningPathItem::learnUnitCode))
+                .orElse(null);
+        LearnUnit reviewUnit = reviewPath == null ? null : unitsByCode.get(reviewPath.learnUnitCode());
         List<String> mastered = path.stream()
                 .filter(item -> item.status() == LearningPathItemStatus.COMPLETED)
                 .map(item -> {
@@ -70,14 +76,20 @@ public class TutorContextService {
                 ? TutorContext.MasterySummary.empty()
                 : new TutorContext.MasterySummary(
                         currentPath.masteryScore(), currentPath.bestAssessmentScore(), currentPath.attemptCount(), mastered);
-        String nextStep = next == null
+        String nextStep = reviewUnit != null
+                ? "Provide remediation for " + reviewUnit.name() + ", then retry its independent check."
+                : next == null
                 ? currentPath != null && currentPath.status() != LearningPathItemStatus.CURRENT
                 ? "The Journey is complete; review the mastered LearnUnits."
                 : "Complete the current LearnUnit assessment."
                 : "Complete the current LearnUnit, then continue with " + next.name() + ".";
+        String failedAbility = reviewUnit == null ? ""
+                : reviewUnit.ability() == null || reviewUnit.ability().isBlank()
+                ? reviewUnit.name() : reviewUnit.ability();
         return new TutorContext(
                 journeyId,
                 journey == null ? current == null ? "unknown" : current.languageCode() : journey.languageCode(),
-                profile, current, mastery, weakPoints, next, nextStep);
+                profile, current, currentPath == null ? null : currentPath.learningPhase(), mastery, weakPoints,
+                failedAbility, reviewUnit != null, next, nextStep);
     }
 }

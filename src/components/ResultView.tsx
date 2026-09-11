@@ -34,6 +34,9 @@ export function ResultView({
                 <strong>{assessmentResult.score.totalScore}</strong><span>/ 100</span>
                 <p className={assessmentResult.passed ? "success" : "warning"}>{resultStatus}</p>
             </div>
+            {!diagnostic && !assessmentResult.passed && <p className="warning" role="status">
+                本次独立检查未通过。Review 当前能力后可用相同题集 Retry；这次结果不会记为掌握。
+            </p>}
             <div className="score-breakdown">
                 {assessmentResult.score.hasChoiceQuestions && <span>选择题 {assessmentResult.score.choiceScore}</span>}
                 {assessmentResult.score.hasCodingQuestions && <span>Coding {assessmentResult.score.codingScore}</span>}

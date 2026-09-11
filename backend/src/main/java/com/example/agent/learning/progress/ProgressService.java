@@ -17,8 +17,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -225,7 +227,7 @@ public class ProgressService {
                             previous.attemptCount() + 1,
                             passed ? PassReason.LEARNING : previous.passReason(),
                             previous.startedAt() == null ? now : previous.startedAt(),
-                            passed ? now : previous.passedAt(), previous.skippedAt());
+                            passed ? now : previous.passedAt(), previous.skippedAt(), !passed);
                     repository.updatePathItem(result);
                     return new LearningWorkflowGraph.Action<>(passed ? "pass" : "retry", result);
                 },
@@ -238,7 +240,9 @@ public class ProgressService {
                         "retry", result -> {
                             repository.updateJourney(journeyId, JourneyStatus.ACTIVE, Instant.now());
                             transition(journeyId, previous.status().name(), "RETRY", result.status().name(),
-                                    Map.of("learnUnitCode", learnUnitCode, "score", score.totalScore()));
+                                    Map.of("learnUnitCode", learnUnitCode, "score", score.totalScore(),
+                                            "needsReview", result.needsReview(),
+                                            "phase", previous.learningPhase().name()));
                         }));
     }
 
@@ -340,6 +344,15 @@ public class ProgressService {
                             "advance", advanceToNextLearnUnit(journeyId, closedLearnUnitCode, closed.status()));
                 },
                 Map.of("complete", ignored -> {}, "advance", ignored -> {}));
+    }
+
+    /** 选择本 Journey 中最早的一个 review debt；review task 不创建新的路径节点。 */
+    public Optional<LearningPathItem> nextReviewTask(String journeyId) {
+        journey(journeyId);
+        return repository.listPath(journeyId).stream()
+                .filter(LearningPathItem::needsReview)
+                .min(Comparator.comparingInt(LearningPathItem::sequence)
+                        .thenComparing(LearningPathItem::learnUnitCode));
     }
 
     /** 仅在调用方已经关闭当前节点后推进学习路径。 */
@@ -453,7 +466,7 @@ public class ProgressService {
                 item.id(), item.journeyId(), item.learnUnitCode(), item.sequence(), item.status(),
                 item.masteryScore(), item.bestAssessmentScore(), item.attemptCount(), item.passReason(),
                 item.startedAt(), item.passedAt(), item.skippedAt(), learningPhase, skippedPhases,
-                guidedPracticeEntries);
+                guidedPracticeEntries, item.needsReview());
     }
 
     /**
@@ -480,10 +493,25 @@ public class ProgressService {
             Instant startedAt,
             Instant passedAt,
             Instant skippedAt) {
+        return copy(item, status, masteryScore, bestAssessmentScore, attemptCount, passReason,
+                startedAt, passedAt, skippedAt, item.needsReview());
+    }
+
+    private LearningPathItem copy(
+            LearningPathItem item,
+            LearningPathItemStatus status,
+            int masteryScore,
+            int bestAssessmentScore,
+            int attemptCount,
+            PassReason passReason,
+            Instant startedAt,
+            Instant passedAt,
+            Instant skippedAt,
+            boolean needsReview) {
         return new LearningPathItem(
                 item.id(), item.journeyId(), item.learnUnitCode(), item.sequence(), status,
                 masteryScore, bestAssessmentScore, attemptCount, passReason, startedAt, passedAt, skippedAt,
-                item.learningPhase(), item.skippedPhases(), item.guidedPracticeEntries());
+                item.learningPhase(), item.skippedPhases(), item.guidedPracticeEntries(), needsReview);
     }
 
     /**
