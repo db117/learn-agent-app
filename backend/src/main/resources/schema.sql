@@ -236,7 +236,8 @@ CREATE TABLE IF NOT EXISTS question
     language TEXT,
     starter_code TEXT,
     reference_concepts_json TEXT,
-    diagnostic_eligible INTEGER NOT NULL DEFAULT 0
+    diagnostic_eligible INTEGER NOT NULL DEFAULT 0,
+    role TEXT NOT NULL DEFAULT 'INDEPENDENT'
 );
 
 -- 题目软删除标记；不物理删除 question，以保持历史 Attempt 可读。
@@ -362,7 +363,7 @@ CREATE TABLE IF NOT EXISTS schema_metadata
 INSERT INTO schema_metadata (key, value)
 VALUES ('schema.marker', 'learning-agent-sqlite');
 INSERT INTO schema_metadata (key, value)
-VALUES ('schema.version', '3');
+VALUES ('schema.version', '4');
 INSERT INTO schema_metadata (key, value)
 VALUES ('snapshot.created_at', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 INSERT INTO schema_metadata (key, value)

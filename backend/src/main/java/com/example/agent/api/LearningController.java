@@ -339,7 +339,8 @@ public class LearningController {
         return new LearnUnitResponse(
                 journeyId, learnUnit, learning.findPathItem(journeyId, learnUnitCode).orElse(null),
                 learning.listAttemptsForLearnUnit(journeyId, learnUnitCode),
-                learning.listQuestionAttemptsForLearnUnit(journeyId, learnUnitCode));
+                learning.listQuestionAttemptsForLearnUnit(journeyId, learnUnitCode).stream()
+                        .map(attempt -> publicQuestionAttempt(attempt, false)).toList());
     }
 
     /** 查询指定 LearnUnit 的全部评估尝试。 */
@@ -368,6 +369,13 @@ public class LearningController {
         } catch (IllegalArgumentException error) {
             throw new IllegalArgumentException("Unknown learning phase: " + value, error);
         }
+    }
+
+    private static QuestionAttempt publicQuestionAttempt(QuestionAttempt attempt, boolean draft) {
+        return new QuestionAttempt(
+                attempt.questionId(), attempt.assessmentAttemptId(), attempt.answerJson(),
+                draft ? null : attempt.score(), attempt.maxScore(), draft ? null : attempt.feedback(),
+                draft ? null : attempt.correct(), attempt.submittedCode(), null, attempt.selectedOptionIdsJson());
     }
 
     /** 将 Coding 评分失败转换为 422，保留可重试的答案草稿。 */
@@ -492,7 +500,13 @@ public class LearningController {
         static AssessmentResponse from(AssessmentService.AssessmentState state) {
             return new AssessmentResponse(
                     state.assessment(), state.questions().stream().map(QuestionResponse::from).toList(),
-                    state.openAttempt(), state.attempts(), state.questionAttempts());
+                    state.openAttempt(), state.attempts(), publicQuestionAttempts(state));
+        }
+
+        private static List<QuestionAttempt> publicQuestionAttempts(AssessmentService.AssessmentState state) {
+            return state.questionAttempts().stream()
+                    .map(attempt -> publicQuestionAttempt(attempt, state.openAttempt() != null))
+                    .toList();
         }
     }
 
@@ -506,7 +520,7 @@ public class LearningController {
      * @param prompt 题干
      * @param points 题目满分
      * @param configJson 公开题目配置
-     * @param rubricJson Coding 评分标准
+     * @param rubricJson 对外始终为空；评分标准属于服务端评估器私有数据
      * @param language Coding 语言
      * @param starterCode 起始代码
      * @param referenceConceptsJson 参考概念
@@ -527,7 +541,7 @@ public class LearningController {
         static QuestionResponse from(Question question) {
             return new QuestionResponse(
                     question.id(), question.learnUnitCode(), question.type(), question.difficulty(), question.prompt(),
-                    question.points(), publicConfig(question.configJson()), question.rubricJson(), question.language(),
+                    question.points(), publicConfig(question.configJson()), null, question.language(),
                     question.starterCode(), question.referenceConceptsJson());
         }
 
@@ -566,7 +580,8 @@ public class LearningController {
         static AssessmentResultResponse from(AssessmentService.AssessmentSubmission submission) {
             return new AssessmentResultResponse(
                     submission.assessment(), submission.attempt(), submission.score(), submission.passed(),
-                    submission.learnUnitResults(), submission.questionAttempts(), submission.passScore(),
+                    submission.learnUnitResults(), submission.questionAttempts().stream()
+                            .map(attempt -> publicQuestionAttempt(attempt, false)).toList(), submission.passScore(),
                     submission.codingPassScore());
         }
     }

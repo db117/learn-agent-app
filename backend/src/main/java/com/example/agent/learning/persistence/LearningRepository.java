@@ -6,6 +6,7 @@ import com.example.agent.learning.assessment.AssessmentStatus;
 import com.example.agent.learning.assessment.AssessmentType;
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
+import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.Chapter;
@@ -235,9 +236,10 @@ public class LearningRepository {
     public List<Question> listQuestionsForLearnUnit(String learnUnitCode) {
         return jdbc.sql("""
                         SELECT id, learn_unit_code, type, difficulty, prompt, points, config_json, rubric_json,
-                          language, starter_code, reference_concepts_json, diagnostic_eligible
+                          language, starter_code, reference_concepts_json, diagnostic_eligible, role
                         FROM question
                         WHERE learn_unit_code = :learnUnitCode
+                          AND role = 'INDEPENDENT'
                           AND NOT EXISTS (SELECT 1 FROM question_retirement r WHERE r.question_id = question.id)
                         ORDER BY id
                         """)
@@ -250,12 +252,13 @@ public class LearningRepository {
     public List<Question> listDiagnosticQuestionsForJourney(String journeyId) {
         return jdbc.sql("""
                         SELECT q.id, q.learn_unit_code, q.type, q.difficulty, q.prompt, q.points, q.config_json,
-                          q.rubric_json, q.language, q.starter_code, q.reference_concepts_json, q.diagnostic_eligible
+                          q.rubric_json, q.language, q.starter_code, q.reference_concepts_json, q.diagnostic_eligible, q.role
                         FROM question q
                         JOIN learning_journey_learn_unit js ON js.learn_unit_code = q.learn_unit_code
                         JOIN learn_unit s ON s.code = q.learn_unit_code
                         JOIN chapter c ON c.code = s.chapter_code AND c.journey_id = js.journey_id
-                        WHERE js.journey_id = :journeyId AND q.diagnostic_eligible = 1 AND s.enabled = 1
+                        WHERE js.journey_id = :journeyId AND q.role = 'DIAGNOSTIC'
+                          AND q.diagnostic_eligible = 1 AND s.enabled = 1
                           AND NOT EXISTS (SELECT 1 FROM question_retirement r WHERE r.question_id = q.id)
                         ORDER BY c.sequence, c.code, s.sequence, q.id
                         """)
@@ -269,9 +272,9 @@ public class LearningRepository {
         jdbc.sql("""
                         INSERT OR IGNORE INTO question
                           (id, learn_unit_code, type, difficulty, prompt, points, config_json, rubric_json,
-                           language, starter_code, reference_concepts_json, diagnostic_eligible)
+                           language, starter_code, reference_concepts_json, diagnostic_eligible, role)
                         VALUES (:id, :learnUnitCode, :type, :difficulty, :prompt, :points, :configJson, :rubricJson,
-                          :language, :starterCode, :referenceConcepts, :diagnosticEligible)
+                          :language, :starterCode, :referenceConcepts, :diagnosticEligible, :role)
                         """)
                 .param("id", question.id())
                 .param("learnUnitCode", question.learnUnitCode())
@@ -285,6 +288,7 @@ public class LearningRepository {
                 .param("starterCode", question.starterCode())
                 .param("referenceConcepts", question.referenceConceptsJson())
                 .param("diagnosticEligible", question.diagnosticEligible() ? 1 : 0)
+                .param("role", question.role().name())
                 .update();
     }
 
@@ -559,7 +563,7 @@ public class LearningRepository {
     public List<Question> listQuestionsForAssessment(String assessmentId) {
         return jdbc.sql("""
                         SELECT q.id, q.learn_unit_code, q.type, q.difficulty, q.prompt, q.points, q.config_json,
-                          q.rubric_json, q.language, q.starter_code, q.reference_concepts_json, q.diagnostic_eligible
+                          q.rubric_json, q.language, q.starter_code, q.reference_concepts_json, q.diagnostic_eligible, q.role
                         FROM assessment_question aq JOIN question q ON q.id = aq.question_id
                         WHERE aq.assessment_id = :assessmentId ORDER BY aq.sequence
                         """)
@@ -839,7 +843,8 @@ public class LearningRepository {
                 rs.getString("id"), rs.getString("learn_unit_code"), QuestionType.valueOf(rs.getString("type")),
                 rs.getInt("difficulty"), rs.getString("prompt"), rs.getInt("points"), rs.getString("config_json"),
                 rs.getString("rubric_json"), rs.getString("language"), rs.getString("starter_code"),
-                rs.getString("reference_concepts_json"), rs.getInt("diagnostic_eligible") != 0);
+                rs.getString("reference_concepts_json"), rs.getInt("diagnostic_eligible") != 0,
+                QuestionRole.valueOf(rs.getString("role")));
     }
 
     private LearningJourney mapJourney(java.sql.ResultSet rs) throws java.sql.SQLException {

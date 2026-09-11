@@ -1,6 +1,7 @@
 package com.example.agent.learning.catalog;
 
 import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 
 import java.util.List;
@@ -42,8 +43,8 @@ public final class LearnUnitContentValidator {
                 throw new IllegalStateException("LearnUnit independent check questions must have unique ids");
             }
             QuestionStructureValidator.validate(question, content);
-            if (question.diagnosticEligible()) {
-                throw new IllegalStateException("Independent check question cannot be diagnostic: " + question.id());
+            if (question.role() != QuestionRole.INDEPENDENT || question.diagnosticEligible()) {
+                throw new IllegalStateException("Independent check question must be independent: " + question.id());
             }
         }
     }

@@ -5,6 +5,7 @@ import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.llm.infrastructure.LlmCurriculumGenerator;
 import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionType;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -91,6 +92,7 @@ class LlmCurriculumGeneratorTest {
         CurriculumGenerator.GeneratedLearnUnitContent result = generator.generateContent(outline, "learn backend APIs");
 
         assertEquals("python.basics", result.learnUnit().code());
+        assertEquals(QuestionRole.INDEPENDENT, result.independentQuestions().get(0).role());
         assertEquals("python-basics", result.learnUnit().chapterCode());
         assertEquals("定义并读取变量", result.learnUnit().ability());
         assertEquals(10, result.learnUnit().estimatedMinutes());

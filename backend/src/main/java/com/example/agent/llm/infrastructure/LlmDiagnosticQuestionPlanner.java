@@ -1,6 +1,7 @@
 package com.example.agent.llm.infrastructure;
 
 import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.LearnUnit;
@@ -138,7 +139,7 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
         Question question = new Question(
                 "generated-question-" + UUID.randomUUID(), learnUnitCode, type, difficulty,
                 prompt, points, config, rubric, nullableText(node, "language"), nullableText(node, "starterCode"),
-                concepts == null || concepts.isNull() ? "[]" : concepts.toString(), true);
+                concepts == null || concepts.isNull() ? "[]" : concepts.toString(), true, QuestionRole.DIAGNOSTIC);
         QuestionStructureValidator.validate(question, learnUnit);
         return question;
     }

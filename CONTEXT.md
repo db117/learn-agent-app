@@ -33,6 +33,12 @@ The formal assessment that verifies whether a learner can perform a LearnUnit's 
 result can complete the LearnUnit; guided practice prepares the learner but does not establish mastery.
 _Avoid_: practice question, tutor feedback
 
+**Question role**:
+An immutable purpose and owner boundary for a formal question: diagnostic questions support Journey entry, independent
+questions belong to one LearnUnit, and synthesis questions belong to one Chapter. The role and ownership are part of the
+question definition and cannot be changed after an Assessment references it.
+_Avoid_: generated prompt, answer draft, evaluator state
+
 **Chapter synthesis**:
 An assessment that checks the combined abilities of a Chapter after its LearnUnits have been attempted. A passing
 synthesis does not erase unresolved or unpassed LearnUnits.

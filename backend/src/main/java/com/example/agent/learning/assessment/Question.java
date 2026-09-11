@@ -18,6 +18,7 @@ package com.example.agent.learning.assessment;
  * @param starterCode Coding 起始代码
  * @param referenceConceptsJson 题目涉及的概念 JSON
  * @param diagnosticEligible 是否可用于初始诊断
+ * @param role 题目在学习流程中的固定用途
  */
 public record Question(
         String id,
@@ -31,7 +32,26 @@ public record Question(
         String language,
         String starterCode,
         String referenceConceptsJson,
-        boolean diagnosticEligible) {
+        boolean diagnosticEligible,
+        QuestionRole role) {
+
+    public Question(
+            String id,
+            String learnUnitCode,
+            QuestionType type,
+            int difficulty,
+            String prompt,
+            int points,
+            String configJson,
+            String rubricJson,
+            String language,
+            String starterCode,
+            String referenceConceptsJson,
+            boolean diagnosticEligible) {
+        this(id, learnUnitCode, type, difficulty, prompt, points, configJson, rubricJson, language, starterCode,
+                referenceConceptsJson, diagnosticEligible,
+                diagnosticEligible ? QuestionRole.DIAGNOSTIC : QuestionRole.INDEPENDENT);
+    }
 
     public Question {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("Question id is required");
@@ -39,5 +59,9 @@ public record Question(
         if (type == null) throw new IllegalArgumentException("Question type is required");
         if (prompt == null || prompt.isBlank()) throw new IllegalArgumentException("Question prompt is required");
         if (points <= 0) throw new IllegalArgumentException("Question points must be positive");
+        if (role == null) throw new IllegalArgumentException("Question role is required");
+        if ((role == QuestionRole.DIAGNOSTIC) != diagnosticEligible) {
+            throw new IllegalArgumentException("Question role and diagnostic eligibility must agree");
+        }
     }
 }

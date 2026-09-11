@@ -38,7 +38,7 @@ class DatabaseExportServiceTest {
         activeJdbc.sql("INSERT INTO learning_journey_learn_unit VALUES ('journey-1', 'python.basics')").update();
         activeJdbc.sql("INSERT INTO learner_profile VALUES ('journey-1', '中文', 1, 'beginner', 'learn')").update();
         activeJdbc.sql("INSERT INTO learning_path_item (id, journey_id, learn_unit_code, sequence, status) VALUES ('path-1', 'journey-1', 'python.basics', 1, 'CURRENT')").update();
-        activeJdbc.sql("INSERT INTO question VALUES ('question-1', 'python.basics', 'MULTIPLE_CHOICE', 1, 'What?', 10, '{}', NULL, NULL, NULL, NULL, 1)").update();
+        activeJdbc.sql("INSERT INTO question VALUES ('question-1', 'python.basics', 'MULTIPLE_CHOICE', 1, 'What?', 10, '{}', NULL, NULL, NULL, NULL, 1, 'DIAGNOSTIC')").update();
         activeJdbc.sql("INSERT INTO assessment VALUES ('assessment-1', 'journey-1', 'python.basics', 'LEARN_UNIT', 'CREATED', 'now', NULL)").update();
         activeJdbc.sql("INSERT INTO assessment_question VALUES ('assessment-1', 'question-1', 1)").update();
         activeJdbc.sql("INSERT INTO assessment_attempt VALUES ('attempt-1', 'assessment-1', 'journey-1', 'python.basics', 1, 10, NULL, 10, 1, 'now', 'now')").update();

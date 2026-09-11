@@ -102,7 +102,7 @@ public class AssessmentService {
     /**
      * 创建或读取指定 LearnUnit 的评估。
      *
-     * <p>已有题目直接规范化并固定；题库为空时调用 LLM 生成题目。评估创建后题集不会因后续题库变化而改变。</p>
+     * <p>只使用 LearnUnit 正文生成阶段已经持久化的独立检查题目。评估创建后题集不会因后续题库变化而改变。</p>
      */
     @Transactional
     public AssessmentState createLearnUnitAssessment(String journeyId, String learnUnitCode) {
@@ -115,15 +115,13 @@ public class AssessmentService {
         return repository.findLatestLearnUnitAssessment(journeyId, learnUnitCode)
                 .map(this::state)
                 .orElseGet(() -> {
-                    LearningLanguage language = repository.findLanguage(journey.languageCode()).orElseThrow();
-                    List<Question> available = repository.listQuestionsForLearnUnit(learnUnitCode);
-                    LearnerProfile profile = repository.findProfile(journeyId)
-                            .orElse(new LearnerProfile(journeyId, "", null, "", journey.goal()));
-                    List<Question> questions = available.isEmpty()
-                            ? planQuestions(language, List.of(learnUnit), available, profile, 1)
-                            : normalize(available, List.of(learnUnit), available, 1);
-                    if (questions.isEmpty()) throw new IllegalStateException("learnUnit has no questions: " + learnUnitCode);
-                    insertNewQuestions(questions, available);
+                    List<Question> available = repository.listQuestionsForLearnUnit(learnUnitCode).stream()
+                            .filter(question -> question.role() == QuestionRole.INDEPENDENT)
+                            .toList();
+                    if (available.isEmpty()) {
+                        throw new IllegalStateException("learnUnit has no persisted independent questions: " + learnUnitCode);
+                    }
+                    List<Question> questions = normalize(available, List.of(learnUnit), available, 1);
                     Instant now = Instant.now();
                     Assessment assessment = new Assessment(
                             UUID.randomUUID().toString(), journeyId, learnUnitCode, AssessmentType.LEARN_UNIT,
@@ -327,7 +325,7 @@ public class AssessmentService {
             if (question.type() == QuestionType.CODING && learnUnit.minCodingScore() == null) {
                 throw new IllegalArgumentException("Coding question has no coding learning objective: " + learnUnit.code());
             }
-            if (minimumEvidence > 1 && !question.diagnosticEligible()) {
+            if (minimumEvidence > 1 && question.role() != QuestionRole.DIAGNOSTIC) {
                 throw new IllegalArgumentException("Diagnostic question must be eligible: " + question.id());
             }
             QuestionStructureValidator.validate(question, learnUnit);
@@ -364,7 +362,7 @@ public class AssessmentService {
             LearnUnit learnUnit = learnUnits.stream()
                     .filter(candidate -> candidate.code().equals(question.learnUnitCode()))
                     .findFirst().orElseThrow();
-            if (minimumEvidence > 1 && !question.diagnosticEligible()) {
+            if (minimumEvidence > 1 && question.role() != QuestionRole.DIAGNOSTIC) {
                 throw new IllegalArgumentException("Diagnostic question must be eligible: " + question.id());
             }
             QuestionStructureValidator.validate(question, learnUnit);
@@ -389,14 +387,14 @@ public class AssessmentService {
         return !learnUnits.isEmpty() && learnUnits.stream().allMatch(learnUnit -> {
             long evidence = questions.stream()
                     .filter(question -> question.learnUnitCode().equals(learnUnit.code()))
-                    .filter(Question::diagnosticEligible)
+                    .filter(question -> question.role() == QuestionRole.DIAGNOSTIC)
                     .count();
             boolean hasChoice = questions.stream().anyMatch(question ->
                     question.learnUnitCode().equals(learnUnit.code())
-                            && question.diagnosticEligible() && question.type() == QuestionType.MULTIPLE_CHOICE);
+                            && question.role() == QuestionRole.DIAGNOSTIC && question.type() == QuestionType.MULTIPLE_CHOICE);
             boolean hasCoding = questions.stream().anyMatch(question ->
                     question.learnUnitCode().equals(learnUnit.code())
-                            && question.diagnosticEligible() && question.type() == QuestionType.CODING);
+                            && question.role() == QuestionRole.DIAGNOSTIC && question.type() == QuestionType.CODING);
             return evidence >= minimumEvidence && hasChoice
                     && (learnUnit.minCodingScore() == null || hasCoding);
         });

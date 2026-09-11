@@ -7,6 +7,7 @@ import com.example.agent.learning.assessment.AssessmentStatus;
 import com.example.agent.learning.assessment.AssessmentType;
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
+import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.Chapter;
@@ -52,8 +53,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
-                "app.data-dir=target/context-test-data-learn-unit-v3",
-                "app.database=target/context-test-data-learn-unit-v3/context.db",
+                "app.data-dir=target/context-test-data-learn-unit-v6",
+                "app.database=target/context-test-data-learn-unit-v6/context.db",
                 "app.openai.api-key=test-key",
                 "app.openai.base-url=http://localhost"
         })
@@ -256,6 +257,7 @@ class AgentBackendApplicationTest {
         LearnUnit generated = curriculum.ensureLearnUnitContent(journey.id(), code);
         assertTrue(generated.hasDetailedContent());
         assertEquals(1, learning.listQuestionsForLearnUnit(code).size());
+        assertEquals(QuestionRole.INDEPENDENT, learning.listQuestionsForLearnUnit(code).get(0).role());
 
         progress.advancePhase(journey.id(), code, com.example.agent.learning.path.LearningPhase.EXPLANATION);
         LearningRepository restarted = new LearningRepository(JdbcClient.create(dataSource));

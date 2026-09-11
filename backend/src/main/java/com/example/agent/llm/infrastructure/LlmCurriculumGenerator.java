@@ -1,6 +1,7 @@
 package com.example.agent.llm.infrastructure;
 
 import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.Chapter;
@@ -179,7 +180,8 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                     requiredBoundedInt(node, "difficulty", 1, 5), requiredText(node, "prompt"),
                     requiredBoundedInt(node, "points", 1, 1000), config, rubric,
                     nullableText(node, "language"), nullableText(node, "starterCode"),
-                    node.has("referenceConcepts") ? node.get("referenceConcepts").toString() : "[]", false);
+                    node.has("referenceConcepts") ? node.get("referenceConcepts").toString() : "[]", false,
+                    QuestionRole.INDEPENDENT);
             QuestionStructureValidator.validate(question, outline);
             result.add(question);
         }
