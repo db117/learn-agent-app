@@ -1,5 +1,6 @@
 import {useState} from "react";
 import type {JourneyDraftEvent, JourneyDraftOutline} from "../lib/api";
+import {mergeModelDeltas} from "../lib/journeyDraftEvents";
 
 type JourneyDraftViewProps = {
     events: JourneyDraftEvent[];
@@ -66,6 +67,7 @@ export function JourneyDraftView({
     const [guidance, setGuidance] = useState("");
     const canConfirm = status === "WAITING_CONFIRMATION" && outline !== null;
     const terminal = status === "FAILED" || status === "CANCELLED" || status === "CONFIRMED";
+    const displayEvents = mergeModelDeltas(events);
 
     async function sendGuidance() {
         const content = guidance.trim();
@@ -88,7 +90,7 @@ export function JourneyDraftView({
                 <section className="draft-conversation" aria-live="polite">
                     <div className="panel-title">Agent / 大模型对话</div>
                     <div className="draft-events">
-                        {events.map((event) => (
+                        {displayEvents.map((event) => (
                             <article className={`draft-event draft-event-${event.author === "用户" ? "user" : "agent"}`} key={event.sequence}>
                                 <div><span>{eventLabel(event)}</span><small>{new Date(event.timestamp).toLocaleTimeString()}</small></div>
                                 <p>{event.content}</p>
