@@ -17,7 +17,9 @@ import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
+import com.example.agent.learning.journey.PassReason;
 import com.example.agent.learning.journey.JourneyStatus;
+import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
@@ -164,6 +166,47 @@ class AgentBackendApplicationTest {
         assertEquals(first.size(), restored.size());
         assertEquals(1, restored.stream()
                 .filter(item -> item.status() == LearningPathItemStatus.CURRENT).count());
+    }
+
+    @Test
+    void restoresOpenAttemptAndKeepsCompletedPathAfterPracticeFailure() {
+        LearningJourney journey = journeys.create(
+                "test-user", "typescript", "restart and practice", "Java", 8,
+                "backend developer", "learn TypeScript");
+        String code = learning.listPath(journey.id()).get(0).learnUnitCode();
+        curriculum.ensureLearnUnitContent(journey.id(), code);
+        progress.startLearnUnit(journey.id(), code);
+        progress.advancePhase(journey.id(), code, LearningPhase.EXPLANATION);
+        progress.advancePhase(journey.id(), code, LearningPhase.EXAMPLE);
+        progress.advancePhase(journey.id(), code, LearningPhase.GUIDED_PRACTICE);
+
+        AssessmentService.AssessmentState assessment = assessments.createLearnUnitAssessment(journey.id(), code);
+        assessments.start(assessment.assessment().id());
+        Question question = assessment.questions().get(0);
+        assessments.answer(assessment.assessment().id(), new com.example.agent.learning.assessment.QuestionAnswer(
+                question.id(), List.of("A"), ""));
+
+        LearningRepository restarted = new LearningRepository(JdbcClient.create(dataSource));
+        Assessment restoredAssessment = restarted.findAssessment(assessment.assessment().id()).orElseThrow();
+        AssessmentAttempt restoredAttempt = restarted.findOpenAttempt(restoredAssessment.id()).orElseThrow();
+        assertEquals(assessment.questions(), restarted.listQuestionsForAssessment(restoredAssessment.id()));
+        assertEquals("[\"A\"]", restarted.listQuestionAttempts(restoredAttempt.id()).get(0).selectedOptionIdsJson());
+
+        assessments.submit(assessment.assessment().id());
+        var completedBeforePractice = learning.findPathItem(journey.id(), code).orElseThrow();
+        assertEquals(LearningPathItemStatus.COMPLETED, completedBeforePractice.status());
+        assertEquals(PassReason.LEARNING, completedBeforePractice.passReason());
+
+        AssessmentService.AssessmentState practice = assessments.createLearnUnitPracticeAssessment(journey.id(), code);
+        assessments.start(practice.assessment().id());
+        AssessmentService.AssessmentSubmission failedPractice = assessments.submit(practice.assessment().id());
+
+        assertFalse(failedPractice.passed());
+        var completedAfterPractice = learning.findPathItem(journey.id(), code).orElseThrow();
+        assertEquals(LearningPathItemStatus.COMPLETED, completedAfterPractice.status());
+        assertEquals(PassReason.LEARNING, completedAfterPractice.passReason());
+        assertEquals(completedBeforePractice.passedAt(), completedAfterPractice.passedAt());
+        assertEquals(2, learning.listAttemptsForLearnUnit(journey.id(), code).size());
     }
 
     @Test

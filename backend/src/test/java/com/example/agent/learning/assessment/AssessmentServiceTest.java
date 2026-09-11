@@ -106,6 +106,9 @@ class AssessmentServiceTest {
         AssessmentAttempt retry = new AssessmentAttempt(
                 "attempt-2", completed.id(), completed.journeyId(), completed.learnUnitCode(), 2,
                 null, null, null, null, Instant.EPOCH, null);
+        when(progress.pathItem(completed.journeyId(), completed.learnUnitCode()))
+                .thenReturn(new LearningPathItem("path-item", completed.journeyId(), completed.learnUnitCode(), 1,
+                        LearningPathItemStatus.CURRENT));
         Question choice = new Question(
                 "choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
                 "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
@@ -386,6 +389,9 @@ class AssessmentServiceTest {
         AssessmentAttempt previous = new AssessmentAttempt(
                 "attempt-1", assessment.id(), assessment.journeyId(), assessment.learnUnitCode(), 1,
                 80, null, 80, true, Instant.EPOCH, Instant.EPOCH.plusSeconds(1));
+        when(progress.pathItem(assessment.journeyId(), assessment.learnUnitCode()))
+                .thenReturn(new LearningPathItem("path-item", assessment.journeyId(), assessment.learnUnitCode(), 1,
+                        LearningPathItemStatus.CURRENT));
         Question choice = new Question(
                 "choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
                 "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);

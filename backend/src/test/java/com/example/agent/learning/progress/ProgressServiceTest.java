@@ -123,6 +123,26 @@ class ProgressServiceTest {
     }
 
     @Test
+    void failedPracticeKeepsACompletedLearnUnitCompleted() {
+        Instant passedAt = Instant.parse("2026-09-11T00:00:00Z");
+        LearningPathItem completed = new LearningPathItem(
+                "learnUnit-a-item", "journey", "learnUnit-a", 1, LearningPathItemStatus.COMPLETED,
+                92, 92, 1, PassReason.LEARNING, Instant.EPOCH, passedAt, null,
+                LearningPhase.INDEPENDENT_CHECK, List.of(), List.of(), false);
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(completed));
+
+        LearningPathItem result = service.recordLearnUnitAssessment(
+                "journey", "learnUnit-a", new AssessmentScore(0, 0, 20, true, false), false);
+
+        assertEquals(LearningPathItemStatus.COMPLETED, result.status());
+        assertEquals(PassReason.LEARNING, result.passReason());
+        assertEquals(passedAt, result.passedAt());
+        assertEquals(2, result.attemptCount());
+        assertEquals(false, result.needsReview());
+        verify(repository).updatePathItem(result);
+    }
+
+    @Test
     void selectsOnlyTheEarliestReviewDebtAsTheTargetedTask() {
         LearningPathItem earliest = item("learnUnit-a", 1, LearningPathItemStatus.SKIPPED, 0, 0, 1, true);
         LearningPathItem later = item("learnUnit-b", 2, LearningPathItemStatus.SKIPPED, 0, 0, 1, true);

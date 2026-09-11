@@ -109,7 +109,18 @@ public class AssessmentService {
     @Transactional
     public AssessmentState createLearnUnitAssessment(String journeyId, String learnUnitCode) {
         progress.requireCurrentLearnUnit(journeyId, learnUnitCode);
-        var journey = requireJourney(journeyId);
+        return createLearnUnitAssessmentInternal(journeyId, learnUnitCode);
+    }
+
+    /** 显式 practice 入口，允许对已完成 LearnUnit 使用同一套固定独立检查题。 */
+    @Transactional
+    public AssessmentState createLearnUnitPracticeAssessment(String journeyId, String learnUnitCode) {
+        progress.requireCompletedLearnUnit(journeyId, learnUnitCode);
+        return createLearnUnitAssessmentInternal(journeyId, learnUnitCode);
+    }
+
+    private AssessmentState createLearnUnitAssessmentInternal(String journeyId, String learnUnitCode) {
+        requireJourney(journeyId);
         LearnUnit learnUnit = repository.listLearnUnitsForJourney(journeyId).stream()
                 .filter(candidate -> candidate.code().equals(learnUnitCode))
                 .findFirst()
@@ -185,14 +196,26 @@ public class AssessmentService {
                 UUID.randomUUID().toString(), assessment.id(), assessment.journeyId(), assessment.learnUnitCode(),
                 number, null, null, null, null, now, null));
         repository.updateAssessment(assessment.id(), AssessmentStatus.IN_PROGRESS, null);
-        if (assessment.type() == AssessmentType.LEARN_UNIT) progress.markAssessing(assessment.journeyId(), assessment.learnUnitCode());
+        if (assessment.type() == AssessmentType.LEARN_UNIT) {
+            var pathItem = progress.pathItem(assessment.journeyId(), assessment.learnUnitCode());
+            if (pathItem.status() == com.example.agent.learning.path.LearningPathItemStatus.COMPLETED) {
+                progress.requireCompletedLearnUnit(assessment.journeyId(), assessment.learnUnitCode());
+            } else {
+                progress.markAssessing(assessment.journeyId(), assessment.learnUnitCode());
+            }
+        }
         return state(requireAssessment(assessmentId));
     }
 
     /** 为同一个当前 LearnUnit Assessment 创建一次失败后的新 Attempt。 */
     @Transactional
     public AssessmentState retry(String journeyId, String learnUnitCode) {
-        progress.requireCurrentLearnUnit(journeyId, learnUnitCode);
+        var pathItem = progress.pathItem(journeyId, learnUnitCode);
+        if (pathItem.status() == com.example.agent.learning.path.LearningPathItemStatus.COMPLETED) {
+            progress.requireCompletedLearnUnit(journeyId, learnUnitCode);
+        } else {
+            progress.requireCurrentLearnUnit(journeyId, learnUnitCode);
+        }
         Assessment assessment = repository.findLatestLearnUnitAssessment(journeyId, learnUnitCode)
                 .orElseThrow(() -> new IllegalArgumentException("LearnUnit has no assessment to retry: " + learnUnitCode));
         AssessmentState current = state(assessment);

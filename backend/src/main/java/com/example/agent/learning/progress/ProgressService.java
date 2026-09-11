@@ -215,20 +215,22 @@ public class ProgressService {
             String journeyId, String learnUnitCode, AssessmentScore score, boolean passed) {
         activeJourney(journeyId);
         LearningPathItem previous = pathItem(journeyId, learnUnitCode);
-        requireCurrent(previous);
+        boolean practice = previous.status() == LearningPathItemStatus.COMPLETED;
+        if (!practice) requireCurrent(previous);
         return workflow.execute(
                 passed ? "PASS" : "RETRY",
                 () -> {
                     Instant now = Instant.now();
                     LearningPathItem result = copy(
                             previous,
-                            passed ? LearningPathItemStatus.COMPLETED : LearningPathItemStatus.CURRENT,
+                            practice || passed ? LearningPathItemStatus.COMPLETED : LearningPathItemStatus.CURRENT,
                             Math.max(previous.masteryScore(), score.totalScore()),
                             Math.max(previous.bestAssessmentScore(), score.totalScore()),
                             previous.attemptCount() + 1,
-                            passed ? PassReason.LEARNING : previous.passReason(),
+                            practice ? previous.passReason() : passed ? PassReason.LEARNING : previous.passReason(),
                             previous.startedAt() == null ? now : previous.startedAt(),
-                            passed ? now : previous.passedAt(), previous.skippedAt(), !passed);
+                            practice ? previous.passedAt() : passed ? now : previous.passedAt(), previous.skippedAt(),
+                            practice ? previous.needsReview() && !passed : !passed);
                     repository.updatePathItem(result);
                     return new LearningWorkflowGraph.Action<>(passed ? "pass" : "retry", result);
                 },
@@ -456,6 +458,16 @@ public class ProgressService {
         activeJourney(journeyId);
         LearningPathItem item = pathItem(journeyId, learnUnitCode);
         requireCurrent(item);
+        return item;
+    }
+
+    /** 显式 practice 入口只允许访问已完成的 LearnUnit。 */
+    public LearningPathItem requireCompletedLearnUnit(String journeyId, String learnUnitCode) {
+        activeJourney(journeyId);
+        LearningPathItem item = pathItem(journeyId, learnUnitCode);
+        if (item.status() != LearningPathItemStatus.COMPLETED) {
+            throw new IllegalArgumentException("LearnUnit is not completed: " + learnUnitCode);
+        }
         return item;
     }
 

@@ -173,6 +173,10 @@ export default function App() {
     (learnUnit?.attempts.some((attempt) => attempt.completedAt === null) ?? false);
   const canRetry = currentLearnUnit && !hasOpenAttempt &&
     (learnUnit?.attempts.some((attempt) => attempt.completedAt !== null && attempt.passed === false) ?? false);
+  const resultLearnUnitCode = assessmentResult?.assessment.learnUnitCode;
+  const resultLearnUnitCanRetry = Boolean(resultLearnUnitCode && journey?.path.some((item) =>
+    item.learnUnitCode === resultLearnUnitCode &&
+    (item.status === "CURRENT" || item.status === "COMPLETED")));
   const currentQuestion = assessment?.questions[questionIndex] ?? null;
   const currentDraft = currentQuestion ? answers[currentQuestion.id] ?? emptyDraft : emptyDraft;
 
@@ -203,11 +207,7 @@ export default function App() {
           if (disposed) return;
           setJourney(detail);
           if (detail.path.length > 0) {
-            setView("dashboard");
-            const current = detail.path.find((item) => item.status === "CURRENT");
-            if (current) {
-              setLearnUnit(await api.learnUnit(detail.journey.id, current.learnUnitCode));
-            }
+            await restoreOpenAssessment(detail);
           }
         }
         setError(null);
@@ -300,6 +300,38 @@ export default function App() {
     }
     if (previousCode !== current?.learnUnitCode) closeTutor();
     return detail;
+  }
+
+  async function restoreOpenAssessment(detail: JourneyDetail) {
+    const current = detail.path.find((item) => item.status === "CURRENT");
+    if (current) {
+      const currentResponse = await api.learnUnit(detail.journey.id, current.learnUnitCode);
+      setLearnUnit(currentResponse);
+      const openAttempt = currentResponse.attempts.find((attempt) => attempt.completedAt === null);
+      if (openAttempt) {
+        const restored = await api.assessment(openAttempt.assessmentId);
+        if (restored.openAttempt) {
+          hydrateAssessment(restored);
+          setQuestionIndex(firstUnanswered(restored));
+          setView("assessment");
+          return;
+        }
+      }
+    } else {
+      setLearnUnit(null);
+    }
+    for (const chapter of detail.chapters) {
+      if (!chapter.synthesisAssessmentId || chapter.synthesisCompleted) continue;
+      const restored = await api.assessment(chapter.synthesisAssessmentId);
+      if (restored.openAttempt) {
+        setLearnUnit(null);
+        hydrateAssessment(restored);
+        setQuestionIndex(firstUnanswered(restored));
+        setView("assessment");
+        return;
+      }
+    }
+    setView("dashboard");
   }
 
   function hydrateAssessment(next: AssessmentResponse) {
@@ -459,12 +491,48 @@ export default function App() {
     }
   }
 
+  async function practiceCompletedLearnUnit(code: string) {
+    if (!journeyId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await api.practiceLearnUnit(journeyId, code);
+      const started = created.openAttempt ? created : await api.startAssessment(created.assessment.id);
+      hydrateAssessment(started);
+      setAssessmentResult(null);
+      setQuestionIndex(firstUnanswered(started));
+      setView("assessment");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to start LearnUnit practice"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function retryCurrentLearnUnit() {
     if (!journeyId || !learnUnit || !currentLearnUnit || !canRetry) return;
     setBusy(true);
     setError(null);
     try {
       const retried = await api.retryLearnUnit(journeyId, learnUnit.learnUnit.code);
+      hydrateAssessment(retried);
+      setAssessmentResult(null);
+      setQuestionIndex(firstUnanswered(retried));
+      setView("assessment");
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to retry LearnUnit assessment"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retryAssessmentLearnUnit() {
+    const code = assessmentResult?.assessment.learnUnitCode;
+    if (!journeyId || !code || !assessmentResult || assessmentResult.passed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const retried = await api.retryLearnUnit(journeyId, code);
       hydrateAssessment(retried);
       setAssessmentResult(null);
       setQuestionIndex(firstUnanswered(retried));
@@ -741,11 +809,11 @@ export default function App() {
                   journey.path.some((item) => item.status === "CURRENT"),
               )}
               canRetry={Boolean(assessmentResult && !assessmentResult.passed &&
-                  (assessmentResult.assessment.type === "CHAPTER_SYNTHESIS" || canRetry))}
+                  (assessmentResult.assessment.type === "CHAPTER_SYNTHESIS" || resultLearnUnitCanRetry))}
               onNext={nextLearnUnit}
               onContinue={continueToDashboard}
               onRetry={() => assessmentResult?.assessment.type === "CHAPTER_SYNTHESIS"
-                  ? retryChapterSynthesis() : retryCurrentLearnUnit()}
+                  ? retryChapterSynthesis() : retryAssessmentLearnUnit()}
               onOpenReview={openReviewLearnUnit}
           />
       )}
@@ -761,6 +829,7 @@ export default function App() {
               learnUnitLabel={learnUnitLabel}
               onOpenLearnUnit={openLearnUnit}
               onOpenReviewLearnUnit={openReviewLearnUnit}
+              onPracticeCompletedLearnUnit={practiceCompletedLearnUnit}
               onStartChapterSynthesis={startChapterSynthesis}
               onRetryCurrentLearnUnit={retryCurrentLearnUnit}
               onStartLearnUnitAssessment={startLearnUnitAssessment}

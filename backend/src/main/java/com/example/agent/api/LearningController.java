@@ -315,6 +315,19 @@ public class LearningController {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
+    /** 显式 practice 已完成 LearnUnit；不会改变其 Path 状态。 */
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/practice")
+    public Mono<AssessmentResponse> practiceLearnUnit(
+            @PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        return Mono.fromCallable(() -> {
+                    progress.requireCompletedLearnUnit(journeyId, learnUnitCode);
+                    curriculum.ensureLearnUnitContent(journeyId, learnUnitCode);
+                    return AssessmentResponse.from(
+                            assessments.createLearnUnitPracticeAssessment(journeyId, learnUnitCode));
+                })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
     /** 创建或恢复 Chapter 的固定 synthesis 题集。 */
     @PostMapping("/journeys/{journeyId}/chapters/{chapterCode}/synthesis")
     public Mono<AssessmentResponse> chapterSynthesis(

@@ -13,6 +13,7 @@ type DashboardViewProps = {
     learnUnitLabel: (learnUnits: LearnUnit[], code: string | null) => string;
     onOpenLearnUnit: (code: string) => void | Promise<void>;
     onOpenReviewLearnUnit: (code: string) => void | Promise<void>;
+    onPracticeCompletedLearnUnit: (code: string) => void | Promise<void>;
     onStartChapterSynthesis: (chapterCode: string) => void | Promise<void>;
     onRetryCurrentLearnUnit: () => void | Promise<void>;
     onStartLearnUnitAssessment: () => void | Promise<void>;
@@ -56,6 +57,7 @@ export function DashboardView({
                                   learnUnitLabel,
                                   onOpenLearnUnit,
                                   onOpenReviewLearnUnit,
+                                  onPracticeCompletedLearnUnit,
                                   onStartChapterSynthesis,
                                   onRetryCurrentLearnUnit,
                                   onStartLearnUnitAssessment,
@@ -232,6 +234,11 @@ export function DashboardView({
                                 <p key={`${item.assessmentAttemptId}-${item.questionId}`}>{item.feedback}</p>)}</div>
                         )}
                         <div className="button-row">
+                            {current.pathItem?.status === "COMPLETED" && <button className="secondary"
+                                                                                onClick={() => void onPracticeCompletedLearnUnit(current.learnUnit.code)}
+                                                                                disabled={busy}>
+                                Practice this LearnUnit
+                            </button>}
                             <button className="primary" onClick={() => void onOpenLearnUnit(current.learnUnit.code)}
                                     disabled={busy || !currentLearnUnit} aria-busy={busy}>
                                 {busy ? "处理中…" : hasDetailedContent ? "继续学习" : "开始学习"}

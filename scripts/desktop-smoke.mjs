@@ -2,6 +2,7 @@ import {mkdir, mkdtemp, readdir, readFile, rm, writeFile} from "node:fs/promises
 import {existsSync} from "node:fs";
 import {spawn} from "node:child_process";
 import {createConnection} from "node:net";
+import {DatabaseSync} from "node:sqlite";
 import os from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
@@ -28,25 +29,6 @@ function processAlive(child) {
     }
 }
 
-/** 仅使用 sqlite3 创建确定性的测试数据并执行只读断言。 */
-function run(command, args, input = "") {
-    return new Promise((resolve, reject) => {
-        const child = spawn(command, args, {cwd: root, stdio: ["pipe", "pipe", "pipe"]});
-        let stdout = "";
-        let stderr = "";
-        child.stdout.setEncoding("utf8");
-        child.stderr.setEncoding("utf8");
-        child.stdout.on("data", (chunk) => stdout += chunk);
-        child.stderr.on("data", (chunk) => stderr += chunk);
-        child.once("error", reject);
-        child.once("exit", (code, signal) => {
-            if (code === 0) resolve(stdout.trim());
-            else reject(new Error(`${command} exited with ${code ?? signal}: ${stderr.trim()}`));
-        });
-        child.stdin.end(input);
-    });
-}
-
 /** 创建源数据库和目标数据库，并写入所有可移植数据类别的记录。 */
 async function seedDatabase(database, kind) {
     const schemaSql = await readFile(schema, "utf8");
@@ -54,6 +36,8 @@ async function seedDatabase(database, kind) {
     const values = source ? {
         languageId: "language-source",
         languageCode: "python-source",
+        chapterId: "chapter-source",
+        chapterCode: "python-source-basics",
         unitId: "unit-source",
         unitCode: "python.source",
         journeyId: "journey-source",
@@ -70,6 +54,8 @@ async function seedDatabase(database, kind) {
     } : {
         languageId: "language-target",
         languageCode: "python-target",
+        chapterId: "chapter-target",
+        chapterCode: "python-target-basics",
         unitId: "unit-target",
         unitCode: "python.target",
         journeyId: "journey-target",
@@ -94,13 +80,26 @@ async function seedDatabase(database, kind) {
     const seed = `
 PRAGMA foreign_keys = ON;
 INSERT INTO learning_language VALUES ('${values.languageId}', '${values.languageCode}', '${source ? "Python Source" : "Python Target"}', 'Smoke language', 1);
-INSERT INTO learn_unit VALUES ('${values.unitId}', '${values.languageCode}', '${values.unitCode}', 'Imported basics', 'Smoke unit', 1, '[]', 80, NULL, 1, '["read"]', 'Imported lesson', '["syntax"]', '["print()"]', 1);
 INSERT INTO learning_journey VALUES ('${values.journeyId}', 'desktop-user', '${values.languageCode}', '${values.goal}', 'ACTIVE', '${timestamps.created}', '${timestamps.updated}');
+INSERT INTO chapter (id, journey_id, code, name, goal, sequence, prerequisite_chapter_codes)
+    VALUES ('${values.chapterId}', '${values.journeyId}', '${values.chapterCode}', 'Imported basics', 'Smoke chapter', 1, '[]');
+INSERT INTO learn_unit (id, language_code, code, chapter_code, name, description, sequence,
+    prerequisite_learn_unit_codes, pass_score, min_coding_score, enabled, learning_objectives_json,
+    lesson_intro, key_concepts_json, examples_json, diagnostic_eligible, ability, estimated_minutes,
+    guided_practice_prompt, guided_practice_hints_json, independent_check_prompt)
+    VALUES ('${values.unitId}', '${values.languageCode}', '${values.unitCode}', '${values.chapterCode}',
+    'Imported basics', 'Smoke unit', 1, '[]', 80, NULL, 1, '["read"]', 'Imported lesson',
+    '["syntax"]', '["print()"]', 0, 'Read the imported unit', 10, 'Practice the imported unit', '[]',
+    'Check the imported unit');
 INSERT INTO learning_journey_learn_unit VALUES ('${values.journeyId}', '${values.unitCode}');
 INSERT INTO learner_profile VALUES ('${values.journeyId}', '中文', 2, 'desktop smoke', 'restore all state');
 INSERT INTO learning_path_item (id, journey_id, learn_unit_code, sequence, status, mastery_score, best_assessment_score, attempt_count) VALUES ('${values.pathId}', '${values.journeyId}', '${values.unitCode}', 1, 'CURRENT', 42, 88, 1);
-INSERT INTO question VALUES ('${values.questionId}', '${values.unitCode}', 'MULTIPLE_CHOICE', 1, 'Choose A', 10, '{"correctOptionIds":["A"]}', NULL, NULL, NULL, '[]', 1);
-INSERT INTO assessment VALUES ('${values.assessmentId}', '${values.journeyId}', '${values.unitCode}', 'LEARN_UNIT', 'COMPLETED', '${timestamps.created}', '${timestamps.updated}');
+INSERT INTO question (id, learn_unit_code, chapter_code, type, difficulty, prompt, points, config_json, rubric_json,
+    language, starter_code, reference_concepts_json, diagnostic_eligible, role)
+    VALUES ('${values.questionId}', '${values.unitCode}', NULL, 'MULTIPLE_CHOICE', 1, 'Choose A', 10,
+    '{"options":[{"id":"A","text":"A"}],"correctOptionIds":["A"],"multiple":false}', NULL, NULL, NULL, '[]', 0, 'INDEPENDENT');
+INSERT INTO assessment (id, journey_id, learn_unit_code, chapter_code, type, status, created_at, completed_at)
+    VALUES ('${values.assessmentId}', '${values.journeyId}', '${values.unitCode}', NULL, 'LEARN_UNIT', 'COMPLETED', '${timestamps.created}', '${timestamps.updated}');
 INSERT INTO assessment_question VALUES ('${values.assessmentId}', '${values.questionId}', 1);
 INSERT INTO assessment_attempt VALUES ('${values.attemptId}', '${values.assessmentId}', '${values.journeyId}', '${values.unitCode}', 1, 10, NULL, 100, 1, '${timestamps.created}', '${timestamps.updated}');
 INSERT INTO question_attempt VALUES ('${values.questionId}', '${values.attemptId}', '{"selectedOptionIds":["A"]}', 10, 10, 'restored', 1, NULL, NULL, '["A"]');
@@ -113,7 +112,12 @@ INSERT INTO workflow_transition VALUES ('${values.transitionId}', '${values.jour
 INSERT INTO agent_state VALUES ('desktop-user', '${values.sessionId}', 'agent_state', 'single', '{"messages":[]}', 1, '${timestamps.updated}');
 INSERT INTO setting (key, value, updated_at) VALUES ('smoke.setting', '${values.setting}', '${timestamps.updated}');
 `;
-    await run("sqlite3", ["-bail", database], `${schemaSql}\n${seed}`);
+    const connection = new DatabaseSync(database);
+    try {
+        connection.exec(`${schemaSql}\n${seed}`);
+    } finally {
+        connection.close();
+    }
 }
 
 function portReachable() {
@@ -247,7 +251,13 @@ async function readFirstSseFrame(sessionId) {
 }
 
 async function sqliteScalar(database, sql) {
-    return (await run("sqlite3", ["-batch", "-noheader", database, sql])).split("\n")[0] ?? "";
+    const connection = new DatabaseSync(database);
+    try {
+        const row = connection.prepare(sql).get();
+        return row ? String(Object.values(row)[0] ?? "") : "";
+    } finally {
+        connection.close();
+    }
 }
 
 function assert(condition, message) {
@@ -262,7 +272,6 @@ let failure;
 
 try {
     if (!existsSync(jar)) throw new Error(`Missing ${jar}; run pnpm backend:package first.`);
-    await run("sqlite3", ["--version"]);
     if (await portReachable()) throw new Error(`Fixed backend port ${host}:${port} is already in use; refusing to touch another process.`);
 
     // 保持源数据库和目标数据库分离，使导入断言能够证明发生了完整替换。
@@ -297,7 +306,7 @@ try {
         headers: {"Content-Type": "application/octet-stream"},
         body: snapshot,
     });
-    assert(imported.schemaVersion === "1" && imported.restartRequired === true, "Import did not require a runtime restart.");
+    assert(imported.schemaVersion === "6" && imported.restartRequired === true, "Import did not require a runtime restart.");
 
     const backupFiles = await readdir(path.join(targetDataDir, "backups"));
     const backup = backupFiles.find((file) => file.endsWith(".db"));
