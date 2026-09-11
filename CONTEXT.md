@@ -8,16 +8,40 @@ This context names the learning domain and the agent-runtime concepts used by th
 An Agent framework capability exposed to an Agent, following the framework's standard Skill metadata and loading model.
 _Avoid_: LearnUnit, lesson
 
+**Chapter**:
+A Journey-scoped group of related LearnUnits with an ordered learning goal and a synthesis assessment. Its progress is the combined result of its LearnUnits and synthesis; it is not a second learning path.
+_Avoid_: global course, module
+
 **LearnUnit**:
-A Journey-scoped learning unit that contains curriculum position, teaching content, learning objectives, prerequisite
-relationships, and assessment policy for the learner's target language and goal. It is the only user-facing
-learning-unit concept; its Journey progress is represented by `LearningPathItem`, and there is no separate
-`LearnerLearnUnit` concept. _Avoid_: Skill, lesson, agent capability, LearnerLearnUnit, learner-state record
+A Journey-scoped unit representing the smallest independently verifiable ability. It contains the explanation, example,
+guided practice, independent check, objectives, prerequisites, and assessment policy for the Journey's target language
+and goal; its Journey progress is represented by `LearningPathItem`. _Avoid_: Skill, lesson, agent capability,
+MicroLearnUnit, LearnerLearnUnit, learner-state record
 
 **LearningPathItem**:
 A Journey-specific ordered node for a LearnUnit whose status is the authoritative progress state: pending, current,
-completed, or skipped. It is a path/progress record, not another learning-unit concept. _Avoid_: LearnerLearnUnit,
-LearningSkill, course content
+completed, or skipped. It also carries the learner's current phase, skipped phases, and review debt for that LearnUnit;
+it is a path/progress record, not another learning-unit concept. _Avoid_: LearnerLearnUnit, LearningSkill, course content
+
+**Learning phase**:
+One stage of a LearnUnit's teaching loop: explanation, example, guided practice, or independent check. A learner may
+skip a phase, but the skip remains part of the learning history and skipping the independent check prevents completion.
+_Avoid_: workflow step, UI tab
+
+**Independent check**:
+The formal assessment that verifies whether a learner can perform a LearnUnit's ability. Only its deterministic passing
+result can complete the LearnUnit; guided practice prepares the learner but does not establish mastery.
+_Avoid_: practice question, tutor feedback
+
+**Chapter synthesis**:
+An assessment that checks the combined abilities of a Chapter after its LearnUnits have been attempted. A passing
+synthesis does not erase unresolved or unpassed LearnUnits.
+_Avoid_: final exam, course exam
+
+**Review debt**:
+An unresolved learning need created by an error or failed independent check. It is cleared when the related LearnUnit
+independently passes, and is not a calendar-based review schedule.
+_Avoid_: spaced repetition queue, review calendar
 
 **TutorContext**:
 A read-only runtime context derived from the LearningJourney, current LearnUnit, LearningPathItem, and assessment
@@ -41,7 +65,8 @@ assistant output, safe thinking summaries, Skill loading status, and tool progre
 events or internal prompts. _Avoid_: AgentEvent, raw reasoning, Skill-to-LearnUnit relationship
 
 **Learning Journey**:
-A learner's durable progression through a target language and goal, including its curriculum, current state, and assessment history.
+A learner's durable progression through a target language and goal, including its own Chapters and LearnUnits, current
+state, and assessment history. Journeys do not share a course catalog.
 _Avoid_: Agent session, global course
 
 **TutorAgent**:
