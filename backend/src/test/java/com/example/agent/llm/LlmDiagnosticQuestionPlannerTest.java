@@ -34,7 +34,7 @@ class LlmDiagnosticQuestionPlannerTest {
                         .content(List.of(TextBlock.builder().text(response).build()))
                         .build()));
         LearnUnit learnUnit = new LearnUnit(
-                "unit", "python", "python.basics", "基础", "基础", 1, List.of(), 80, 70,
+                "unit", "python", "python.basics", "python-basics", "基础", "基础", 1, List.of(), 80, 70,
                 true, List.of("目标"), "介绍", List.of("概念"), List.of("示例"), true);
 
         assertThrows(IllegalArgumentException.class, () -> new LlmDiagnosticQuestionPlanner(model).plan(

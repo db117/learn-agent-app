@@ -23,13 +23,13 @@ import java.util.Set;
 final class DatabaseSchema {
 
     static final String MARKER = "learning-agent-sqlite";
-    static final String VERSION = "1";
+    static final String VERSION = "2";
     static final String SOURCE_APPLICATION_ID = "learning-agent-java";
     static final Set<String> REQUIRED_METADATA_KEYS = Set.of(
             "schema.marker", "schema.version", "snapshot.created_at", "source.application_id");
     static final Set<String> REQUIRED_TABLES = Set.of(
             "session", "message", "agent_run", "event", "setting", "learning_language",
-            "learn_unit", "learning_journey", "learning_journey_learn_unit", "learner_profile",
+            "learn_unit", "learning_journey", "chapter", "learning_journey_learn_unit", "learner_profile",
             "learning_path_item", "question", "question_retirement", "assessment",
             "assessment_question", "assessment_attempt", "question_attempt", "tutor_session",
             "workflow_transition", "agent_state", "schema_metadata");

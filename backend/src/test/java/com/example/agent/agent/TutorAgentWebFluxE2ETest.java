@@ -47,8 +47,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT,
         properties = {
-                "app.data-dir=target/webflux-tutor-e2e-data",
-                "app.database=target/webflux-tutor-e2e-data/tutor.db",
+                "app.data-dir=target/webflux-tutor-e2e-data-v2",
+                "app.database=target/webflux-tutor-e2e-data-v2/tutor.db",
                 "server.address=127.0.0.1",
                 "server.port=18080",
                 "app.openai.api-key=test-key",

@@ -63,10 +63,20 @@ export type LearningLanguage = {
   enabled: boolean;
 };
 
+export type Chapter = {
+  id: string;
+  code: string;
+  name: string;
+  goal: string;
+  sequence: number;
+  prerequisiteChapterCodes: string[];
+};
+
 export type LearnUnit = {
   id: string;
   languageCode: string;
   code: string;
+  chapterCode: string;
   name: string;
   description: string;
   sequence: number;
@@ -210,7 +220,16 @@ export type LearnUnitResponse = {
 export type JourneyDetail = {
   journey: LearningJourney;
   profile: LearnerProfile | null;
+  chapters: JourneyChapter[];
   path: LearningPathItem[];
+};
+
+export type JourneyChapter = {
+  chapter: Chapter;
+  learnUnits: LearnUnit[];
+  path: LearningPathItem[];
+  completedCount: number;
+  skippedCount: number;
 };
 
 export type TutorSessionResponse = {
@@ -230,6 +249,7 @@ export type CreateJourneyInput = {
 
 export type JourneyDraftOutline = {
   languages: LearningLanguage[];
+  chapters: Chapter[];
   learnUnits: LearnUnit[];
 };
 

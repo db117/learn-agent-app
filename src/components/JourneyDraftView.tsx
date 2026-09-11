@@ -41,16 +41,25 @@ function Outline({outline}: {outline: JourneyDraftOutline}) {
     return (
         <div className="draft-outline-content">
             <p className="muted">{outline.languages.map((language) => language.name).join("、")}</p>
-            {outline.learnUnits.map((unit) => (
-                <article className="draft-unit" key={unit.code}>
-                    <div className="draft-unit-title"><span>{unit.sequence}</span><strong>{unit.name}</strong></div>
-                    <p>{unit.description}</p>
-                    <h4>学习目标</h4>
-                    <ul>{unit.learningObjectives.map((item) => <li key={item}>{item}</li>)}</ul>
-                    <h4>关键概念</h4>
-                    <div className="tag-list">{unit.keyConcepts.map((item) => <span key={item}>{item}</span>)}</div>
-                </article>
-            ))}
+            {outline.chapters.map((chapter) => {
+                const units = outline.learnUnits
+                    .filter((unit) => unit.chapterCode === chapter.code)
+                    .sort((left, right) => left.sequence - right.sequence || left.code.localeCompare(right.code));
+                return <details className="draft-chapter" key={chapter.code} open>
+                    <summary><strong>{chapter.sequence}. {chapter.name}</strong><span className="muted">{units.length} 个单元</span></summary>
+                    <p className="muted">{chapter.goal}</p>
+                    {units.map((unit) => (
+                        <article className="draft-unit" key={unit.code}>
+                            <div className="draft-unit-title"><span>{unit.sequence}</span><strong>{unit.name}</strong></div>
+                            <p>{unit.description}</p>
+                            <h4>学习目标</h4>
+                            <ul>{unit.learningObjectives.map((item) => <li key={item}>{item}</li>)}</ul>
+                            <h4>关键概念</h4>
+                            <div className="tag-list">{unit.keyConcepts.map((item) => <span key={item}>{item}</span>)}</div>
+                        </article>
+                    ))}
+                </details>;
+            })}
         </div>
     );
 }
@@ -108,7 +117,7 @@ export function JourneyDraftView({
                     </div>
                 </section>
                 <aside className="draft-outline panel">
-                    <div className="panel-title"><span>知识点和路径</span><span className="muted">{outline?.learnUnits.length ?? 0} 个单元</span></div>
+                    <div className="panel-title"><span>知识点和路径</span><span className="muted">{outline?.chapters.length ?? 0} 个 Chapter · {outline?.learnUnits.length ?? 0} 个单元</span></div>
                     {outline ? <Outline outline={outline}/> : <p className="empty">大纲生成后会显示在这里。</p>}
                 </aside>
             </div>

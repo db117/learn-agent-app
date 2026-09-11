@@ -9,6 +9,7 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.CurriculumGenerator;
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.journey.LearningJourney;
@@ -50,8 +51,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
-                "app.data-dir=target/context-test-data-learn-unit",
-                "app.database=target/context-test-data-learn-unit/context.db",
+                "app.data-dir=target/context-test-data-learn-unit-v2",
+                "app.database=target/context-test-data-learn-unit-v2/context.db",
                 "app.openai.api-key=test-key",
                 "app.openai.base-url=http://localhost"
         })
@@ -121,6 +122,9 @@ class AgentBackendApplicationTest {
                 "test-user", "typescript", "tutor session", "Java", 8,
                 "backend developer", "learn TypeScript");
         List<LearnUnit> units = learning.listLearnUnitsForJourney(journey.id());
+        var chapters = learning.listChaptersForJourney(journey.id());
+        assertEquals(1, chapters.size());
+        assertTrue(units.stream().allMatch(unit -> unit.chapterCode().equals(chapters.get(0).code())));
 
         TutorSessionService.TutorSession first = tutorSessions.open(journey.id(), units.get(0).code());
         TutorSessionService.TutorSession reentered = tutorSessions.open(journey.id(), units.get(0).code());
@@ -250,34 +254,24 @@ class AgentBackendApplicationTest {
                 String suffix = UUID.randomUUID().toString();
                 LearningLanguage language = new LearningLanguage(
                         "generated-language-" + suffix, languageCode, "TypeScript", "typed JavaScript", true);
+                Chapter chapter = new Chapter(
+                        "generated-chapter-" + suffix, languageCode + ".fundamentals", "Fundamentals",
+                        "Build the core language foundation", 1, List.of());
                 LearnUnit runtime = new LearnUnit(
                         "generated-learnUnit-runtime-" + suffix, languageCode, languageCode + ".javascript-runtime",
-                        "JavaScript Runtime", "Runtime fundamentals", 1, List.of(), 80, null, true,
-                        List.of("Understand the runtime"), "Runtime lesson", List.of("event loop"),
-                        List.of("Promise callbacks"), true);
+                        chapter.code(), "JavaScript Runtime", "Runtime fundamentals", 1, List.of(), 80, null, true,
+                        List.of("Understand the runtime"), "", List.of("event loop"), List.of(), true);
                 LearnUnit types = new LearnUnit(
                         "generated-learnUnit-types-" + suffix, languageCode, languageCode + ".basic-types",
-                        "Basic Types", "Common types", 2, List.of(runtime.code()), 80, null, true,
-                        List.of("Use common types"), "Types lesson", List.of("unknown"),
-                        List.of("unknown at boundaries"), true);
+                        chapter.code(), "Basic Types", "Common types", 2, List.of(runtime.code()), 80, null, true,
+                        List.of("Use common types"), "", List.of("unknown"), List.of(), true);
                 LearnUnit functions = new LearnUnit(
                         "generated-learnUnit-functions-" + suffix, languageCode, languageCode + ".functions",
-                        "Functions", "Function fundamentals", 3, List.of(types.code()), 80, null, true,
-                        List.of("Write reusable functions"), "Functions lesson", List.of("parameters"),
-                        List.of("small functions"), true);
-                return new CurriculumGenerator.GeneratedCurriculum(
-                        List.of(language), List.of(runtime, types, functions),
-                        List.of(choiceQuestion(runtime), choiceQuestion(types), choiceQuestion(functions)));
+                        chapter.code(), "Functions", "Function fundamentals", 3, List.of(types.code()), 80, null, true,
+                        List.of("Write reusable functions"), "", List.of("parameters"), List.of(), true);
+                return new CurriculumGenerator.GeneratedOutline(
+                        List.of(language), List.of(chapter), List.of(runtime, types, functions));
             };
-        }
-
-        private Question choiceQuestion(LearnUnit learnUnit) {
-            return new Question(
-                    "choice-" + learnUnit.code(), learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1,
-                    "Choose the correct answer", 20,
-                    "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
-                            + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
-                    null, null, null, "[]", true);
         }
     }
 }

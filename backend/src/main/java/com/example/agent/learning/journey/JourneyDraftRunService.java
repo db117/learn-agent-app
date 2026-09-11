@@ -193,12 +193,18 @@ public final class JourneyDraftRunService {
 
     private String outlineContext(CurriculumGenerator.GeneratedOutline outline) {
         if (outline == null) return "";
+        String chapters = outline.chapters().stream()
+                .map(chapter -> "- Chapter %d. %s (%s)：%s；前置=%s"
+                        .formatted(chapter.sequence(), chapter.name(), chapter.code(), chapter.goal(),
+                                chapter.prerequisiteChapterCodes()))
+                .reduce("\n", (left, right) -> left + right + "\n");
         String units = outline.learnUnits().stream()
-                .map(unit -> "- %d. %s (%s)：%s；前置=%s；目标=%s；知识点=%s"
-                        .formatted(unit.sequence(), unit.name(), unit.code(), unit.description(),
+                .map(unit -> "- %d. %s (%s, Chapter=%s)：%s；前置=%s；目标=%s；知识点=%s"
+                        .formatted(unit.sequence(), unit.name(), unit.code(), unit.chapterCode(), unit.description(),
                                 unit.prerequisiteLearnUnitCodes(), unit.learningObjectives(), unit.keyConcepts()))
                 .reduce("\n", (left, right) -> left + right + "\n");
-        return "\n当前待确认的大纲如下；后续调整只能改知识点、单元说明和学习顺序/前置关系，不能改评分规则：" + units;
+        return "\n当前待确认的大纲如下；后续调整只能改 Chapter、知识点、单元说明和学习顺序/前置关系，不能改评分规则："
+                + chapters + units;
     }
 
     private CurriculumGenerator.GeneratedOutline preserveConfirmedRules(
@@ -212,13 +218,14 @@ public final class JourneyDraftRunService {
                     LearnUnit old = previousUnits.get(unit.code());
                     if (old == null) return unit;
                     return new LearnUnit(
-                            unit.id(), unit.languageCode(), unit.code(), unit.name(), unit.description(), unit.sequence(),
+                            unit.id(), unit.languageCode(), unit.code(), unit.chapterCode(), unit.name(), unit.description(),
+                            unit.sequence(),
                             unit.prerequisiteLearnUnitCodes(), old.passScore(), old.minCodingScore(), old.enabled(),
                             unit.learningObjectives(), unit.lessonIntro(), unit.keyConcepts(), unit.examples(),
                             old.diagnosticEligible());
                 })
                 .toList();
-        return new CurriculumGenerator.GeneratedOutline(previous.languages(), units);
+        return new CurriculumGenerator.GeneratedOutline(previous.languages(), generated.chapters(), units);
     }
 
     private String safeMessage(Throwable error) {

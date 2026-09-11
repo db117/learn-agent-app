@@ -8,6 +8,7 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.LearningLanguage;
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.journey.JourneyStatus;
 import com.example.agent.learning.journey.LearnerProfile;
@@ -45,14 +46,9 @@ public class LearningRepository {
         this.jdbc = jdbc;
     }
 
-    /**
-     * 写入 LLM 生成的语言和 LearnUnit 目录。
-     *
-     * <p>这里使用 insert-only，避免后续模型响应覆盖已经持久化的课程定义。题目另由
-     * {@link #insertGeneratedQuestion(Question)} 写入；Journey 专属 LearnUnit 由关联方法绑定。</p>
-     */
+    /** 写入 LLM 生成的语言元数据；已有语言定义不覆盖。 */
     @Transactional
-    public void insertGeneratedCatalog(List<LearningLanguage> languages, List<LearnUnit> learnUnits) {
+    public void insertGeneratedLanguages(List<LearningLanguage> languages) {
         for (LearningLanguage language : languages) {
             jdbc.sql("""
                             INSERT INTO learning_language (id, code, name, description, enabled)
@@ -66,14 +62,37 @@ public class LearningRepository {
                     .param("enabled", language.enabled() ? 1 : 0)
                     .update();
         }
+    }
+
+    /** 写入 Journey 专属 Chapter/LearnUnit 大纲并建立归属关系。 */
+    @Transactional
+    public void insertGeneratedCatalogForJourney(
+            String journeyId, List<LearningLanguage> languages, List<Chapter> chapters, List<LearnUnit> learnUnits) {
+        insertGeneratedLanguages(languages);
+        for (Chapter chapter : chapters) {
+            jdbc.sql("""
+                            INSERT INTO chapter
+                              (id, journey_id, code, name, goal, sequence, prerequisite_chapter_codes)
+                            VALUES (:id, :journeyId, :code, :name, :goal, :sequence, :prerequisites)
+                            ON CONFLICT(code) DO NOTHING
+                            """)
+                    .param("id", chapter.id())
+                    .param("journeyId", journeyId)
+                    .param("code", chapter.code())
+                    .param("name", chapter.name())
+                    .param("goal", chapter.goal())
+                    .param("sequence", chapter.sequence())
+                    .param("prerequisites", json(chapter.prerequisiteChapterCodes()))
+                    .update();
+        }
         for (LearnUnit learnUnit : learnUnits) {
             jdbc.sql("""
                             INSERT INTO learn_unit
-                              (id, language_code, code, name, description, sequence,
+                              (id, language_code, code, chapter_code, name, description, sequence,
                                prerequisite_learn_unit_codes, pass_score, min_coding_score, enabled,
                                learning_objectives_json, lesson_intro, key_concepts_json, examples_json,
                                diagnostic_eligible)
-                            VALUES (:id, :languageCode, :code, :name, :description, :sequence,
+                            VALUES (:id, :languageCode, :code, :chapterCode, :name, :description, :sequence,
                               :prerequisites, :passScore, :minCodingScore, :enabled,
                               :objectives, :intro, :concepts, :examples, :diagnosticEligible)
                             ON CONFLICT(code) DO NOTHING
@@ -81,6 +100,7 @@ public class LearningRepository {
                     .param("id", learnUnit.id())
                     .param("languageCode", learnUnit.languageCode())
                     .param("code", learnUnit.code())
+                    .param("chapterCode", learnUnit.chapterCode())
                     .param("name", learnUnit.name())
                     .param("description", learnUnit.description())
                     .param("sequence", learnUnit.sequence())
@@ -95,13 +115,6 @@ public class LearningRepository {
                     .param("diagnosticEligible", learnUnit.diagnosticEligible() ? 1 : 0)
                     .update();
         }
-    }
-
-    /** 将生成的 LearnUnit 绑定到一个 Journey；同语言的其他 Journey 不会看到这些内容。 */
-    @Transactional
-    public void insertGeneratedCatalogForJourney(
-            String journeyId, List<LearningLanguage> languages, List<LearnUnit> learnUnits) {
-        insertGeneratedCatalog(languages, learnUnits);
         for (LearnUnit learnUnit : learnUnits) {
             jdbc.sql("""
                             INSERT INTO learning_journey_learn_unit (journey_id, learn_unit_code)
@@ -112,6 +125,17 @@ public class LearningRepository {
                     .param("learnUnitCode", learnUnit.code())
                     .update();
         }
+    }
+
+    /** 查询一个 Journey 专属的 Chapter 大纲。 */
+    public List<Chapter> listChaptersForJourney(String journeyId) {
+        return jdbc.sql("""
+                        SELECT id, journey_id, code, name, goal, sequence, prerequisite_chapter_codes
+                        FROM chapter WHERE journey_id = :journeyId ORDER BY sequence, code
+                        """)
+                .param("journeyId", journeyId)
+                .query((rs, rowNum) -> mapChapter(rs))
+                .list();
     }
 
     /** 查询所有启用的学习语言。 */
@@ -136,14 +160,15 @@ public class LearningRepository {
     /** 查询一个 Journey 自己的 LearnUnit；不同 Journey 的同语言课程不会混用。 */
     public List<LearnUnit> listLearnUnitsForJourney(String journeyId) {
         return jdbc.sql("""
-                        SELECT s.id, s.language_code, s.code, s.name, s.description, s.sequence,
+                        SELECT s.id, s.language_code, s.code, s.chapter_code, s.name, s.description, s.sequence,
                           s.prerequisite_learn_unit_codes, s.pass_score, s.min_coding_score, s.enabled,
                           s.learning_objectives_json, s.lesson_intro, s.key_concepts_json, s.examples_json,
                           s.diagnostic_eligible
                         FROM learn_unit s
                         JOIN learning_journey_learn_unit js ON js.learn_unit_code = s.code
+                        JOIN chapter c ON c.code = s.chapter_code AND c.journey_id = js.journey_id
                         WHERE js.journey_id = :journeyId AND s.enabled = 1
-                        ORDER BY s.sequence, s.code
+                        ORDER BY c.sequence, c.code, s.sequence, s.code
                         """)
                 .param("journeyId", journeyId)
                 .query((rs, rowNum) -> mapLearnUnit(rs))
@@ -153,7 +178,7 @@ public class LearningRepository {
     /** 按业务编码查询 LearnUnit。 */
     public Optional<LearnUnit> findLearnUnit(String code) {
         return jdbc.sql("""
-                        SELECT id, language_code, code, name, description, sequence,
+                        SELECT id, language_code, code, chapter_code, name, description, sequence,
                           prerequisite_learn_unit_codes, pass_score, min_coding_score, enabled,
                           learning_objectives_json, lesson_intro, key_concepts_json, examples_json,
                           diagnostic_eligible
@@ -202,9 +227,10 @@ public class LearningRepository {
                         FROM question q
                         JOIN learning_journey_learn_unit js ON js.learn_unit_code = q.learn_unit_code
                         JOIN learn_unit s ON s.code = q.learn_unit_code
+                        JOIN chapter c ON c.code = s.chapter_code AND c.journey_id = js.journey_id
                         WHERE js.journey_id = :journeyId AND q.diagnostic_eligible = 1 AND s.enabled = 1
                           AND NOT EXISTS (SELECT 1 FROM question_retirement r WHERE r.question_id = q.id)
-                        ORDER BY s.sequence, q.id
+                        ORDER BY c.sequence, c.code, s.sequence, q.id
                         """)
                 .param("journeyId", journeyId)
                 .query((rs, rowNum) -> mapQuestion(rs))
@@ -752,12 +778,19 @@ public class LearningRepository {
 
     private LearnUnit mapLearnUnit(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new LearnUnit(
-                rs.getString("id"), rs.getString("language_code"), rs.getString("code"), rs.getString("name"),
+                rs.getString("id"), rs.getString("language_code"), rs.getString("code"), rs.getString("chapter_code"),
+                rs.getString("name"),
                 rs.getString("description"), rs.getInt("sequence"), list(rs.getString("prerequisite_learn_unit_codes")),
                 rs.getInt("pass_score"), nullableInt(rs.getObject("min_coding_score")), rs.getInt("enabled") != 0,
                 list(rs.getString("learning_objectives_json")), rs.getString("lesson_intro"),
                 list(rs.getString("key_concepts_json")), list(rs.getString("examples_json")),
                 rs.getInt("diagnostic_eligible") != 0);
+    }
+
+    private Chapter mapChapter(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new Chapter(
+                rs.getString("id"), rs.getString("code"), rs.getString("name"), rs.getString("goal"),
+                rs.getInt("sequence"), list(rs.getString("prerequisite_chapter_codes")));
     }
 
     private Question mapQuestion(java.sql.ResultSet rs) throws java.sql.SQLException {

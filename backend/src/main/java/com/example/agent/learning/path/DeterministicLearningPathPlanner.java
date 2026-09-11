@@ -1,5 +1,6 @@
 package com.example.agent.learning.path;
 
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.LearnUnit;
 import org.springframework.stereotype.Component;
 
@@ -25,15 +26,17 @@ public class DeterministicLearningPathPlanner {
      * <p>已完成或已跳过的节点保留原状态，其余节点重置为 PENDING；最后把第一个待处理节点设为 CURRENT。</p>
      *
      * @param journeyId Journey 标识
+     * @param chapters 当前 Journey 的 Chapter
      * @param learnUnits 当前 Journey 的 LearnUnit
      * @param existingItems 已持久化的路径节点
      * @return 新的确定性路径
      */
     public List<LearningPathItem> plan(
             String journeyId,
+            List<Chapter> chapters,
             List<LearnUnit> learnUnits,
             List<LearningPathItem> existingItems) {
-        List<LearnUnit> ordered = order(learnUnits);
+        List<LearnUnit> ordered = order(chapters, learnUnits);
         Map<String, LearningPathItem> existingByCode = new HashMap<>();
         existingItems.forEach(item -> existingByCode.put(item.learnUnitCode(), item));
         List<LearningPathItem> result = new ArrayList<>();
@@ -78,6 +81,16 @@ public class DeterministicLearningPathPlanner {
      * @return 排序后的 LearnUnit
      */
     public List<LearnUnit> order(List<LearnUnit> learnUnits) {
+        return order(List.of(), learnUnits);
+    }
+
+    /** 先按 Chapter 前置关系排序，再在 Chapter 内按 LearnUnit 前置关系排序。 */
+    public List<LearnUnit> order(List<Chapter> chapters, List<LearnUnit> learnUnits) {
+        List<Chapter> orderedChapters = orderChapters(chapters);
+        Map<String, Integer> chapterRank = new HashMap<>();
+        for (int index = 0; index < orderedChapters.size(); index++) {
+            chapterRank.put(orderedChapters.get(index).code(), index);
+        }
         Map<String, LearnUnit> byCode = new HashMap<>();
         for (LearnUnit learnUnit : learnUnits) byCode.put(learnUnit.code(), learnUnit);
         Map<String, Integer> incoming = new HashMap<>();
@@ -94,7 +107,7 @@ public class DeterministicLearningPathPlanner {
         }
         List<LearnUnit> ready = learnUnits.stream()
                 .filter(learnUnit -> incoming.get(learnUnit.code()) == 0)
-                .sorted(Comparator.comparingInt(LearnUnit::sequence).thenComparing(LearnUnit::code))
+                .sorted(unitComparator(chapterRank))
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
         List<LearnUnit> ordered = new ArrayList<>();
         while (!ready.isEmpty()) {
@@ -104,16 +117,62 @@ public class DeterministicLearningPathPlanner {
                 int count = incoming.merge(next, -1, Integer::sum);
                 if (count == 0) {
                     ready.add(byCode.get(next));
-                    ready.sort(Comparator.comparingInt(LearnUnit::sequence).thenComparing(LearnUnit::code));
+                    ready.sort(unitComparator(chapterRank));
                 }
             }
         }
         if (ordered.size() != learnUnits.size()) {
             Set<String> included = ordered.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
             learnUnits.stream().filter(learnUnit -> !included.contains(learnUnit.code()))
-                    .sorted(Comparator.comparingInt(LearnUnit::sequence).thenComparing(LearnUnit::code))
+                    .sorted(unitComparator(chapterRank))
                     .forEach(ordered::add);
         }
         return ordered;
+    }
+
+    private List<Chapter> orderChapters(List<Chapter> chapters) {
+        Map<String, Chapter> byCode = new HashMap<>();
+        for (Chapter chapter : chapters) byCode.put(chapter.code(), chapter);
+        Map<String, Integer> incoming = new HashMap<>();
+        Map<String, List<String>> outgoing = new HashMap<>();
+        for (Chapter chapter : chapters) {
+            int count = 0;
+            for (String prerequisite : chapter.prerequisiteChapterCodes()) {
+                if (byCode.containsKey(prerequisite)) {
+                    count++;
+                    outgoing.computeIfAbsent(prerequisite, ignored -> new ArrayList<>()).add(chapter.code());
+                }
+            }
+            incoming.put(chapter.code(), count);
+        }
+        List<Chapter> ready = chapters.stream()
+                .filter(chapter -> incoming.get(chapter.code()) == 0)
+                .sorted(Comparator.comparingInt(Chapter::sequence).thenComparing(Chapter::code))
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        List<Chapter> ordered = new ArrayList<>();
+        while (!ready.isEmpty()) {
+            Chapter chapter = ready.remove(0);
+            ordered.add(chapter);
+            for (String next : outgoing.getOrDefault(chapter.code(), List.of())) {
+                if (incoming.merge(next, -1, Integer::sum) == 0) {
+                    ready.add(byCode.get(next));
+                    ready.sort(Comparator.comparingInt(Chapter::sequence).thenComparing(Chapter::code));
+                }
+            }
+        }
+        if (ordered.size() != chapters.size()) {
+            Set<String> included = ordered.stream().map(Chapter::code).collect(java.util.stream.Collectors.toSet());
+            chapters.stream().filter(chapter -> !included.contains(chapter.code()))
+                    .sorted(Comparator.comparingInt(Chapter::sequence).thenComparing(Chapter::code))
+                    .forEach(ordered::add);
+        }
+        return ordered;
+    }
+
+    private Comparator<LearnUnit> unitComparator(Map<String, Integer> chapterRank) {
+        return Comparator.comparingInt(
+                        (LearnUnit learnUnit) -> chapterRank.getOrDefault(learnUnit.chapterCode(), Integer.MAX_VALUE))
+                .thenComparingInt(LearnUnit::sequence)
+                .thenComparing(LearnUnit::code);
     }
 }

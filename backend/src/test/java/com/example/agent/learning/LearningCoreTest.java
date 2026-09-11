@@ -5,6 +5,7 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.path.DeterministicLearningPathPlanner;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
@@ -93,11 +94,12 @@ class LearningCoreTest {
     void pathPlannerOrdersPrerequisitesAndKeepsPassedLearnUnitsCompleted() {
         LearnUnit advanced = learnUnit("learnUnit-b", 2, 80, List.of("learnUnit-a"));
         LearnUnit basics = learnUnit("learnUnit-a", 1, 80, List.of());
+        Chapter chapter = new Chapter("chapter", "chapter", "Chapter", "Goal", 1, List.of());
         LearningPathItem passedBasics = new LearningPathItem(
                 "path-a", "journey", "learnUnit-a", 1, LearningPathItemStatus.COMPLETED);
 
         var path = new DeterministicLearningPathPlanner().plan(
-                "journey", List.of(advanced, basics), List.of(passedBasics));
+                "journey", List.of(chapter), List.of(advanced, basics), List.of(passedBasics));
 
         assertEquals(List.of("learnUnit-a", "learnUnit-b"), path.stream().map(item -> item.learnUnitCode()).toList());
         assertEquals(LearningPathItemStatus.COMPLETED, path.get(0).status());
@@ -106,7 +108,7 @@ class LearningCoreTest {
 
     private LearnUnit learnUnit(String code, int sequence, int passScore, List<String> prerequisites) {
         return new LearnUnit(
-                code, "typescript", code, code, "description", sequence, prerequisites, passScore, 70,
+                code, "typescript", code, "chapter", code, "description", sequence, prerequisites, passScore, 70,
                 true, List.of("objective"), "intro", List.of("concept"), List.of("example"), false);
     }
 }

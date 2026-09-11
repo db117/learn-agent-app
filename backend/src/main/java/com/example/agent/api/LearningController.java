@@ -10,6 +10,7 @@ import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.journey.LearnerProfile;
 import com.example.agent.learning.journey.JourneyDraftEvent;
@@ -146,8 +147,27 @@ public class LearningController {
     @GetMapping("/journeys/{id}")
     public JourneyDetailResponse journey(@PathVariable String id) {
         LearningJourney journey = journeys.get(id);
+        List<LearningPathItem> path = learning.listPath(id);
+        List<LearnUnit> learnUnits = learning.listLearnUnitsForJourney(id);
+        List<ChapterDetail> chapters = learning.listChaptersForJourney(id).stream()
+                .map(chapter -> {
+                    List<LearnUnit> chapterUnits = learnUnits.stream()
+                            .filter(unit -> unit.chapterCode().equals(chapter.code()))
+                            .toList();
+                    List<LearningPathItem> chapterPath = path.stream()
+                            .filter(item -> chapterUnits.stream()
+                                    .anyMatch(unit -> unit.code().equals(item.learnUnitCode())))
+                            .toList();
+                    return new ChapterDetail(
+                            chapter, chapterUnits, chapterPath,
+                            (int) chapterPath.stream().filter(item -> item.status()
+                                    == com.example.agent.learning.path.LearningPathItemStatus.COMPLETED).count(),
+                            (int) chapterPath.stream().filter(item -> item.status()
+                                    == com.example.agent.learning.path.LearningPathItemStatus.SKIPPED).count());
+                })
+                .toList();
         return new JourneyDetailResponse(
-                journey, learning.findProfile(id).orElse(null), learning.listPath(id));
+                journey, learning.findProfile(id).orElse(null), chapters, path);
     }
 
     /** 查询 Journey 的完整学习路径，包括历史节点。 */
@@ -361,12 +381,23 @@ public class LearningController {
      *
      * @param journey Journey 基本信息
      * @param profile 学习者背景
+     * @param chapters 按课程顺序排列的 Chapter 及其 LearnUnit、粗粒度进度
      * @param path 完整 Path，包括已完成和已跳过历史
      */
     public record JourneyDetailResponse(
             LearningJourney journey,
             LearnerProfile profile,
+            List<ChapterDetail> chapters,
             List<LearningPathItem> path) {
+    }
+
+    /** Journey 详情中的一个 Chapter 进度块。 */
+    public record ChapterDetail(
+            Chapter chapter,
+            List<LearnUnit> learnUnits,
+            List<LearningPathItem> path,
+            int completedCount,
+            int skippedCount) {
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.example.agent.llm;
 
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.llm.infrastructure.LlmCurriculumGenerator;
@@ -11,11 +12,8 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -26,12 +24,41 @@ import static org.mockito.Mockito.when;
 class LlmCurriculumGeneratorTest {
 
     @Test
+    void generatesOrderedChaptersAndAssignsEachOutlineToItsChapter() {
+        LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
+                {
+                  "languages":[{"code":"python","name":"Python","description":"Python path"}],
+                  "chapters":[
+                    {"code":"python-basics","name":"基础","goal":"建立基础能力","sequence":1,"prerequisiteChapterCodes":[]},
+                    {"code":"python-data","name":"数据","goal":"处理数据","sequence":2,"prerequisiteChapterCodes":["python-basics"]}
+                  ],
+                  "learnUnits":[
+                    {"languageCode":"python","chapterCode":"python-basics","code":"python.variables","name":"变量","description":"变量基础",
+                     "sequence":1,"prerequisiteLearnUnitCodes":[],"passScore":80,"minCodingScore":null,
+                     "learningObjectives":["使用变量"],"keyConcepts":["绑定"]},
+                    {"languageCode":"python","chapterCode":"python-data","code":"python.lists","name":"列表","description":"列表基础",
+                     "sequence":2,"prerequisiteLearnUnitCodes":["python.variables"],"passScore":80,"minCodingScore":null,
+                     "learningObjectives":["使用列表"],"keyConcepts":["索引"]}
+                  ]
+                }
+                """));
+
+        CurriculumGenerator.GeneratedOutline result = generator.generateOutline("python", "learn backend APIs");
+
+        assertEquals(List.of("python-basics", "python-data"),
+                result.chapters().stream().map(Chapter::code).toList());
+        assertEquals("python-basics", result.learnUnits().get(0).chapterCode());
+        assertEquals("python-data", result.learnUnits().get(1).chapterCode());
+    }
+
+    @Test
     void generatesAnOutlineWithoutLessonContentOrQuestions() {
         LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
                 {
                   "languages":[{"code":"python","name":"Python","description":"Python path"}],
+                  "chapters":[{"code":"python-basics","name":"基础","goal":"基础语法","sequence":1,"prerequisiteChapterCodes":[]}],
                   "learnUnits":[
-                    {"languageCode":"python","code":"python.basics","name":"基础","description":"基础语法",
+                    {"languageCode":"python","chapterCode":"python-basics","code":"python.basics","name":"基础","description":"基础语法",
                      "sequence":1,"prerequisiteLearnUnitCodes":[],"passScore":80,"minCodingScore":70,
                      "learningObjectives":["掌握基础"],"keyConcepts":["变量"]}
                   ]
@@ -40,7 +67,7 @@ class LlmCurriculumGeneratorTest {
 
         CurriculumGenerator.GeneratedOutline result = generator.generateOutline("python", "learn backend APIs");
 
-        assertEquals(List.of("python.basics"), result.learnUnits().stream().map(value -> value.code()).toList());
+        assertEquals(List.of("python.basics"), result.learnUnits().stream().map(LearnUnit::code).toList());
         assertTrue(result.learnUnits().get(0).lessonIntro().isBlank());
         assertTrue(result.learnUnits().get(0).examples().isEmpty());
     }
@@ -48,8 +75,8 @@ class LlmCurriculumGeneratorTest {
     @Test
     void generatesDetailedContentForAnOutline() {
         LearnUnit outline = new LearnUnit(
-                "unit", "python", "python.basics", "基础", "基础语法", 1, List.of(), 80, 70, true,
-                List.of("掌握基础"), "", List.of("变量"), List.of(), true);
+                "unit", "python", "python.basics", "python-basics", "基础", "基础语法", 1, List.of(),
+                80, 70, true, List.of("掌握基础"), "", List.of("变量"), List.of(), true);
         LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
                 {"lessonIntro":"从变量开始","learningObjectives":["能定义变量"],
                  "keyConcepts":["变量绑定"],"examples":["name = 'Ada'"]}
@@ -58,123 +85,35 @@ class LlmCurriculumGeneratorTest {
         LearnUnit result = generator.generateContent(outline, "learn backend APIs");
 
         assertEquals("python.basics", result.code());
+        assertEquals("python-basics", result.chapterCode());
         assertEquals("从变量开始", result.lessonIntro());
         assertEquals(List.of("name = 'Ada'"), result.examples());
-    }
-
-    @Test
-    void parsesGeneratedLanguagesLearnUnitsAndAssignsServerIds() {
-        LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
-                {
-                  "languages":[{"code":"python","name":"Python","description":"Python path"}],
-                  "learnUnits":[
-                    {"languageCode":"python","code":"python.basics","name":"基础","description":"基础语法",
-                     "sequence":1,"prerequisiteLearnUnitCodes":[],"passScore":80,"minCodingScore":70,
-                     "learningObjectives":["掌握基础"],"lessonIntro":"开始","keyConcepts":["变量"],"examples":["x = 1"]},
-                    {"languageCode":"python","code":"python.collections","name":"集合","description":"集合类型",
-                     "sequence":2,"prerequisiteLearnUnitCodes":["python.basics"],"passScore":85,"minCodingScore":75,
-                     "learningObjectives":["使用集合"],"lessonIntro":"继续","keyConcepts":["list"],"examples":["items = []"]}
-                  ],
-                  "questions":[
-                    {"learnUnitCode":"python.basics","type":"MULTIPLE_CHOICE","difficulty":1,"prompt":"基础题","points":20,
-                     "options":[{"id":"A","text":"对"},{"id":"B","text":"错"}],"correctOptionIds":["A"],"multiple":false,
-                     "referenceConcepts":["变量"]},
-                    {"learnUnitCode":"python.basics","type":"CODING","difficulty":2,"prompt":"基础编码题","points":100,
-                     "language":"python","starterCode":"","rubric":{"correctness":60,"clarity":40},"referenceConcepts":["变量"]},
-                    {"learnUnitCode":"python.collections","type":"MULTIPLE_CHOICE","difficulty":1,"prompt":"集合题","points":20,
-                     "options":[{"id":"A","text":"list"},{"id":"B","text":"tuple"}],"correctOptionIds":["A"],"multiple":false,
-                     "referenceConcepts":["list"]},
-                    {"learnUnitCode":"python.collections","type":"CODING","difficulty":2,"prompt":"集合编码题","points":100,
-                     "language":"python","starterCode":"","rubric":{"correctness":60,"clarity":40},"referenceConcepts":["list"]}
-                  ]
-                }
-                """));
-
-        CurriculumGenerator.GeneratedCurriculum result = generator.generate("python", "learn backend APIs");
-
-        assertEquals(List.of("python"), result.languages().stream().map(value -> value.code()).toList());
-        assertEquals(List.of("python.basics", "python.collections"),
-                result.learnUnits().stream().map(value -> value.code()).toList());
-        assertNotEquals("python.basics", result.learnUnits().get(0).id());
-        assertEquals(List.of("python.basics"), result.learnUnits().get(1).prerequisiteLearnUnitCodes());
-        assertEquals(4, result.questions().size());
     }
 
     @Test
     void rejectsUnknownPrerequisite() {
         LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
                 {"languages":[{"code":"go","name":"Go","description":"Go path"}],
-                 "learnUnits":[{"languageCode":"go","code":"go.basics","name":"Basics","description":"Basics",
+                 "chapters":[{"code":"go-basics","name":"基础","goal":"基础","sequence":1,"prerequisiteChapterCodes":[]}],
+                 "learnUnits":[{"languageCode":"go","chapterCode":"go-basics","code":"go.basics","name":"Basics","description":"Basics",
+                 "sequence":1,"passScore":80,"minCodingScore":null,"learningObjectives":["基础"],"keyConcepts":["语法"],
                  "prerequisiteLearnUnitCodes":["go.missing"]}]}
                 """));
 
-        assertThrows(IllegalArgumentException.class, () -> generator.generate("go", "learn backend APIs"));
+        assertThrows(IllegalArgumentException.class, () -> generator.generateOutline("go", "learn backend APIs"));
     }
 
     @Test
     void rejectsMissingRequiredLearnUnitField() {
         LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
-                {
-                  "languages":[{"code":"python","name":"Python","description":"Python path"}],
-                  "learnUnits":[{"languageCode":"python","code":"python.basics","name":"基础",
-                    "description":"基础语法","sequence":1,"prerequisiteLearnUnitCodes":[],
-                    "minCodingScore":null,"learningObjectives":["掌握基础"],"lessonIntro":"开始",
-                    "keyConcepts":["变量"],"examples":["x = 1"]}],
-                  "questions":[{"learnUnitCode":"python.basics","type":"MULTIPLE_CHOICE","difficulty":1,
-                    "prompt":"基础题","points":20,"options":[{"id":"A","text":"对"},{"id":"B","text":"错"}],
-                    "correctOptionIds":["A"],"multiple":false}]
-                }
+                {"languages":[{"code":"python","name":"Python","description":"Python path"}],
+                 "chapters":[{"code":"python-basics","name":"基础","goal":"基础","sequence":1,"prerequisiteChapterCodes":[]}],
+                 "learnUnits":[{"languageCode":"python","chapterCode":"python-basics","code":"python.basics","name":"基础",
+                 "description":"基础语法","sequence":1,"prerequisiteLearnUnitCodes":[],"minCodingScore":null,
+                 "learningObjectives":["掌握基础"],"keyConcepts":["变量"]}]}
                 """));
 
-        assertThrows(IllegalArgumentException.class, () -> generator.generate("python", "learn APIs"));
-    }
-
-    @Test
-    void acceptsAChoiceOnlyCurriculumAndDoesNotInventCodingQuestions() {
-        LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
-                {
-                  "languages":[{"code":"spanish","name":"Spanish","description":"Reading path"}],
-                  "learnUnits":[{"languageCode":"spanish","code":"spanish.reading","name":"阅读",
-                    "description":"阅读技术文档","sequence":1,"prerequisiteLearnUnitCodes":[],"passScore":80,
-                    "minCodingScore":null,"learningObjectives":["读懂文档"],"lessonIntro":"从文档开始",
-                    "keyConcepts":["词汇"],"examples":["API reference"]}],
-                  "questions":[{"learnUnitCode":"spanish.reading","type":"MULTIPLE_CHOICE","difficulty":1,"prompt":"词汇题",
-                    "points":20,"options":[{"id":"A","text":"正确"},{"id":"B","text":"错误"}],
-                    "correctOptionIds":["A"],"multiple":false,"referenceConcepts":["词汇"]}]
-                }
-                """));
-
-        CurriculumGenerator.GeneratedCurriculum result = generator.generate("spanish", "read docs");
-
-        assertEquals(1, result.questions().size());
-        assertEquals("MULTIPLE_CHOICE", result.questions().get(0).type().name());
-    }
-
-    @Test
-    void doesNotCapCurriculumAtEightUnits() {
-        String units = IntStream.rangeClosed(1, 9)
-                .mapToObj(index -> """
-                        {"languageCode":"python","code":"python.unit-%d","name":"单元%d","description":"内容%d",
-                         "sequence":%d,"passScore":80,"prerequisiteLearnUnitCodes":[],"minCodingScore":null,
-                         "learningObjectives":["目标%d"],"lessonIntro":"介绍%d","keyConcepts":["概念%d"],"examples":["示例%d"]}
-                        """.formatted(index, index, index, index, index, index, index, index))
-                .collect(Collectors.joining(","));
-        String questions = IntStream.rangeClosed(1, 9)
-                .mapToObj(index -> """
-                        {"learnUnitCode":"python.unit-%d","type":"MULTIPLE_CHOICE","difficulty":1,"prompt":"问题%d",
-                         "points":20,"options":[{"id":"A","text":"yes"},{"id":"B","text":"no"}],
-                         "correctOptionIds":["A"],"multiple":false}
-                        """.formatted(index, index))
-                .collect(Collectors.joining(","));
-        LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
-                {"languages":[{"code":"python","name":"Python","description":"path"}],
-                 "learnUnits":[%s],"questions":[%s]}
-                """.formatted(units, questions)));
-
-        CurriculumGenerator.GeneratedCurriculum result = generator.generate("python", "learn APIs");
-
-        assertEquals(9, result.learnUnits().size());
-        assertEquals(9, result.questions().size());
+        assertThrows(IllegalArgumentException.class, () -> generator.generateOutline("python", "learn APIs"));
     }
 
     private Model model(String response) {

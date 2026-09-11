@@ -3,6 +3,7 @@ package com.example.agent.learning.journey;
 import com.example.agent.config.AppProperties;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.CurriculumService;
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
 import org.junit.jupiter.api.Test;
@@ -77,9 +78,10 @@ class JourneyDraftRunServiceTest {
 
     private CurriculumGenerator.GeneratedOutline outline() {
         LearningLanguage language = new LearningLanguage("language-python", "python", "Python", "Python path", true);
+        Chapter chapter = new Chapter("chapter-python", "python-basics", "基础", "基础语法", 1, List.of());
         LearnUnit unit = new LearnUnit(
-                "unit-python", "python", "python.basics", "基础", "基础语法", 1, List.of(), 80, null, true,
+                "unit-python", "python", "python.basics", chapter.code(), "基础", "基础语法", 1, List.of(), 80, null, true,
                 List.of("掌握基础"), "", List.of("变量"), List.of(), true);
-        return new CurriculumGenerator.GeneratedOutline(List.of(language), List.of(unit));
+        return new CurriculumGenerator.GeneratedOutline(List.of(language), List.of(chapter), List.of(unit));
     }
 }

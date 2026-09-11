@@ -34,7 +34,7 @@ public class LearningJourneyService {
     /**
      * 创建 Journey 及其专属学习资料。
      *
-     * <p>先校验用户输入并生成课程，再按外键依赖依次保存语言、Journey、学习者画像、LearnUnit 和题目，
+     * <p>先校验用户输入并生成大纲，再按外键依赖依次保存语言、Journey、学习者画像和课程大纲，
      * 最后生成初始学习路径。</p>
      */
     @Transactional
@@ -62,7 +62,7 @@ public class LearningJourneyService {
                 当前水平补充：%s
                 """.formatted(goal.trim(), learningGoal.trim(), primaryLanguage.trim(),
                 experienceYears == null ? "未知" : experienceYears, selfDescription == null ? "" : selfDescription.trim());
-        CurriculumGenerator.GeneratedCurriculum generated = curriculum.generateForJourney(
+        CurriculumGenerator.GeneratedOutline generated = curriculum.generateOutlineForJourney(
                 id, languageCode, learningContext);
         LearningLanguage language = generated.languages().get(0);
         // 语言行是外键依赖，先写入元数据；LearnUnit 在 Journey 建立后再绑定。
@@ -74,7 +74,7 @@ public class LearningJourneyService {
         repository.saveProfile(new LearnerProfile(
                 id, primaryLanguage.trim(), experienceYears,
                 selfDescription == null ? "" : selfDescription.trim(), learningGoal.trim()));
-        curriculum.persistJourneyCurriculum(id, generated);
+        curriculum.persistJourneyOutline(id, generated);
         progress.generatePath(id);
         return get(id);
     }
@@ -90,8 +90,7 @@ public class LearningJourneyService {
         }
         LearningLanguage language = generated.languages().get(0);
         Instant now = Instant.now();
-        curriculum.persistLanguages(new CurriculumGenerator.GeneratedCurriculum(
-                generated.languages(), List.of(), List.of()));
+        curriculum.persistLanguages(generated);
         repository.insertJourney(new LearningJourney(
                 journeyId, userId, language.code(), input.goal().trim(), JourneyStatus.ACTIVE, now, now));
         repository.saveProfile(new LearnerProfile(

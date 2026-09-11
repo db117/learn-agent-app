@@ -46,6 +46,7 @@ export function DashboardView({
                                   tutor,
                               }: DashboardViewProps) {
     const path = journey?.path ?? [];
+    const chapters = journey?.chapters ?? [];
     const passed = path.filter((item) => item.status === "COMPLETED").length;
     const skipped = path.filter((item) => item.status === "SKIPPED").length;
     const current = learnUnit;
@@ -60,20 +61,28 @@ export function DashboardView({
             <aside className="path panel">
                 <div className="panel-title"><span>Learning path</span><span
                     className="muted">{passed} passed · {skipped} skipped</span></div>
-                <div className="path-list">
-                    {path.map((item) => {
-                        const actionable = item.status === "CURRENT";
-                        return <button className={`path-item ${item.status.toLowerCase()}`} key={item.learnUnitCode}
-                                       onClick={() => actionable && void onOpenLearnUnit(item.learnUnitCode)}
-                                       disabled={!actionable || busy}>
-                            <span className="path-number">{item.sequence}</span>
-                            <span><strong>{learnUnitLabel(learnUnits, item.learnUnitCode)}</strong><small>{pathStatusLabel(item.status)}</small></span>
-                            <span
-                                className="path-mark">{item.status === "COMPLETED" ? "✓" : item.status === "SKIPPED" ? "–" : item.status === "CURRENT" ? "→" : "·"}</span>
-                        </button>;
-                    })}
-                    {!path.length && <p className="empty">完成诊断后生成路径。</p>}
-                </div>
+                {chapters.map((entry) => <details className="path-chapter" key={entry.chapter.code}
+                                                     open={entry.path.some((item) => item.status === "CURRENT")}>
+                    <summary>
+                        <span><strong>{entry.chapter.sequence}. {entry.chapter.name}</strong><small>{entry.chapter.goal}</small></span>
+                        <span className="muted">{entry.completedCount}/{entry.learnUnits.length} passed</span>
+                    </summary>
+                    <div className="path-list">
+                        {entry.path.map((item) => {
+                            const actionable = item.status === "CURRENT";
+                            const name = entry.learnUnits.find((unit) => unit.code === item.learnUnitCode)?.name
+                                ?? learnUnitLabel(learnUnits, item.learnUnitCode);
+                            return <button className={`path-item ${item.status.toLowerCase()}`} key={item.learnUnitCode}
+                                           onClick={() => actionable && void onOpenLearnUnit(item.learnUnitCode)}
+                                           disabled={!actionable || busy}>
+                                <span className="path-number">{item.sequence}</span>
+                                <span><strong>{name}</strong><small>{pathStatusLabel(item.status)}</small></span>
+                                <span className="path-mark">{item.status === "COMPLETED" ? "✓" : item.status === "SKIPPED" ? "–" : item.status === "CURRENT" ? "→" : "·"}</span>
+                            </button>;
+                        })}
+                    </div>
+                </details>)}
+                {!chapters.length && <p className="empty">完成 Journey 大纲后生成 Chapter 路径。</p>}
             </aside>
             <section className="lesson panel">
                 {!current ? (

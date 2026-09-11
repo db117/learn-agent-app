@@ -64,7 +64,7 @@ class TutorContextServiceTest {
 
     private LearnUnit learnUnit(String code, int sequence) {
         return new LearnUnit(
-                code, "typescript", code, code, "description", sequence, List.of(), 80, null,
+                code, "typescript", code, "chapter", code, "description", sequence, List.of(), 80, null,
                 true, List.of("objective"), "intro", List.of("concept"), List.of("example"), false);
     }
 }

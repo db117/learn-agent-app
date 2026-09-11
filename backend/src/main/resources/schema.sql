@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS learn_unit
     id TEXT PRIMARY KEY,
     language_code TEXT NOT NULL REFERENCES learning_language(code),
     code TEXT NOT NULL UNIQUE,
+    chapter_code TEXT NOT NULL REFERENCES chapter(code),
     name TEXT NOT NULL,
     description TEXT NOT NULL,
     sequence INTEGER NOT NULL,
@@ -163,6 +164,18 @@ CREATE TABLE IF NOT EXISTS learning_journey
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+
+-- Journey 专属课程章节；章节和 LearnUnit 不跨 Journey 共享。
+CREATE TABLE IF NOT EXISTS chapter
+(
+    id TEXT PRIMARY KEY,
+    journey_id TEXT NOT NULL REFERENCES learning_journey(id),
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    goal TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    prerequisite_chapter_codes TEXT NOT NULL
 );
 
 -- Journey 专属课程关系；同一语言的不同 Journey 可以拥有不同的 LearnUnit 内容。
@@ -290,6 +303,7 @@ CREATE TABLE IF NOT EXISTS tutor_session
 
 -- Learning 查询索引：按课程顺序、Journey、技能状态和题目可用性读取。
 CREATE INDEX IF NOT EXISTS learn_unit_language_idx ON learn_unit(language_code, sequence);
+CREATE INDEX IF NOT EXISTS chapter_journey_idx ON chapter(journey_id, sequence);
 CREATE INDEX IF NOT EXISTS journey_learn_unit_journey_idx ON learning_journey_learn_unit(journey_id, learn_unit_code);
 CREATE INDEX IF NOT EXISTS journey_user_idx ON learning_journey(user_id, updated_at);
 CREATE INDEX IF NOT EXISTS path_journey_idx ON learning_path_item(journey_id, sequence);
@@ -340,7 +354,7 @@ CREATE TABLE IF NOT EXISTS schema_metadata
 INSERT INTO schema_metadata (key, value)
 VALUES ('schema.marker', 'learning-agent-sqlite');
 INSERT INTO schema_metadata (key, value)
-VALUES ('schema.version', '1');
+VALUES ('schema.version', '2');
 INSERT INTO schema_metadata (key, value)
 VALUES ('snapshot.created_at', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 INSERT INTO schema_metadata (key, value)

@@ -1,8 +1,5 @@
 package com.example.agent.learning.catalog;
 
-import com.example.agent.learning.assessment.Question;
-import com.example.agent.learning.assessment.QuestionStructureValidator;
-import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.persistence.LearningRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,36 +38,6 @@ public class CurriculumService {
         return repository.listLanguages();
     }
 
-    /**
-     * 为一个新 Journey 生成独立课程；即使数据库已有同语言课程，也不会复用。
-     *
-     * <p>生成完成后先执行结构、内容、前置关系和题型覆盖校验，再把业务标识限定到当前 Journey。</p>
-     */
-    public CurriculumGenerator.GeneratedCurriculum generateForJourney(
-            String journeyId, String requestedLanguage, String learningContext) {
-        if (journeyId == null || journeyId.isBlank()) throw new IllegalArgumentException("journeyId must not be blank");
-        if (requestedLanguage == null || requestedLanguage.isBlank()) {
-            throw new IllegalArgumentException("language must not be blank");
-        }
-        CurriculumGenerator.GeneratedCurriculum generated;
-        String requested = requestedLanguage.trim();
-        try {
-            generated = generator.generate(requested, learningContext == null ? "" : learningContext.trim());
-        } catch (RuntimeException error) {
-            LOGGER.error("curriculum.generate.failed journeyId={} language={}", journeyId, requested, error);
-            throw new IllegalStateException("Unable to generate learning curriculum", error);
-        }
-        validate(generated);
-        if (generated.languages().size() != 1) {
-            throw new IllegalStateException("Generated curriculum must contain exactly one requested language");
-        }
-        LearningLanguage language = generated.languages().get(0);
-        if (!sameLanguage(requested, language)) {
-            throw new IllegalStateException("Generated curriculum does not match requested language: " + requested);
-        }
-        return scopeToJourney(journeyId, generated);
-    }
-
     /** 为首次确认流程生成只包含知识点和路径信息的草稿。 */
     public CurriculumGenerator.GeneratedOutline generateOutlineForJourney(
             String journeyId, String requestedLanguage, String learningContext) {
@@ -104,22 +71,15 @@ public class CurriculumService {
     }
 
     /** 先写入语言元数据，满足 Journey 的语言外键约束。 */
-    public void persistLanguages(CurriculumGenerator.GeneratedCurriculum generated) {
-        repository.insertGeneratedCatalog(generated.languages(), List.of());
-    }
-
-    /** 写入 Journey 专属 LearnUnit 并建立关联。 */
-    @Transactional
-    public void persistJourneyCurriculum(
-            String journeyId, CurriculumGenerator.GeneratedCurriculum generated) {
-        repository.insertGeneratedCatalogForJourney(journeyId, generated.languages(), generated.learnUnits());
-        generated.questions().forEach(repository::insertGeneratedQuestion);
+    public void persistLanguages(CurriculumGenerator.GeneratedOutline generated) {
+        repository.insertGeneratedLanguages(generated.languages());
     }
 
     /** 只保存用户确认的大纲，不写入教学正文或题目。 */
     @Transactional
     public void persistJourneyOutline(String journeyId, CurriculumGenerator.GeneratedOutline generated) {
-        repository.insertGeneratedCatalogForJourney(journeyId, generated.languages(), generated.learnUnits());
+        repository.insertGeneratedCatalogForJourney(
+                journeyId, generated.languages(), generated.chapters(), generated.learnUnits());
     }
 
     /** 第一次进入具体 LearnUnit 时才生成并保存教学正文。 */
@@ -141,54 +101,35 @@ public class CurriculumService {
         return repository.findLearnUnit(outline.code()).orElse(generated);
     }
 
-    /**
-     * 将生成结果的 LearnUnit 和 Question 标识限定到当前 Journey，并同步重写前置关系。
-     *
-     * @param journeyId Journey 标识
-     * @param generated 未限定范围的生成结果
-     * @return 标识已限定到 Journey 的课程结果
-     */
-    private CurriculumGenerator.GeneratedCurriculum scopeToJourney(
-            String journeyId, CurriculumGenerator.GeneratedCurriculum generated) {
-        Map<String, String> scopedCodes = generated.learnUnits().stream()
-                .collect(Collectors.toMap(LearnUnit::code, learnUnit -> journeyId + "." + learnUnit.code()));
-        List<LearnUnit> learnUnits = generated.learnUnits().stream()
-                .map(learnUnit -> new LearnUnit(
-                        journeyId + "." + learnUnit.id(), learnUnit.languageCode(), scopedCodes.get(learnUnit.code()),
-                        learnUnit.name(), learnUnit.description(), learnUnit.sequence(),
-                        learnUnit.prerequisiteLearnUnitCodes().stream().map(scopedCodes::get).toList(),
-                        learnUnit.passScore(), learnUnit.minCodingScore(), learnUnit.enabled(), learnUnit.learningObjectives(),
-                        learnUnit.lessonIntro(), learnUnit.keyConcepts(), learnUnit.examples(), learnUnit.diagnosticEligible()))
-                .toList();
-        List<Question> questions = generated.questions().stream()
-                .map(question -> new Question(
-                        journeyId + "." + question.id(), scopedCodes.get(question.learnUnitCode()), question.type(),
-                        question.difficulty(), question.prompt(), question.points(), question.configJson(),
-                        question.rubricJson(), question.language(), question.starterCode(),
-                        question.referenceConceptsJson(), question.diagnosticEligible()))
-                .toList();
-        return new CurriculumGenerator.GeneratedCurriculum(generated.languages(), learnUnits, questions);
-    }
-
     private CurriculumGenerator.GeneratedOutline scopeToJourney(
             String journeyId, CurriculumGenerator.GeneratedOutline generated) {
+        Map<String, String> scopedChapterCodes = generated.chapters().stream()
+                .collect(Collectors.toMap(Chapter::code, chapter -> journeyId + "." + chapter.code()));
+        List<Chapter> chapters = generated.chapters().stream()
+                .map(chapter -> new Chapter(
+                        journeyId + "." + chapter.id(), scopedChapterCodes.get(chapter.code()), chapter.name(),
+                        chapter.goal(), chapter.sequence(), chapter.prerequisiteChapterCodes().stream()
+                                .map(scopedChapterCodes::get).toList()))
+                .toList();
         Map<String, String> scopedCodes = generated.learnUnits().stream()
                 .collect(Collectors.toMap(LearnUnit::code, learnUnit -> journeyId + "." + learnUnit.code()));
         List<LearnUnit> learnUnits = generated.learnUnits().stream()
                 .map(learnUnit -> new LearnUnit(
                         journeyId + "." + learnUnit.id(), learnUnit.languageCode(), scopedCodes.get(learnUnit.code()),
+                        scopedChapterCodes.get(learnUnit.chapterCode()),
                         learnUnit.name(), learnUnit.description(), learnUnit.sequence(),
                         learnUnit.prerequisiteLearnUnitCodes().stream().map(scopedCodes::get).toList(),
                         learnUnit.passScore(), learnUnit.minCodingScore(), learnUnit.enabled(),
                         learnUnit.learningObjectives(), learnUnit.lessonIntro(), learnUnit.keyConcepts(),
                         learnUnit.examples(), learnUnit.diagnosticEligible()))
                 .toList();
-        return new CurriculumGenerator.GeneratedOutline(generated.languages(), learnUnits);
+        return new CurriculumGenerator.GeneratedOutline(generated.languages(), chapters, learnUnits);
     }
 
     private void validateOutline(CurriculumGenerator.GeneratedOutline generated) {
-        if (generated == null || generated.languages().isEmpty() || generated.learnUnits().isEmpty()) {
-            throw new IllegalStateException("Generated outline must contain languages and LearnUnits");
+        if (generated == null || generated.languages().isEmpty()
+                || generated.chapters().isEmpty() || generated.learnUnits().isEmpty()) {
+            throw new IllegalStateException("Generated outline must contain languages, Chapters and LearnUnits");
         }
         Map<String, LearningLanguage> languages = generated.languages().stream()
                 .collect(Collectors.toMap(LearningLanguage::code, Function.identity(), (left, right) -> {
@@ -199,13 +140,36 @@ public class CurriculumService {
                     throw new IllegalStateException("Duplicate generated LearnUnit: " + left.code());
                 }));
         for (LearningLanguage language : languages.values()) {
-            if (language.code().isBlank() || language.name().isBlank() || language.description().isBlank()) {
+            if (language.code() == null || language.name() == null || language.description() == null
+                    || language.code().isBlank() || language.name().isBlank() || language.description().isBlank()) {
                 throw new IllegalStateException("Generated outline language is incomplete");
             }
         }
+        Map<String, Chapter> chapters = generated.chapters().stream()
+                .collect(Collectors.toMap(Chapter::code, Function.identity(), (left, right) -> {
+                    throw new IllegalStateException("Duplicate generated Chapter: " + left.code());
+                }));
+        for (Chapter chapter : chapters.values()) {
+            if (chapter.code() == null || chapter.name() == null || chapter.goal() == null
+                    || chapter.code().isBlank() || chapter.name().isBlank() || chapter.goal().isBlank()
+                    || chapter.sequence() < 1) {
+                throw new IllegalStateException("Generated Chapter is incomplete: " + chapter.code());
+            }
+            Set<String> prerequisites = new HashSet<>();
+            for (String prerequisite : chapter.prerequisiteChapterCodes()) {
+                if (!prerequisites.add(prerequisite) || prerequisite == null || prerequisite.isBlank()
+                        || prerequisite.equals(chapter.code()) || !chapters.containsKey(prerequisite)) {
+                    throw new IllegalStateException("Generated Chapter has invalid prerequisite: " + chapter.code());
+                }
+            }
+        }
+        validateChapterAcyclic(chapters);
         for (LearnUnit learnUnit : learnUnits.values()) {
-            if (learnUnit.code().isBlank() || learnUnit.name().isBlank() || learnUnit.description().isBlank()
-                    || !languages.containsKey(learnUnit.languageCode()) || learnUnit.sequence() < 1
+            if (learnUnit.code() == null || learnUnit.name() == null || learnUnit.description() == null
+                    || learnUnit.chapterCode() == null || learnUnit.code().isBlank()
+                    || learnUnit.name().isBlank() || learnUnit.description().isBlank()
+                    || !languages.containsKey(learnUnit.languageCode()) || learnUnit.chapterCode().isBlank()
+                    || !chapters.containsKey(learnUnit.chapterCode()) || learnUnit.sequence() < 1
                     || learnUnit.learningObjectives().isEmpty() || learnUnit.keyConcepts().isEmpty()
                     || learnUnit.hasDetailedContent()) {
                 throw new IllegalStateException("Generated outline LearnUnit is incomplete: " + learnUnit.code());
@@ -220,6 +184,10 @@ public class CurriculumService {
                     throw new IllegalStateException("Generated outline has unknown prerequisite: " + prerequisite);
                 }
             }
+        }
+        if (chapters.values().stream().anyMatch(chapter -> learnUnits.values().stream()
+                .noneMatch(learnUnit -> learnUnit.chapterCode().equals(chapter.code())))) {
+            throw new IllegalStateException("Every generated Chapter needs a LearnUnit");
         }
         validateAcyclic(learnUnits);
     }
@@ -244,101 +212,25 @@ public class CurriculumService {
                 || generated.name().trim().equalsIgnoreCase(requested.trim());
     }
 
-    /**
-     * 校验生成课程的完整结构，确保后续写入 SQLite 的数据满足领域约束。
-     *
-     * <p>校验覆盖语言、LearnUnit 内容、分数规则、重复内容、前置关系、无环路径和题目覆盖。</p>
-     */
-    private void validate(CurriculumGenerator.GeneratedCurriculum generated) {
-        if (generated == null || generated.languages().isEmpty() || generated.learnUnits().isEmpty()) {
-            throw new IllegalStateException("Generated curriculum must contain languages and LearnUnits");
-        }
-        for (LearningLanguage language : generated.languages()) {
-            if (language.code() == null || language.name() == null || language.description() == null
-                    || language.code().isBlank() || language.name().isBlank() || language.description().isBlank()) {
-                throw new IllegalStateException("Generated language has missing required fields: " + language.code());
-            }
-        }
-        Map<String, LearningLanguage> languages = generated.languages().stream()
-                .collect(Collectors.toMap(LearningLanguage::code, Function.identity(), (left, right) -> {
-                    throw new IllegalStateException("Duplicate generated language: " + left.code());
-                }));
-        Map<String, LearnUnit> learnUnits = generated.learnUnits().stream()
-                .collect(Collectors.toMap(LearnUnit::code, Function.identity(), (left, right) -> {
-                    throw new IllegalStateException("Duplicate generated LearnUnit: " + left.code());
-                }));
-        Set<String> learnUnitLanguages = new HashSet<>();
-        Set<String> learnUnitContent = new HashSet<>();
-        for (LearnUnit learnUnit : generated.learnUnits()) {
-            if (learnUnit.code() == null || learnUnit.languageCode() == null || learnUnit.name() == null || learnUnit.description() == null
-                    || !languages.containsKey(learnUnit.languageCode())) {
-                throw new IllegalStateException("LearnUnit belongs to unknown language: " + learnUnit.code());
-            }
-            if (learnUnit.code().isBlank() || learnUnit.name().isBlank() || learnUnit.description().isBlank()) {
-                throw new IllegalStateException("Generated LearnUnit has missing required fields: " + learnUnit.code());
-            }
-            if (learnUnit.sequence() < 1 || learnUnit.learningObjectives().isEmpty()
-                    || learnUnit.lessonIntro() == null || learnUnit.lessonIntro().isBlank()
-                    || learnUnit.keyConcepts().isEmpty() || learnUnit.examples().isEmpty()
-                    || hasBlank(learnUnit.learningObjectives()) || hasBlank(learnUnit.keyConcepts())
-                    || hasBlank(learnUnit.examples())) {
-                throw new IllegalStateException("Generated LearnUnit has incomplete teaching content: " + learnUnit.code());
-            }
-            if (learnUnit.passScore() < 0 || learnUnit.passScore() > 100
-                    || learnUnit.minCodingScore() != null && (learnUnit.minCodingScore() < 0 || learnUnit.minCodingScore() > 100)) {
-                throw new IllegalStateException("Generated LearnUnit has invalid score rules: " + learnUnit.code());
-            }
-            String content = String.join("\u001f", learnUnit.name().trim(), learnUnit.description().trim(),
-                    learnUnit.lessonIntro().trim(), learnUnit.learningObjectives().toString(),
-                    learnUnit.keyConcepts().toString(), learnUnit.examples().toString());
-            if (!learnUnitContent.add(content)) {
-                throw new IllegalStateException("Generated LearnUnits contain duplicate teaching content");
-            }
-            learnUnitLanguages.add(learnUnit.languageCode());
-            Set<String> prerequisites = new HashSet<>();
-            for (String prerequisite : learnUnit.prerequisiteLearnUnitCodes()) {
-                LearnUnit prerequisiteLearnUnit = learnUnits.get(prerequisite);
-                if (!prerequisites.add(prerequisite) || prerequisite == null || prerequisite.isBlank()
-                        || prerequisite.equals(learnUnit.code()) || prerequisiteLearnUnit == null
-                        || !prerequisiteLearnUnit.languageCode().equals(learnUnit.languageCode())) {
-                    throw new IllegalStateException("Generated LearnUnit has invalid prerequisite: " + learnUnit.code());
-                }
-            }
-        }
-        if (learnUnitLanguages.size() != languages.size()) {
-            throw new IllegalStateException("Every generated language needs at least one LearnUnit");
-        }
-        validateAcyclic(learnUnits);
-        validateQuestions(generated.questions(), learnUnits);
+    /** 使用深度优先遍历检查 Chapter 前置关系是否存在环路。 */
+    private void validateChapterAcyclic(Map<String, Chapter> chapters) {
+        Set<String> visiting = new HashSet<>();
+        Set<String> visited = new HashSet<>();
+        for (String code : chapters.keySet()) visitChapter(code, chapters, visiting, visited);
     }
 
-    private boolean hasBlank(List<String> values) {
-        return values.stream().anyMatch(value -> value == null || value.isBlank());
-    }
-
-    private void validateQuestions(List<Question> questions, Map<String, LearnUnit> learnUnits) {
-        if (questions.isEmpty()) throw new IllegalStateException("Generated Question set must not be empty");
-        Set<String> ids = new HashSet<>();
-        for (Question question : questions) {
-            if (!ids.add(question.id())) throw new IllegalStateException("Duplicate generated Question: " + question.id());
-            LearnUnit learnUnit = learnUnits.get(question.learnUnitCode());
-            try {
-                QuestionStructureValidator.validate(question, learnUnit);
-            } catch (IllegalArgumentException error) {
-                throw new IllegalStateException("Generated Question is invalid: " + question.id(), error);
-            }
+    private void visitChapter(
+            String code,
+            Map<String, Chapter> chapters,
+            Set<String> visiting,
+            Set<String> visited) {
+        if (visited.contains(code)) return;
+        if (!visiting.add(code)) throw new IllegalStateException("Generated Chapters contain a prerequisite cycle");
+        for (String prerequisite : chapters.get(code).prerequisiteChapterCodes()) {
+            visitChapter(prerequisite, chapters, visiting, visited);
         }
-        for (LearnUnit learnUnit : learnUnits.values()) {
-            boolean hasChoice = questions.stream().anyMatch(question ->
-                    question.learnUnitCode().equals(learnUnit.code())
-                            && question.type() == QuestionType.MULTIPLE_CHOICE);
-            boolean hasCoding = questions.stream().anyMatch(question ->
-                    question.learnUnitCode().equals(learnUnit.code())
-                            && question.type() == QuestionType.CODING);
-            if (!hasChoice || learnUnit.minCodingScore() != null && !hasCoding) {
-                throw new IllegalStateException("Generated Question coverage is incomplete for " + learnUnit.code());
-            }
-        }
+        visiting.remove(code);
+        visited.add(code);
     }
 
     /** 使用深度优先遍历检查 LearnUnit 前置关系是否存在环路。 */

@@ -51,8 +51,10 @@ public class ProgressService {
                 "GENERATE_PATH",
                 () -> {
                     LearningJourney journey = journey(journeyId);
+                    var chapters = repository.listChaptersForJourney(journeyId);
                     List<LearnUnit> learnUnits = repository.listLearnUnitsForJourney(journeyId);
-                    List<LearningPathItem> path = planner.plan(journeyId, learnUnits, repository.listPath(journeyId));
+                    List<LearningPathItem> path = planner.plan(
+                            journeyId, chapters, learnUnits, repository.listPath(journeyId));
                     repository.replacePath(journeyId, path);
                     moveJourneyToPathCurrent(journeyId, path);
                     LearningJourney updated = journey(journeyId);

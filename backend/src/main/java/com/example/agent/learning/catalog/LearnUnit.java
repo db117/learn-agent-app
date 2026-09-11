@@ -11,6 +11,7 @@ import java.util.List;
  * @param id 数据库中的稳定主键
  * @param languageCode 所属学习语言编码
  * @param code LearnUnit 唯一编码，也是 Path 和评估引用的业务键
+ * @param chapterCode 所属 Chapter 编码
  * @param name LearnUnit 名称
  * @param description LearnUnit 简介
  * @param sequence 课程默认顺序；前置关系排序时用于稳定打破并列
@@ -28,6 +29,7 @@ public record LearnUnit(
         String id,
         String languageCode,
         String code,
+        String chapterCode,
         String name,
         String description,
         int sequence,
@@ -57,7 +59,7 @@ public record LearnUnit(
     public LearnUnit withDetailedContent(
             List<String> objectives, String intro, List<String> concepts, List<String> generatedExamples) {
         return new LearnUnit(
-                id, languageCode, code, name, description, sequence, prerequisiteLearnUnitCodes,
+                id, languageCode, code, chapterCode, name, description, sequence, prerequisiteLearnUnitCodes,
                 passScore, minCodingScore, enabled, objectives, intro, concepts, generatedExamples,
                 diagnosticEligible);
     }

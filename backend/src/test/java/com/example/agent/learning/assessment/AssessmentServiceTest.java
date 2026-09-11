@@ -49,7 +49,7 @@ class AssessmentServiceTest {
                 "assessment", "journey", "learnUnit-a", AssessmentType.LEARN_UNIT,
                 AssessmentStatus.IN_PROGRESS, Instant.EPOCH, null);
         LearnUnit learnUnit = new LearnUnit(
-                "learnUnit-a", "typescript", "learnUnit-a", "LearnUnit A", "description", 1, List.of(),
+                "learnUnit-a", "typescript", "learnUnit-a", "chapter", "LearnUnit A", "description", 1, List.of(),
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), true);
         Question choice = new Question(
                 "choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
@@ -145,7 +145,7 @@ class AssessmentServiceTest {
                 "assessment", "journey", "learnUnit-a", AssessmentType.LEARN_UNIT,
                 AssessmentStatus.IN_PROGRESS, Instant.EPOCH, null);
         LearnUnit learnUnit = new LearnUnit(
-                "learnUnit-a", "reading", "learnUnit-a", "LearnUnit A", "description", 1, List.of(),
+                "learnUnit-a", "reading", "learnUnit-a", "chapter", "LearnUnit A", "description", 1, List.of(),
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), true);
         AssessmentAttempt openAttempt = attempt("attempt-1");
         Question choice = new Question(
@@ -179,7 +179,7 @@ class AssessmentServiceTest {
                 "assessment", "journey", "learnUnit-a", AssessmentType.LEARN_UNIT,
                 AssessmentStatus.IN_PROGRESS, Instant.EPOCH, null);
         LearnUnit learnUnit = new LearnUnit(
-                "learnUnit-a", "typescript", "learnUnit-a", "LearnUnit A", "description", 1, List.of(),
+                "learnUnit-a", "typescript", "learnUnit-a", "chapter", "LearnUnit A", "description", 1, List.of(),
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), true);
         AssessmentAttempt openAttempt = attempt("attempt-1");
         Question coding = new Question(
@@ -220,7 +220,7 @@ class AssessmentServiceTest {
                 AssessmentStatus.IN_PROGRESS, Instant.EPOCH, null);
         AssessmentAttempt openAttempt = attempt("attempt-1");
         LearnUnit learnUnit = new LearnUnit(
-                "learnUnit-a", "typescript", "learnUnit-a", "LearnUnit A", "description", 1, List.of(),
+                "learnUnit-a", "typescript", "learnUnit-a", "chapter", "LearnUnit A", "description", 1, List.of(),
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), true);
         Question coding = new Question(
                 "coding", "learnUnit-a", QuestionType.CODING, 1, "Implement", 30,
@@ -255,7 +255,7 @@ class AssessmentServiceTest {
         LearningLanguage language = new LearningLanguage(
                 "language", "typescript", "TypeScript", "typed JavaScript", true);
         LearnUnit learnUnit = new LearnUnit(
-                "learnUnit-a", "typescript", "learnUnit-a", "LearnUnit A", "description", 1, List.of(),
+                "learnUnit-a", "typescript", "learnUnit-a", "chapter", "LearnUnit A", "description", 1, List.of(),
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), false);
         Question coding = new Question(
                 "coding-only", learnUnit.code(), QuestionType.CODING, 1, "Implement", 100,
@@ -344,7 +344,7 @@ class AssessmentServiceTest {
         LearningLanguage language = new LearningLanguage(
                 "language", "typescript", "TypeScript", "typed JavaScript", true);
         LearnUnit learnUnit = new LearnUnit(
-                "learnUnit-a", "typescript", "learnUnit-a", "LearnUnit A", "description", 1, List.of(),
+                "learnUnit-a", "typescript", "learnUnit-a", "chapter", "LearnUnit A", "description", 1, List.of(),
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), false);
         Question choice = new Question(
                 "generated-choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
@@ -388,7 +388,7 @@ class AssessmentServiceTest {
         LearningLanguage language = new LearningLanguage(
                 "language", "reading", "Reading", "reading path", true);
         LearnUnit learnUnit = new LearnUnit(
-                "learnUnit-reading", "reading", "learnUnit-reading", "Read docs", "documentation",
+                "learnUnit-reading", "reading", "learnUnit-reading", "chapter", "Read docs", "documentation",
                 1, List.of(), 80, null, true, List.of("Read docs"), "Read", List.of("terms"), List.of("API"), false);
         Question choice = new Question(
                 "generated-choice-only", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
@@ -422,7 +422,7 @@ class AssessmentServiceTest {
         LearningLanguage language = new LearningLanguage(
                 "language", "reading", "Reading", "reading path", true);
         LearnUnit learnUnit = new LearnUnit(
-                "learnUnit-reading", "reading", "learnUnit-reading", "Read docs", "documentation",
+                "learnUnit-reading", "reading", "learnUnit-reading", "chapter", "Read docs", "documentation",
                 1, List.of(), 80, null, true, List.of("Read docs"), "Read", List.of("terms"), List.of("API"), true);
         Question choice = new Question(
                 "diagnostic-choice", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
@@ -451,7 +451,7 @@ class AssessmentServiceTest {
         LearningLanguage language = new LearningLanguage(
                 "language", "reading", "Reading", "reading path", true);
         LearnUnit learnUnit = new LearnUnit(
-                "learnUnit-reading", "reading", "learnUnit-reading", "Read docs", "documentation",
+                "learnUnit-reading", "reading", "learnUnit-reading", "chapter", "Read docs", "documentation",
                 1, List.of(), 80, null, true, List.of("Read docs"), "Read", List.of("terms"), List.of("API"), true);
         Question first = new Question(
                 "diagnostic-choice-1", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose one", 20,
