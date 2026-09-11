@@ -1,4 +1,5 @@
-import type {JourneyDetail, LearnUnit, LearnUnitResponse} from "../lib/api";
+import {useEffect, useState} from "react";
+import type {JourneyDetail, LearnUnit, LearnUnitResponse, LearningPhase} from "../lib/api";
 import {TutorPanel, type TutorPanelProps} from "./TutorPanel";
 
 type DashboardViewProps = {
@@ -13,6 +14,9 @@ type DashboardViewProps = {
     onOpenLearnUnit: (code: string) => void | Promise<void>;
     onRetryCurrentLearnUnit: () => void | Promise<void>;
     onStartLearnUnitAssessment: () => void | Promise<void>;
+    onAdvancePhase: (phase: LearningPhase) => void | Promise<void>;
+    onSkipPhase: (phase: LearningPhase) => void | Promise<void>;
+    onGuidedPractice: (response: string) => void | Promise<void>;
     onSkipCurrentLearnUnit: () => void | Promise<void>;
     tutor: TutorPanelProps;
 };
@@ -30,6 +34,15 @@ function pathStatusLabel(status: string) {
     }
 }
 
+function phaseLabel(phase: LearningPhase) {
+    switch (phase) {
+        case "EXPLANATION": return "Explanation";
+        case "EXAMPLE": return "Example";
+        case "GUIDED_PRACTICE": return "Guided practice";
+        case "INDEPENDENT_CHECK": return "Independent check";
+    }
+}
+
 export function DashboardView({
                                   journey,
                                   learnUnits,
@@ -42,6 +55,9 @@ export function DashboardView({
                                   onOpenLearnUnit,
                                   onRetryCurrentLearnUnit,
                                   onStartLearnUnitAssessment,
+                                  onAdvancePhase,
+                                  onSkipPhase,
+                                  onGuidedPractice,
                                   onSkipCurrentLearnUnit,
                                   tutor,
                               }: DashboardViewProps) {
@@ -50,7 +66,14 @@ export function DashboardView({
     const passed = path.filter((item) => item.status === "COMPLETED").length;
     const skipped = path.filter((item) => item.status === "SKIPPED").length;
     const current = learnUnit;
-    const hasDetailedContent = Boolean(current?.learnUnit.lessonIntro.trim() && current.learnUnit.examples.length);
+    const phase = current?.pathItem?.learningPhase ?? "EXPLANATION";
+    const hasDetailedContent = Boolean(
+        current?.learnUnit.lessonIntro.trim() && current.learnUnit.examples.length &&
+        current.learnUnit.ability.trim() && current.learnUnit.guidedPracticePrompt.trim() &&
+        current.learnUnit.independentCheckPrompt.trim() && current.learnUnit.estimatedMinutes > 0,
+    );
+    const [guidedResponse, setGuidedResponse] = useState("");
+    useEffect(() => setGuidedResponse(""), [current?.learnUnit.code, phase]);
     const next = path.find((item) => item.status === "PENDING");
     const nextStep = next
         ? learnUnitLabel(learnUnits, next.learnUnitCode)
@@ -97,7 +120,7 @@ export function DashboardView({
                             <span
                                 className="status-pill">{pathStatusLabel(current.pathItem?.status ?? "CURRENT")}</span>
                         </div>
-                        <p className="lead">{hasDetailedContent ? current.learnUnit.lessonIntro : current.learnUnit.description}</p>
+                        <p className="lead">{hasDetailedContent ? current.learnUnit.ability : current.learnUnit.description}</p>
                         {!hasDetailedContent && <p className="generation-status" role="status">
                             这是已确认的大纲。点击“开始学习”后，Agent 才会生成这个单元的详细内容。
                         </p>}
@@ -107,6 +130,58 @@ export function DashboardView({
                             <span>评估次数 {current.pathItem?.attemptCount ?? 0}</span>
                         </div>
                         <p className="next-step">下一步：{nextStep}</p>
+                        {hasDetailedContent && <>
+                            <div className="phase-header">
+                                <span className="section-kicker">PHASE {phaseLabel(phase)}</span>
+                                <span className="muted">预计 {current.learnUnit.estimatedMinutes} 分钟</span>
+                            </div>
+                            <div className="phase-content">
+                                {phase === "EXPLANATION" && <>
+                                    <h3>Explanation</h3>
+                                    <p>{current.learnUnit.lessonIntro}</p>
+                                </>}
+                                {phase === "EXAMPLE" && <>
+                                    <h3>Example</h3>
+                                    {current.learnUnit.examples.map((item) => <p key={item}>{item}</p>)}
+                                </>}
+                                {phase === "GUIDED_PRACTICE" && <>
+                                    <h3>Guided practice</h3>
+                                    <p>{current.learnUnit.guidedPracticePrompt}</p>
+                                    {current.learnUnit.guidedPracticeHints.length > 0 && <ul>
+                                        {current.learnUnit.guidedPracticeHints.map((item) => <li key={item}>{item}</li>)}
+                                    </ul>}
+                                    <textarea value={guidedResponse}
+                                              onChange={(event) => setGuidedResponse(event.target.value)}
+                                              rows={5} placeholder="写下你的练习…" aria-label="Guided practice response"/>
+                                    <button className="secondary" onClick={() => void onGuidedPractice(guidedResponse)}
+                                            disabled={busy || !guidedResponse.trim()}>保存练习反馈</button>
+                                    {current.pathItem?.guidedPracticeEntries.map((entry) =>
+                                        <div className="feedback-block" key={entry.createdAt}>
+                                            <p>{entry.response}</p><p className="muted">{entry.feedback}</p>
+                                        </div>)}
+                                </>}
+                                {phase === "INDEPENDENT_CHECK" && <>
+                                    <h3>Independent check</h3>
+                                    <p>{current.learnUnit.independentCheckPrompt}</p>
+                                    {current.pathItem?.skippedPhases.includes("INDEPENDENT_CHECK") &&
+                                        <p className="warning" role="status">Independent check 尚未完成；跳过不会算作掌握。</p>}
+                                    <button className="primary" onClick={() => void onStartLearnUnitAssessment()}
+                                            disabled={busy || !currentLearnUnit || hasOpenAttempt}>
+                                        {hasOpenAttempt ? "继续独立检查" : "开始独立检查"}
+                                    </button>
+                                </>}
+                            </div>
+                            <div className="phase-actions">
+                                <button className="primary" onClick={() => void onAdvancePhase(phase)}
+                                        disabled={busy || !currentLearnUnit || phase === "INDEPENDENT_CHECK"}>
+                                    进入下一阶段
+                                </button>
+                                <button className="secondary" onClick={() => void onSkipPhase(phase)}
+                                        disabled={busy || !currentLearnUnit || current.pathItem?.skippedPhases.includes(phase)}>
+                                    跳过本阶段
+                                </button>
+                            </div>
+                        </>}
                         <div className="lesson-columns">
                             <div><h3>学习目标</h3>
                                 <ul>{current.learnUnit.learningObjectives.map((item) => <li
@@ -117,8 +192,6 @@ export function DashboardView({
                                     key={item}>{item}</span>)}</div>
                             </div>
                         </div>
-                        {hasDetailedContent && <div className="example-block"><h3>Example</h3>{current.learnUnit.examples.map((item) => <p
-                            key={item}>{item}</p>)}</div>}
                         {current.questionAttempts.filter((item) => item.feedback?.trim()).slice(0, 3).length > 0 && (
                             <div className="feedback-block">
                                 <h3>最近反馈</h3>{current.questionAttempts.filter((item) => item.feedback?.trim()).slice(0, 3).map((item) =>
@@ -131,9 +204,6 @@ export function DashboardView({
                             </button>
                             <button className="secondary" onClick={() => void onRetryCurrentLearnUnit()}
                                     disabled={busy || !canRetry}>Retry
-                            </button>
-                            <button className="primary" onClick={() => void onStartLearnUnitAssessment()}
-                                    disabled={busy || !currentLearnUnit || !hasDetailedContent}>开始 LearnUnit 评估
                             </button>
                             <button className="secondary" onClick={() => void onSkipCurrentLearnUnit()}
                                     disabled={busy || !currentLearnUnit || hasOpenAttempt}>Skip

@@ -23,7 +23,7 @@ import java.util.Set;
 final class DatabaseSchema {
 
     static final String MARKER = "learning-agent-sqlite";
-    static final String VERSION = "2";
+    static final String VERSION = "3";
     static final String SOURCE_APPLICATION_ID = "learning-agent-java";
     static final Set<String> REQUIRED_METADATA_KEYS = Set.of(
             "schema.marker", "schema.version", "snapshot.created_at", "source.application_id");

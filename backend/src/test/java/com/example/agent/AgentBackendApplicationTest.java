@@ -10,6 +10,7 @@ import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.Chapter;
+import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.journey.LearningJourney;
@@ -51,8 +52,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = {
-                "app.data-dir=target/context-test-data-learn-unit-v2",
-                "app.database=target/context-test-data-learn-unit-v2/context.db",
+                "app.data-dir=target/context-test-data-learn-unit-v3",
+                "app.database=target/context-test-data-learn-unit-v3/context.db",
                 "app.openai.api-key=test-key",
                 "app.openai.base-url=http://localhost"
         })
@@ -75,6 +76,8 @@ class AgentBackendApplicationTest {
     private LearningRepository learning;
     @Autowired
     private LearningJourneyService journeys;
+    @Autowired
+    private CurriculumService curriculum;
     @Autowired
     private ProgressService progress;
     @Autowired
@@ -243,34 +246,68 @@ class AgentBackendApplicationTest {
         assertEquals(1, learning.listQuestionAttemptsForLearnUnit(journey.id(), current).size());
     }
 
+    @Test
+    void restoresGeneratedContentAndPhaseStateFromSqlite() {
+        LearningJourney journey = journeys.create(
+                "test-user", "typescript", "content restore", "Java", 8,
+                "backend developer", "learn TypeScript");
+        String code = learning.listPath(journey.id()).get(0).learnUnitCode();
+
+        LearnUnit generated = curriculum.ensureLearnUnitContent(journey.id(), code);
+        assertTrue(generated.hasDetailedContent());
+        assertEquals(1, learning.listQuestionsForLearnUnit(code).size());
+
+        progress.advancePhase(journey.id(), code, com.example.agent.learning.path.LearningPhase.EXPLANATION);
+        LearningRepository restarted = new LearningRepository(JdbcClient.create(dataSource));
+        var restored = restarted.findPathItem(journey.id(), code).orElseThrow();
+        assertEquals(com.example.agent.learning.path.LearningPhase.EXAMPLE, restored.learningPhase());
+        assertEquals(generated.guidedPracticePrompt(),
+                restarted.findLearnUnit(code).orElseThrow().guidedPracticePrompt());
+    }
+
     @TestConfiguration(proxyBeanMethods = false)
     static class TestCurriculumConfiguration {
 
         @Bean
         @Primary
         CurriculumGenerator curriculumGenerator() {
-            return (requestedLanguage, learningContext) -> {
-                String languageCode = requestedLanguage.trim().toLowerCase(Locale.ROOT);
-                String suffix = UUID.randomUUID().toString();
-                LearningLanguage language = new LearningLanguage(
-                        "generated-language-" + suffix, languageCode, "TypeScript", "typed JavaScript", true);
-                Chapter chapter = new Chapter(
-                        "generated-chapter-" + suffix, languageCode + ".fundamentals", "Fundamentals",
-                        "Build the core language foundation", 1, List.of());
-                LearnUnit runtime = new LearnUnit(
-                        "generated-learnUnit-runtime-" + suffix, languageCode, languageCode + ".javascript-runtime",
-                        chapter.code(), "JavaScript Runtime", "Runtime fundamentals", 1, List.of(), 80, null, true,
-                        List.of("Understand the runtime"), "", List.of("event loop"), List.of(), true);
-                LearnUnit types = new LearnUnit(
-                        "generated-learnUnit-types-" + suffix, languageCode, languageCode + ".basic-types",
-                        chapter.code(), "Basic Types", "Common types", 2, List.of(runtime.code()), 80, null, true,
-                        List.of("Use common types"), "", List.of("unknown"), List.of(), true);
-                LearnUnit functions = new LearnUnit(
-                        "generated-learnUnit-functions-" + suffix, languageCode, languageCode + ".functions",
-                        chapter.code(), "Functions", "Function fundamentals", 3, List.of(types.code()), 80, null, true,
-                        List.of("Write reusable functions"), "", List.of("parameters"), List.of(), true);
-                return new CurriculumGenerator.GeneratedOutline(
-                        List.of(language), List.of(chapter), List.of(runtime, types, functions));
+            return new CurriculumGenerator() {
+                @Override
+                public GeneratedOutline generateOutline(String requestedLanguage, String learningContext) {
+                    String languageCode = requestedLanguage.trim().toLowerCase(Locale.ROOT);
+                    String suffix = UUID.randomUUID().toString();
+                    LearningLanguage language = new LearningLanguage(
+                            "generated-language-" + suffix, languageCode, "TypeScript", "typed JavaScript", true);
+                    Chapter chapter = new Chapter(
+                            "generated-chapter-" + suffix, languageCode + ".fundamentals", "Fundamentals",
+                            "Build the core language foundation", 1, List.of());
+                    LearnUnit runtime = new LearnUnit(
+                            "generated-learnUnit-runtime-" + suffix, languageCode, languageCode + ".javascript-runtime",
+                            chapter.code(), "JavaScript Runtime", "Runtime fundamentals", 1, List.of(), 80, null, true,
+                            List.of("Understand the runtime"), "", List.of("event loop"), List.of(), true);
+                    LearnUnit types = new LearnUnit(
+                            "generated-learnUnit-types-" + suffix, languageCode, languageCode + ".basic-types",
+                            chapter.code(), "Basic Types", "Common types", 2, List.of(runtime.code()), 80, null, true,
+                            List.of("Use common types"), "", List.of("unknown"), List.of(), true);
+                    LearnUnit functions = new LearnUnit(
+                            "generated-learnUnit-functions-" + suffix, languageCode, languageCode + ".functions",
+                            chapter.code(), "Functions", "Function fundamentals", 3, List.of(types.code()), 80, null, true,
+                            List.of("Write reusable functions"), "", List.of("parameters"), List.of(), true);
+                    return new GeneratedOutline(List.of(language), List.of(chapter), List.of(runtime, types, functions));
+                }
+
+                @Override
+                public GeneratedLearnUnitContent generateContent(LearnUnit outline, String learningContext) {
+                    LearnUnit content = outline.withStructuredContent(
+                            "使用并解释一个核心语言能力", 10, "先理解这个能力。", List.of("const answer = 42;"),
+                            "写一个最小示例并说明结果。", List.of("先写最小代码"), "选择正确的核心概念。");
+                    Question question = new Question(
+                            "integration-independent-" + outline.code(), outline.code(), QuestionType.MULTIPLE_CHOICE,
+                            1, "哪个选项符合本单元？", 20,
+                            "{\"options\":[{\"id\":\"A\",\"text\":\"核心概念\"},{\"id\":\"B\",\"text\":\"无关概念\"}],\"correctOptionIds\":[\"A\"],\"multiple\":false}",
+                            null, null, null, "[]", false);
+                    return new GeneratedLearnUnitContent(content, List.of(question));
+                }
             };
         }
     }

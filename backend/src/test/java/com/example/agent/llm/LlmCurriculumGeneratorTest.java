@@ -4,6 +4,8 @@ import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.llm.infrastructure.LlmCurriculumGenerator;
+import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionType;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -73,21 +75,51 @@ class LlmCurriculumGeneratorTest {
     }
 
     @Test
-    void generatesDetailedContentForAnOutline() {
+    void generatesBoundedStructuredContentAndIndependentQuestionsForAnOutline() {
         LearnUnit outline = new LearnUnit(
                 "unit", "python", "python.basics", "python-basics", "基础", "基础语法", 1, List.of(),
                 80, 70, true, List.of("掌握基础"), "", List.of("变量"), List.of(), true);
         LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
-                {"lessonIntro":"从变量开始","learningObjectives":["能定义变量"],
-                 "keyConcepts":["变量绑定"],"examples":["name = 'Ada'"]}
+                {"ability":"定义并读取变量","estimatedMinutes":10,"lessonIntro":"从变量开始",
+                 "examples":["name = 'Ada'"],"guidedPracticePrompt":"定义一个保存姓名的变量",
+                 "guidedPracticeHints":["使用赋值语句"],"independentCheckPrompt":"完成变量检查",
+                 "questions":[{"type":"MULTIPLE_CHOICE","difficulty":1,"prompt":"哪个是变量？","points":20,
+                   "options":[{"id":"A","text":"name"},{"id":"B","text":"123"}],
+                   "correctOptionIds":["A"],"multiple":false,"referenceConcepts":["变量"]}]}
                 """));
 
-        LearnUnit result = generator.generateContent(outline, "learn backend APIs");
+        CurriculumGenerator.GeneratedLearnUnitContent result = generator.generateContent(outline, "learn backend APIs");
 
-        assertEquals("python.basics", result.code());
-        assertEquals("python-basics", result.chapterCode());
-        assertEquals("从变量开始", result.lessonIntro());
-        assertEquals(List.of("name = 'Ada'"), result.examples());
+        assertEquals("python.basics", result.learnUnit().code());
+        assertEquals("python-basics", result.learnUnit().chapterCode());
+        assertEquals("定义并读取变量", result.learnUnit().ability());
+        assertEquals(10, result.learnUnit().estimatedMinutes());
+        assertEquals("从变量开始", result.learnUnit().lessonIntro());
+        assertEquals("定义一个保存姓名的变量", result.learnUnit().guidedPracticePrompt());
+        assertEquals("完成变量检查", result.learnUnit().independentCheckPrompt());
+        assertEquals(List.of("name = 'Ada'"), result.learnUnit().examples());
+        assertEquals("[\"变量\"]", result.independentQuestions().get(0).referenceConceptsJson());
+        assertEquals(QuestionType.MULTIPLE_CHOICE, result.independentQuestions().get(0).type());
+    }
+
+    @Test
+    void rejectsMultipleAbilitiesAndInvalidDuration() {
+        LearnUnit outline = new LearnUnit(
+                "unit", "python", "python.basics", "python-basics", "基础", "基础语法", 1, List.of(),
+                80, 70, true, List.of("掌握基础"), "", List.of("变量"), List.of(), true);
+        LlmCurriculumGenerator multiple = new LlmCurriculumGenerator(model("""
+                {"abilities":["定义变量","读取变量"],"estimatedMinutes":10,"lessonIntro":"介绍",
+                 "examples":["x = 1"],"guidedPracticePrompt":"练习","guidedPracticeHints":[],
+                 "independentCheckPrompt":"检查","questions":[]}
+                """));
+        assertThrows(IllegalArgumentException.class, () -> multiple.generateContent(outline, "context"));
+
+        LlmCurriculumGenerator invalidDuration = new LlmCurriculumGenerator(model("""
+                {"ability":"定义变量","estimatedMinutes":0,"lessonIntro":"介绍",
+                 "examples":["x = 1"],"guidedPracticePrompt":"练习","guidedPracticeHints":[],
+                 "independentCheckPrompt":"检查","questions":[]}
+                """));
+        assertThrows(IllegalArgumentException.class, () -> invalidDuration.generateContent(outline, "context"));
     }
 
     @Test

@@ -95,10 +95,10 @@ public class CurriculumService {
                 .orElse("") + repository.findProfile(journeyId)
                 .map(profile -> "\n学习者背景：" + profile)
                 .orElse("");
-        LearnUnit generated = generator.generateContent(outline, context);
-        validateDetailedContent(outline, generated);
-        repository.updateLearnUnitContent(generated);
-        return repository.findLearnUnit(outline.code()).orElse(generated);
+        CurriculumGenerator.GeneratedLearnUnitContent generated = generator.generateContent(outline, context);
+        LearnUnitContentValidator.validate(outline, generated.learnUnit(), generated.independentQuestions());
+        repository.persistLearnUnitContent(generated.learnUnit(), generated.independentQuestions());
+        return repository.findLearnUnit(outline.code()).orElse(generated.learnUnit());
     }
 
     private CurriculumGenerator.GeneratedOutline scopeToJourney(

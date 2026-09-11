@@ -462,6 +462,25 @@ ul {
     overflow-wrap: anywhere;
 }
 
+.phase-header,
+.phase-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.phase-content {
+    display: grid;
+    gap: .7rem;
+    margin: 1rem 0;
+}
+
+.phase-content textarea {
+    width: 100%;
+    resize: vertical;
+}
+
 .feedback-block {
     margin-top: 22px;
     border: 1px solid var(--border-card);

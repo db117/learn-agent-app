@@ -19,6 +19,7 @@ import {
   type JourneyDraftOutline,
   type LearnUnit,
   type LearnUnitResponse,
+  type LearningPhase,
 } from "./lib/api";
 
 type View = "welcome" | "journey-draft" | "diagnostic" | "result" | "dashboard" | "assessment";
@@ -427,10 +428,6 @@ export default function App() {
 
   async function openLearnUnit(code: string) {
     if (!journeyId) return;
-    if (learnUnit?.learnUnit.code === code && learnUnit.learnUnit.lessonIntro.trim() && learnUnit.learnUnit.examples.length) {
-      await startLearnUnitAssessment();
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
@@ -464,7 +461,7 @@ export default function App() {
   }
 
   async function startLearnUnitAssessment() {
-    if (!journeyId || !learnUnit || !currentLearnUnit) return;
+    if (!journeyId || !learnUnit || !currentLearnUnit || learnUnit.pathItem?.learningPhase !== "INDEPENDENT_CHECK") return;
     setBusy(true);
     setError(null);
     try {
@@ -476,6 +473,51 @@ export default function App() {
       setView("assessment");
     } catch (cause) {
       setError(errorMessage(cause, "Unable to start LearnUnit assessment"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function advancePhase(phase: LearningPhase) {
+    if (!journeyId || !learnUnit || !currentLearnUnit) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.advancePhase(journeyId, learnUnit.learnUnit.code, phase);
+      setLearnUnit(updated);
+      await refreshJourney(journeyId);
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to advance learning phase"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function skipPhase(phase: LearningPhase) {
+    if (!journeyId || !learnUnit || !currentLearnUnit) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.skipPhase(journeyId, learnUnit.learnUnit.code, phase);
+      setLearnUnit(updated);
+      await refreshJourney(journeyId);
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to skip learning phase"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recordGuidedPractice(response: string) {
+    if (!journeyId || !learnUnit || !currentLearnUnit) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.guidedPractice(journeyId, learnUnit.learnUnit.code, response);
+      setLearnUnit(updated);
+      await refreshJourney(journeyId);
+    } catch (cause) {
+      setError(errorMessage(cause, "Unable to save guided practice"));
     } finally {
       setBusy(false);
     }
@@ -657,6 +699,9 @@ export default function App() {
               onOpenLearnUnit={openLearnUnit}
               onRetryCurrentLearnUnit={retryCurrentLearnUnit}
               onStartLearnUnitAssessment={startLearnUnitAssessment}
+              onAdvancePhase={advancePhase}
+              onSkipPhase={skipPhase}
+              onGuidedPractice={recordGuidedPractice}
               onSkipCurrentLearnUnit={skipCurrentLearnUnit}
               tutor={{
                 learnUnit,

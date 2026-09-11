@@ -1,5 +1,7 @@
 package com.example.agent.learning.catalog;
 
+import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.persistence.LearningRepository;
 import org.junit.jupiter.api.Test;
 
@@ -107,6 +109,39 @@ class CurriculumServiceTest {
         verifyNoInteractions(repository);
     }
 
+    @Test
+    void lazilyPersistsStructuredContentAndIndependentQuestionsOnce() {
+        LearningLanguage language = language("python");
+        LearnUnit outline = outline(language).learnUnits().get(0);
+        LearnUnit content = detailed(outline);
+        Question question = independentQuestion(outline.code());
+        when(repository.listLearnUnitsForJourney("journey-1")).thenReturn(List.of(outline));
+        when(generator.generateContent(eq(outline), anyString()))
+                .thenReturn(new CurriculumGenerator.GeneratedLearnUnitContent(content, List.of(question)));
+
+        LearnUnit result = service.ensureLearnUnitContent("journey-1", outline.code());
+
+        assertEquals(content, result);
+        verify(generator).generateContent(eq(outline), anyString());
+        verify(repository).persistLearnUnitContent(content, List.of(question));
+    }
+
+    @Test
+    void rejectsInvalidGeneratedContentBeforeAnyWrite() {
+        LearningLanguage language = language("python");
+        LearnUnit outline = outline(language).learnUnits().get(0);
+        LearnUnit content = detailed(outline).withStructuredContent(
+                "", 0, "", List.of(), "", List.of(), "");
+        when(repository.listLearnUnitsForJourney("journey-1")).thenReturn(List.of(outline));
+        when(generator.generateContent(eq(outline), anyString()))
+                .thenReturn(new CurriculumGenerator.GeneratedLearnUnitContent(content, List.of()));
+
+        assertThrows(IllegalStateException.class,
+                () -> service.ensureLearnUnitContent("journey-1", outline.code()));
+
+        verify(repository, times(0)).persistLearnUnitContent(any(), any());
+    }
+
     private LearningLanguage language(String code) {
         return new LearningLanguage("language-" + code, code, code, "description", true);
     }
@@ -118,5 +153,19 @@ class CurriculumServiceTest {
                 "learnUnit-python.basics", language.code(), "python.basics", chapter.code(), "基础", "基础语法",
                 1, List.of(), 80, 70, true, List.of("掌握基础"), "", List.of("变量"), List.of(), true);
         return new CurriculumGenerator.GeneratedOutline(List.of(language), List.of(chapter), List.of(unit));
+    }
+
+    private LearnUnit detailed(LearnUnit outline) {
+        return outline.withStructuredContent(
+                "定义并读取变量", 10, "从变量开始", List.of("name = 'Ada'"),
+                "定义一个保存姓名的变量", List.of("使用赋值语句"), "完成变量检查");
+    }
+
+    private Question independentQuestion(String learnUnitCode) {
+        return new Question(
+                "question-" + learnUnitCode, learnUnitCode, QuestionType.MULTIPLE_CHOICE, 1,
+                "哪个是变量？", 20,
+                "{\"options\":[{\"id\":\"A\",\"text\":\"name\"},{\"id\":\"B\",\"text\":\"123\"}],\"correctOptionIds\":[\"A\"],\"multiple\":false}",
+                null, null, null, "[\"变量\"]", false);
     }
 }

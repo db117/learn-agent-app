@@ -19,6 +19,7 @@ import com.example.agent.learning.journey.JourneyDraftRunService;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
 import com.example.agent.learning.path.LearningPathItem;
+import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
 import com.example.agent.learning.scoring.AssessmentScore;
@@ -40,6 +41,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -232,7 +234,6 @@ public class LearningController {
         return Mono.fromCallable(() -> {
                     curriculum.ensureLearnUnitContent(journeyId, learnUnitCode);
                     progress.startLearnUnit(journeyId, learnUnitCode);
-                    assessments.createLearnUnitAssessment(journeyId, learnUnitCode);
                     return learnUnit(journeyId, learnUnitCode);
                 })
                 .subscribeOn(Schedulers.boundedElastic());
@@ -244,7 +245,46 @@ public class LearningController {
         return Mono.fromCallable(() -> {
                     curriculum.ensureLearnUnitContent(journeyId, learnUnitCode);
                     progress.continueLearnUnit(journeyId, learnUnitCode);
-                    assessments.createLearnUnitAssessment(journeyId, learnUnitCode);
+                    return learnUnit(journeyId, learnUnitCode);
+                })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /** 推进当前 LearnUnit 的一个教学阶段。 */
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/phase/{phase}/advance")
+    public Mono<LearnUnitResponse> advancePhase(
+            @PathVariable String journeyId,
+            @PathVariable String learnUnitCode,
+            @PathVariable String phase) {
+        return Mono.fromCallable(() -> {
+                    progress.advancePhase(journeyId, learnUnitCode, parsePhase(phase));
+                    return learnUnit(journeyId, learnUnitCode);
+                })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /** 跳过当前教学阶段但不跳过整个 LearnUnit。 */
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/phase/{phase}/skip")
+    public Mono<LearnUnitResponse> skipPhase(
+            @PathVariable String journeyId,
+            @PathVariable String learnUnitCode,
+            @PathVariable String phase) {
+        return Mono.fromCallable(() -> {
+                    progress.skipPhase(journeyId, learnUnitCode, parsePhase(phase));
+                    return learnUnit(journeyId, learnUnitCode);
+                })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /** 保存不计分的引导练习回答和反馈。 */
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/guided-practice")
+    public Mono<LearnUnitResponse> guidedPractice(
+            @PathVariable String journeyId,
+            @PathVariable String learnUnitCode,
+            @RequestBody GuidedPracticeRequest request) {
+        if (request == null) throw new IllegalArgumentException("guided practice response is required");
+        return Mono.fromCallable(() -> {
+                    progress.recordGuidedPractice(journeyId, learnUnitCode, request.response());
                     return learnUnit(journeyId, learnUnitCode);
                 })
                 .subscribeOn(Schedulers.boundedElastic());
@@ -253,10 +293,14 @@ public class LearningController {
     /** 创建或恢复指定 LearnUnit 的固定题集评估。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/assessment")
     public Mono<AssessmentResponse> learnUnitAssessment(
-            @PathVariable String journeyId, @PathVariable String learnUnitCode) {
+                @PathVariable String journeyId, @PathVariable String learnUnitCode) {
         return Mono.fromCallable(() -> {
-                    if (progress.requireCurrentLearnUnit(journeyId, learnUnitCode).startedAt() == null) {
+                    var current = progress.requireCurrentLearnUnit(journeyId, learnUnitCode);
+                    if (current.startedAt() == null) {
                         throw new IllegalStateException("start learning before generating assessment questions");
+                    }
+                    if (current.learningPhase() != LearningPhase.INDEPENDENT_CHECK) {
+                        throw new IllegalStateException("advance to the independent check before starting assessment");
                     }
                     return AssessmentResponse.from(assessments.createLearnUnitAssessment(journeyId, learnUnitCode));
                 })
@@ -317,6 +361,15 @@ public class LearningController {
                         tutorSession.learnUnitCode()));
     }
 
+    private LearningPhase parsePhase(String value) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException("phase is required");
+        try {
+            return LearningPhase.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException error) {
+            throw new IllegalArgumentException("Unknown learning phase: " + value, error);
+        }
+    }
+
     /** 将 Coding 评分失败转换为 422，保留可重试的答案草稿。 */
     @ExceptionHandler(AssessmentService.AssessmentEvaluationException.class)
     public ResponseEntity<Map<String, String>> evaluationError(AssessmentService.AssessmentEvaluationException error) {
@@ -361,6 +414,9 @@ public class LearningController {
     }
 
     public record JourneyDraftAck(String status) {
+    }
+
+    public record GuidedPracticeRequest(String response) {
     }
 
     /**

@@ -16,6 +16,8 @@ import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.PassReason;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
+import com.example.agent.learning.path.LearningPhase;
+import com.example.agent.learning.path.GuidedPracticeEntry;
 import com.example.agent.learning.workflow.WorkflowTransition;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -91,10 +93,12 @@ public class LearningRepository {
                               (id, language_code, code, chapter_code, name, description, sequence,
                                prerequisite_learn_unit_codes, pass_score, min_coding_score, enabled,
                                learning_objectives_json, lesson_intro, key_concepts_json, examples_json,
-                               diagnostic_eligible)
+                               diagnostic_eligible, ability, estimated_minutes, guided_practice_prompt,
+                               guided_practice_hints_json, independent_check_prompt)
                             VALUES (:id, :languageCode, :code, :chapterCode, :name, :description, :sequence,
                               :prerequisites, :passScore, :minCodingScore, :enabled,
-                              :objectives, :intro, :concepts, :examples, :diagnosticEligible)
+                              :objectives, :intro, :concepts, :examples, :diagnosticEligible, :ability,
+                              :estimatedMinutes, :guidedPracticePrompt, :guidedPracticeHints, :independentCheckPrompt)
                             ON CONFLICT(code) DO NOTHING
                             """)
                     .param("id", learnUnit.id())
@@ -113,6 +117,11 @@ public class LearningRepository {
                     .param("concepts", json(learnUnit.keyConcepts()))
                     .param("examples", json(learnUnit.examples()))
                     .param("diagnosticEligible", learnUnit.diagnosticEligible() ? 1 : 0)
+                    .param("ability", learnUnit.ability())
+                    .param("estimatedMinutes", learnUnit.estimatedMinutes())
+                    .param("guidedPracticePrompt", learnUnit.guidedPracticePrompt())
+                    .param("guidedPracticeHints", json(learnUnit.guidedPracticeHints()))
+                    .param("independentCheckPrompt", learnUnit.independentCheckPrompt())
                     .update();
         }
         for (LearnUnit learnUnit : learnUnits) {
@@ -163,7 +172,8 @@ public class LearningRepository {
                         SELECT s.id, s.language_code, s.code, s.chapter_code, s.name, s.description, s.sequence,
                           s.prerequisite_learn_unit_codes, s.pass_score, s.min_coding_score, s.enabled,
                           s.learning_objectives_json, s.lesson_intro, s.key_concepts_json, s.examples_json,
-                          s.diagnostic_eligible
+                          s.diagnostic_eligible, s.ability, s.estimated_minutes, s.guided_practice_prompt,
+                          s.guided_practice_hints_json, s.independent_check_prompt
                         FROM learn_unit s
                         JOIN learning_journey_learn_unit js ON js.learn_unit_code = s.code
                         JOIN chapter c ON c.code = s.chapter_code AND c.journey_id = js.journey_id
@@ -181,7 +191,8 @@ public class LearningRepository {
                         SELECT id, language_code, code, chapter_code, name, description, sequence,
                           prerequisite_learn_unit_codes, pass_score, min_coding_score, enabled,
                           learning_objectives_json, lesson_intro, key_concepts_json, examples_json,
-                          diagnostic_eligible
+                          diagnostic_eligible, ability, estimated_minutes, guided_practice_prompt,
+                          guided_practice_hints_json, independent_check_prompt
                         FROM learn_unit WHERE code = :code
                         """)
                 .param("code", code)
@@ -193,15 +204,31 @@ public class LearningRepository {
     public void updateLearnUnitContent(LearnUnit learnUnit) {
         jdbc.sql("""
                         UPDATE learn_unit SET learning_objectives_json = :objectives,
-                          lesson_intro = :intro, key_concepts_json = :concepts, examples_json = :examples
+                          lesson_intro = :intro, key_concepts_json = :concepts, examples_json = :examples,
+                          ability = :ability, estimated_minutes = :estimatedMinutes,
+                          guided_practice_prompt = :guidedPracticePrompt,
+                          guided_practice_hints_json = :guidedPracticeHints,
+                          independent_check_prompt = :independentCheckPrompt
                         WHERE code = :code
                         """)
                 .param("objectives", json(learnUnit.learningObjectives()))
                 .param("intro", learnUnit.lessonIntro())
                 .param("concepts", json(learnUnit.keyConcepts()))
                 .param("examples", json(learnUnit.examples()))
+                .param("ability", learnUnit.ability())
+                .param("estimatedMinutes", learnUnit.estimatedMinutes())
+                .param("guidedPracticePrompt", learnUnit.guidedPracticePrompt())
+                .param("guidedPracticeHints", json(learnUnit.guidedPracticeHints()))
+                .param("independentCheckPrompt", learnUnit.independentCheckPrompt())
                 .param("code", learnUnit.code())
                 .update();
+    }
+
+    /** 原子写入教学正文及其固定的独立检查题目。 */
+    @Transactional
+    public void persistLearnUnitContent(LearnUnit learnUnit, List<Question> independentQuestions) {
+        updateLearnUnitContent(learnUnit);
+        for (Question question : independentQuestions) insertGeneratedQuestion(question);
     }
 
     /** 查询指定 LearnUnit 的活动题目；已 soft delete 的题目不会出现在新评估中。 */
@@ -368,9 +395,11 @@ public class LearningRepository {
         jdbc.sql("""
                         INSERT INTO learning_path_item
                           (id, journey_id, learn_unit_code, sequence, status, mastery_score,
-                           best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at)
+                           best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at,
+                           learning_phase, skipped_phases_json, guided_practice_entries_json)
                         VALUES (:id, :journeyId, :learnUnitCode, :sequence, :status, :masteryScore,
-                          :bestScore, :attemptCount, :passReason, :startedAt, :passedAt, :skippedAt)
+                          :bestScore, :attemptCount, :passReason, :startedAt, :passedAt, :skippedAt,
+                          :learningPhase, :skippedPhases, :guidedPracticeEntries)
                         """)
                 .param("id", item.id())
                 .param("journeyId", item.journeyId())
@@ -384,6 +413,9 @@ public class LearningRepository {
                 .param("startedAt", instant(item.startedAt()))
                 .param("passedAt", instant(item.passedAt()))
                 .param("skippedAt", instant(item.skippedAt()))
+                .param("learningPhase", item.learningPhase().name())
+                .param("skippedPhases", json(item.skippedPhases()))
+                .param("guidedPracticeEntries", json(item.guidedPracticeEntries()))
                 .update();
     }
 
@@ -391,7 +423,8 @@ public class LearningRepository {
     public List<LearningPathItem> listPath(String journeyId) {
         return jdbc.sql("""
                         SELECT id, journey_id, learn_unit_code, sequence, status, mastery_score,
-                          best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at
+                          best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at,
+                          learning_phase, skipped_phases_json, guided_practice_entries_json
                         FROM learning_path_item WHERE journey_id = :journeyId ORDER BY sequence
                         """)
                 .param("journeyId", journeyId)
@@ -403,7 +436,8 @@ public class LearningRepository {
     public Optional<LearningPathItem> findPathItem(String journeyId, String learnUnitCode) {
         return jdbc.sql("""
                         SELECT id, journey_id, learn_unit_code, sequence, status, mastery_score,
-                          best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at
+                          best_assessment_score, attempt_count, pass_reason, started_at, passed_at, skipped_at,
+                          learning_phase, skipped_phases_json, guided_practice_entries_json
                         FROM learning_path_item WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode
                         """)
                 .param("journeyId", journeyId)
@@ -425,7 +459,9 @@ public class LearningRepository {
                         UPDATE learning_path_item SET status = :status, mastery_score = :masteryScore,
                           best_assessment_score = :bestScore, attempt_count = :attemptCount,
                           pass_reason = :passReason, started_at = :startedAt, passed_at = :passedAt,
-                          skipped_at = :skippedAt
+                          skipped_at = :skippedAt, learning_phase = :learningPhase,
+                          skipped_phases_json = :skippedPhases,
+                          guided_practice_entries_json = :guidedPracticeEntries
                         WHERE journey_id = :journeyId AND learn_unit_code = :learnUnitCode
                         """)
                 .param("status", item.status().name())
@@ -436,6 +472,9 @@ public class LearningRepository {
                 .param("startedAt", instant(item.startedAt()))
                 .param("passedAt", instant(item.passedAt()))
                 .param("skippedAt", instant(item.skippedAt()))
+                .param("learningPhase", item.learningPhase().name())
+                .param("skippedPhases", json(item.skippedPhases()))
+                .param("guidedPracticeEntries", json(item.guidedPracticeEntries()))
                 .param("journeyId", item.journeyId())
                 .param("learnUnitCode", item.learnUnitCode())
                 .update();
@@ -784,7 +823,9 @@ public class LearningRepository {
                 rs.getInt("pass_score"), nullableInt(rs.getObject("min_coding_score")), rs.getInt("enabled") != 0,
                 list(rs.getString("learning_objectives_json")), rs.getString("lesson_intro"),
                 list(rs.getString("key_concepts_json")), list(rs.getString("examples_json")),
-                rs.getInt("diagnostic_eligible") != 0);
+                rs.getInt("diagnostic_eligible") != 0, rs.getString("ability"),
+                rs.getInt("estimated_minutes"), rs.getString("guided_practice_prompt"),
+                list(rs.getString("guided_practice_hints_json")), rs.getString("independent_check_prompt"));
     }
 
     private Chapter mapChapter(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -815,7 +856,9 @@ public class LearningRepository {
                 LearningPathItemStatus.valueOf(rs.getString("status")),
                 rs.getInt("mastery_score"), rs.getInt("best_assessment_score"), rs.getInt("attempt_count"),
                 reason == null ? null : PassReason.valueOf(reason), instant(rs.getString("started_at")),
-                instant(rs.getString("passed_at")), instant(rs.getString("skipped_at")));
+                instant(rs.getString("passed_at")), instant(rs.getString("skipped_at")),
+                LearningPhase.valueOf(rs.getString("learning_phase")), phases(rs.getString("skipped_phases_json")),
+                guidedPracticeEntries(rs.getString("guided_practice_entries_json")));
     }
 
     private Assessment mapAssessment(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -839,6 +882,26 @@ public class LearningRepository {
             return MAPPER.writeValueAsString(value);
         } catch (Exception error) {
             throw new IllegalStateException("Unable to serialize learning data", error);
+        }
+    }
+
+    private List<LearningPhase> phases(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        try {
+            return MAPPER.readValue(value,
+                    MAPPER.getTypeFactory().constructCollectionType(List.class, LearningPhase.class));
+        } catch (Exception error) {
+            throw new IllegalStateException("Invalid learning phase state", error);
+        }
+    }
+
+    private List<GuidedPracticeEntry> guidedPracticeEntries(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        try {
+            return MAPPER.readValue(value,
+                    MAPPER.getTypeFactory().constructCollectionType(List.class, GuidedPracticeEntry.class));
+        } catch (Exception error) {
+            throw new IllegalStateException("Invalid guided practice state", error);
         }
     }
 

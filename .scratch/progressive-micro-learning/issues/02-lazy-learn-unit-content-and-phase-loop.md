@@ -4,13 +4,13 @@
 
 **Blocked by:** 01: Chapter-scoped Journey outline and path
 
-**Status:** ready-for-agent
+**Status:** completed
 
-- [ ] Entering a LearnUnit generates and persists bounded explanation, example, guided-practice, and independent-check content together with the fixed independent-check question definitions.
-- [ ] Invalid or oversized generated content, missing independent check, multiple abilities, invalid duration, or mismatched outline identity fails atomically without partial content or question records.
-- [ ] A LearnUnit exposes the persisted phase in the fixed order `EXPLANATION → EXAMPLE → GUIDED_PRACTICE → INDEPENDENT_CHECK` and rejects commands for a non-current phase.
-- [ ] Advancing or explicitly skipping a phase persists the new phase and a durable skip fact; skipping independent check never marks the LearnUnit complete.
-- [ ] Guided-practice interaction and feedback are persisted without creating a formal Assessment, Attempt, score, or completion result.
-- [ ] Reloading the Journey or current LearnUnit returns the same generated content, current phase, skipped phases, and allowed actions.
-- [ ] The center React/TypeScript pane shows only the current LearnUnit and phase, provides accessible advance/skip controls, and makes the unresolved independent check visible.
-- [ ] Tests cover lazy generation, bounded-content validation, atomic failure, phase ordering, phase skips, guided-practice persistence, and API/UI state restoration.
+- [x] Entering a LearnUnit generates and persists bounded explanation, example, guided-practice, and independent-check content together with the fixed independent-check question definitions.
+- [x] Invalid or oversized generated content, missing independent check, multiple abilities, invalid duration, or mismatched outline identity fails atomically without partial content or question records.
+- [x] A LearnUnit exposes the persisted phase in the fixed order `EXPLANATION → EXAMPLE → GUIDED_PRACTICE → INDEPENDENT_CHECK` and rejects commands for a non-current phase.
+- [x] Advancing or explicitly skipping a phase persists the new phase and a durable skip fact; skipping independent check never marks the LearnUnit complete.
+- [x] Guided-practice interaction and feedback are persisted without creating a formal Assessment, Attempt, score, or completion result.
+- [x] Reloading the Journey or current LearnUnit returns the same generated content, current phase, skipped phases, and allowed actions.
+- [x] The center React/TypeScript pane shows only the current LearnUnit and phase, provides accessible advance/skip controls, and makes the unresolved independent check visible.
+- [x] Tests cover lazy generation, bounded-content validation, atomic failure, phase ordering, phase skips, guided-practice persistence, and API/UI state restoration.

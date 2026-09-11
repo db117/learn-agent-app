@@ -1,5 +1,7 @@
 package com.example.agent.learning.catalog;
 
+import com.example.agent.learning.assessment.Question;
+
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -20,9 +22,8 @@ public interface CurriculumGenerator {
         return generateOutline(requestedLanguage, learningContext);
     }
 
-    /** 为已经确认的单元按需生成教学正文。 */
-    default LearnUnit generateContent(LearnUnit outline, String learningContext) {
-        if (outline.hasDetailedContent()) return outline;
+    /** 为已经确认的单元按需生成完整教学内容和固定的独立检查题目。 */
+    default GeneratedLearnUnitContent generateContent(LearnUnit outline, String learningContext) {
         throw new IllegalStateException("Curriculum generator does not support LearnUnit content generation");
     }
 
@@ -38,5 +39,13 @@ public interface CurriculumGenerator {
             learnUnits = List.copyOf(learnUnits == null ? List.of() : learnUnits);
         }
 
+    }
+
+    /** 首次进入 LearnUnit 时一次性生成并原子持久化的内容。 */
+    record GeneratedLearnUnitContent(LearnUnit learnUnit, List<Question> independentQuestions) {
+
+        public GeneratedLearnUnitContent {
+            independentQuestions = List.copyOf(independentQuestions == null ? List.of() : independentQuestions);
+        }
     }
 }

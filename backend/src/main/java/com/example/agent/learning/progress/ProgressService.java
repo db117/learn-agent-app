@@ -7,6 +7,8 @@ import com.example.agent.learning.journey.PassReason;
 import com.example.agent.learning.path.DeterministicLearningPathPlanner;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
+import com.example.agent.learning.path.LearningPhase;
+import com.example.agent.learning.path.GuidedPracticeEntry;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.learning.workflow.LearningWorkflowGraph;
@@ -97,6 +99,73 @@ public class ProgressService {
     @Transactional
     public LearningPathItem continueLearnUnit(String journeyId, String learnUnitCode) {
         return startLearnUnit(journeyId, learnUnitCode);
+    }
+
+    /** 只允许推进当前阶段；独立检查由 Assessment 在后续流程中收尾。 */
+    @Transactional
+    public LearningPathItem advancePhase(String journeyId, String learnUnitCode, LearningPhase expectedPhase) {
+        activeJourney(journeyId);
+        LearningPathItem item = pathItem(journeyId, learnUnitCode);
+        requireCurrent(item);
+        requirePhase(item, expectedPhase);
+        LearningPhase next = item.learningPhase().next();
+        if (next == null) throw new IllegalArgumentException("independent check must be completed before advancing");
+        return workflow.execute(
+                "ADVANCE_PHASE",
+                () -> new LearningWorkflowGraph.Action<>("complete", phase(item, next, item.skippedPhases(), item.guidedPracticeEntries())),
+                Map.of("complete", result -> {
+                    repository.updatePathItem(result);
+                    transition(journeyId, item.learningPhase().name(), "ADVANCE_PHASE", result.learningPhase().name(),
+                            Map.of("learnUnitCode", learnUnitCode));
+                }));
+    }
+
+    /** 跳过当前阶段并持久化跳过事实；跳过独立检查不会关闭 LearnUnit。 */
+    @Transactional
+    public LearningPathItem skipPhase(String journeyId, String learnUnitCode, LearningPhase expectedPhase) {
+        activeJourney(journeyId);
+        LearningPathItem item = pathItem(journeyId, learnUnitCode);
+        requireCurrent(item);
+        requirePhase(item, expectedPhase);
+        if (item.skippedPhases().contains(item.learningPhase())) {
+            throw new IllegalArgumentException("learning phase was already skipped: " + item.learningPhase());
+        }
+        List<LearningPhase> skipped = new java.util.ArrayList<>(item.skippedPhases());
+        skipped.add(item.learningPhase());
+        LearningPhase next = item.learningPhase().next();
+        LearningPhase resultingPhase = next == null ? item.learningPhase() : next;
+        return workflow.execute(
+                "SKIP_PHASE",
+                () -> new LearningWorkflowGraph.Action<>("complete", phase(item, resultingPhase, skipped, item.guidedPracticeEntries())),
+                Map.of("complete", result -> {
+                    repository.updatePathItem(result);
+                    transition(journeyId, item.learningPhase().name(), "SKIP_PHASE", result.learningPhase().name(),
+                            Map.of("learnUnitCode", learnUnitCode, "skippedPhase", item.learningPhase().name()));
+                }));
+    }
+
+    /** 保存引导练习回答和反馈；该动作不创建 Assessment、Attempt 或分数。 */
+    @Transactional
+    public LearningPathItem recordGuidedPractice(String journeyId, String learnUnitCode, String response) {
+        activeJourney(journeyId);
+        LearningPathItem item = pathItem(journeyId, learnUnitCode);
+        requireCurrent(item);
+        requirePhase(item, LearningPhase.GUIDED_PRACTICE);
+        if (response == null || response.isBlank() || response.length() > 5000) {
+            throw new IllegalArgumentException("guided practice response must contain 1 to 5000 characters");
+        }
+        List<GuidedPracticeEntry> entries = new java.util.ArrayList<>(item.guidedPracticeEntries());
+        entries.add(new GuidedPracticeEntry(
+                response.trim(), "已记录你的练习，可以继续到独立检查。", Instant.now()));
+        return workflow.execute(
+                "GUIDED_PRACTICE",
+                () -> new LearningWorkflowGraph.Action<>("complete", phase(
+                        item, item.learningPhase(), item.skippedPhases(), entries)),
+                Map.of("complete", result -> {
+                    repository.updatePathItem(result);
+                    transition(journeyId, item.learningPhase().name(), "GUIDED_PRACTICE", item.learningPhase().name(),
+                            Map.of("learnUnitCode", learnUnitCode));
+                }));
     }
 
     /**
@@ -369,6 +438,24 @@ public class ProgressService {
         }
     }
 
+    private void requirePhase(LearningPathItem item, LearningPhase expectedPhase) {
+        if (expectedPhase == null || item.learningPhase() != expectedPhase) {
+            throw new IllegalArgumentException("LearnUnit phase is not current: " + item.learningPhase());
+        }
+    }
+
+    private LearningPathItem phase(
+            LearningPathItem item,
+            LearningPhase learningPhase,
+            List<LearningPhase> skippedPhases,
+            List<GuidedPracticeEntry> guidedPracticeEntries) {
+        return new LearningPathItem(
+                item.id(), item.journeyId(), item.learnUnitCode(), item.sequence(), item.status(),
+                item.masteryScore(), item.bestAssessmentScore(), item.attemptCount(), item.passReason(),
+                item.startedAt(), item.passedAt(), item.skippedAt(), learningPhase, skippedPhases,
+                guidedPracticeEntries);
+    }
+
     /**
      * 复制路径节点的稳定身份，只替换调用方传入的进度快照字段。
      *
@@ -395,7 +482,8 @@ public class ProgressService {
             Instant skippedAt) {
         return new LearningPathItem(
                 item.id(), item.journeyId(), item.learnUnitCode(), item.sequence(), status,
-                masteryScore, bestAssessmentScore, attemptCount, passReason, startedAt, passedAt, skippedAt);
+                masteryScore, bestAssessmentScore, attemptCount, passReason, startedAt, passedAt, skippedAt,
+                item.learningPhase(), item.skippedPhases(), item.guidedPracticeEntries());
     }
 
     /**

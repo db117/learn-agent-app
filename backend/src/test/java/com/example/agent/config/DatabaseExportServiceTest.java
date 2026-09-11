@@ -34,7 +34,7 @@ class DatabaseExportServiceTest {
         activeJdbc.sql("INSERT INTO learning_language VALUES ('lang-1', 'python', 'Python', 'Python', 1)").update();
         activeJdbc.sql("INSERT INTO learning_journey VALUES ('journey-1', 'user-1', 'python', 'Learn Python', 'ACTIVE', 'now', 'now')").update();
         activeJdbc.sql("INSERT INTO chapter VALUES ('chapter-1', 'journey-1', 'python.basics-chapter', 'Basics', 'Basics', 1, '[]')").update();
-        activeJdbc.sql("INSERT INTO learn_unit VALUES ('unit-1', 'python', 'python.basics', 'python.basics-chapter', 'Basics', 'Basics', 1, '[]', 80, NULL, 1, '[]', 'Intro', '[]', '[]', 1)").update();
+        activeJdbc.sql("INSERT INTO learn_unit VALUES ('unit-1', 'python', 'python.basics', 'python.basics-chapter', 'Basics', 'Basics', 1, '[]', 80, NULL, 1, '[]', 'Intro', '[]', '[]', 1, '', 0, '', '[]', '')").update();
         activeJdbc.sql("INSERT INTO learning_journey_learn_unit VALUES ('journey-1', 'python.basics')").update();
         activeJdbc.sql("INSERT INTO learner_profile VALUES ('journey-1', '中文', 1, 'beginner', 'learn')").update();
         activeJdbc.sql("INSERT INTO learning_path_item (id, journey_id, learn_unit_code, sequence, status) VALUES ('path-1', 'journey-1', 'python.basics', 1, 'CURRENT')").update();
@@ -350,7 +350,7 @@ class DatabaseExportServiceTest {
                 .param("journey-" + origin).update();
         jdbc.sql("INSERT INTO chapter VALUES (?, ?, ?, 'Basics', 'Basics', 1, '[]')")
                 .params("chapter-" + origin, "journey-" + origin, "python.basics-chapter-" + origin).update();
-        jdbc.sql("INSERT INTO learn_unit VALUES (?, 'python', ?, ?, 'Basics', 'Basics', 1, '[]', 80, NULL, 1, '[]', 'Intro', '[]', '[]', 1)")
+        jdbc.sql("INSERT INTO learn_unit VALUES (?, 'python', ?, ?, 'Basics', 'Basics', 1, '[]', 80, NULL, 1, '[]', 'Intro', '[]', '[]', 1, '', 0, '', '[]', '')")
                 .params("unit-" + origin, "python.basics-" + origin, "python.basics-chapter-" + origin).update();
         jdbc.sql("INSERT INTO setting (key, value, updated_at) VALUES ('origin', ?, 'now')").param(origin).update();
         jdbc.sql("INSERT INTO agent_state VALUES ('user-1', ?, ?, 'test', '{}', 1, 'now')")

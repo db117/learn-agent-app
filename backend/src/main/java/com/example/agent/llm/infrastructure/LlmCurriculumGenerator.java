@@ -1,17 +1,24 @@
 package com.example.agent.llm.infrastructure;
 
+import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionStructureValidator;
+import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.catalog.LearnUnitContentValidator;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.core.model.Model;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -80,32 +87,103 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
     }
 
     @Override
-    public LearnUnit generateContent(LearnUnit outline, String learningContext) {
+    public GeneratedLearnUnitContent generateContent(LearnUnit outline, String learningContext) {
         if (outline == null) throw new IllegalArgumentException("LearnUnit outline is required");
-        if (outline.hasDetailedContent()) return outline;
+        if (outline.hasDetailedContent()) return new GeneratedLearnUnitContent(outline, List.of());
         String prompt = """
-                你是一个学习系统的教学内容作者。请为下面这个已经确认的 LearnUnit 生成教学正文，返回 JSON，不要返回 Markdown：
+                你是一个学习系统的教学内容作者。请为下面这个已经确认的 LearnUnit 生成一个短小、结构化的教学循环，返回 JSON，不要返回 Markdown：
                 {
+                  "ability":"本单元唯一可独立验证的能力",
+                  "estimatedMinutes":10,
                   "lessonIntro":"...",
-                  "examples":["..."]
+                  "examples":["..."],
+                  "guidedPracticePrompt":"...",
+                  "guidedPracticeHints":["..."],
+                  "independentCheckPrompt":"...",
+                  "questions":[{"type":"MULTIPLE_CHOICE","difficulty":1,"prompt":"...","points":20,
+                    "options":[{"id":"A","text":"..."},{"id":"B","text":"..."}],
+                    "correctOptionIds":["A"],"multiple":false,"referenceConcepts":["..."]}]
                 }
                 学习者背景：%s
                 LearnUnit 大纲：code=%s, name=%s, description=%s, objectives=%s, concepts=%s
-                内容必须具体、可学习；examples 至少一个；不要生成题目、答案或评分规则。
+                ability 必须只有一个能力，estimatedMinutes 必须是 1 到 30 的整数。
+                lessonIntro 不超过 2000 字；examples 至少一个且不超过 5 个；guidedPracticePrompt 和 independentCheckPrompt 必须具体。
+                questions 必须包含 1 到 5 道固定的独立检查题，只能使用 MULTIPLE_CHOICE 或 CODING，且必须能验证这个 LearnUnit。
+                不要生成诊断题、分数结论或多个能力。
                 """.formatted(
                 learningContext == null ? "" : learningContext.trim(), outline.code(), outline.name(),
                 outline.description(), outline.learningObjectives(), outline.keyConcepts());
         try {
             JsonNode root = MAPPER.readTree(extractJson(AgentScopeTextGenerator.generate(model, prompt)));
-            String intro = requiredText(root, "lessonIntro");
-            List<String> examples = strings(root.get("examples"));
-            if (examples.isEmpty()) {
-                throw new IllegalArgumentException("Detailed LearnUnit content must not be empty");
+            JsonNode abilities = root.get("abilities");
+            if (abilities != null && (!abilities.isArray() || abilities.size() != 1)) {
+                throw new IllegalArgumentException("LearnUnit content must contain exactly one ability");
             }
-            return outline.withDetailedContent(outline.learningObjectives(), intro, outline.keyConcepts(), examples);
+            String ability = requiredText(root, "ability");
+            int estimatedMinutes = requiredBoundedInt(root, "estimatedMinutes", 1, 30);
+            String intro = boundedText(root, "lessonIntro", 2000);
+            List<String> examples = boundedStrings(root.get("examples"), 1, 5, 2000);
+            String guidedPrompt = boundedText(root, "guidedPracticePrompt", 1000);
+            List<String> guidedHints = boundedStrings(root.get("guidedPracticeHints"), 0, 3, 300);
+            String independentPrompt = boundedText(root, "independentCheckPrompt", 1000);
+            List<Question> questions = parseIndependentQuestions(root.get("questions"), outline);
+            LearnUnit content = new LearnUnit(
+                    outline.id(), outline.languageCode(), outline.code(), outline.chapterCode(), outline.name(),
+                    outline.description(), outline.sequence(), outline.prerequisiteLearnUnitCodes(), outline.passScore(),
+                    outline.minCodingScore(), outline.enabled(), outline.learningObjectives(), intro,
+                    outline.keyConcepts(), examples, outline.diagnosticEligible(), ability, estimatedMinutes,
+                    guidedPrompt, guidedHints, independentPrompt);
+            LearnUnitContentValidator.validate(outline, content, questions);
+            return new GeneratedLearnUnitContent(content, questions);
         } catch (Exception error) {
             throw new IllegalArgumentException("LearnUnit content generator returned invalid JSON", error);
         }
+    }
+
+    private List<Question> parseIndependentQuestions(JsonNode nodes, LearnUnit outline) {
+        if (nodes == null || !nodes.isArray() || nodes.size() < 1 || nodes.size() > 5) {
+            throw new IllegalArgumentException("independent questions must contain 1 to 5 items");
+        }
+        List<Question> result = new ArrayList<>();
+        for (JsonNode node : nodes) {
+            QuestionType type;
+            try {
+                type = QuestionType.valueOf(requiredText(node, "type").toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException error) {
+                throw new IllegalArgumentException("Invalid independent question type", error);
+            }
+            String config = null;
+            String rubric = null;
+            if (type == QuestionType.MULTIPLE_CHOICE) {
+                JsonNode options = node.get("options");
+                JsonNode correct = node.get("correctOptionIds");
+                JsonNode multiple = node.get("multiple");
+                if (options == null || !options.isArray() || correct == null || !correct.isArray()
+                        || multiple == null || !multiple.isBoolean()) {
+                    throw new IllegalArgumentException("Multiple choice question needs options, correctOptionIds and multiple");
+                }
+                ObjectNode configNode = MAPPER.createObjectNode();
+                configNode.set("options", options);
+                configNode.set("correctOptionIds", correct);
+                configNode.set("multiple", multiple);
+                config = configNode.toString();
+            } else {
+                JsonNode rubricNode = node.get("rubric");
+                if (rubricNode == null || rubricNode.isNull()) {
+                    throw new IllegalArgumentException("Coding question rubric is required");
+                }
+                rubric = rubricNode.toString();
+            }
+            Question question = new Question(
+                    "generated-independent-question-" + UUID.randomUUID(), outline.code(), type,
+                    requiredBoundedInt(node, "difficulty", 1, 5), requiredText(node, "prompt"),
+                    requiredBoundedInt(node, "points", 1, 1000), config, rubric,
+                    nullableText(node, "language"), nullableText(node, "starterCode"),
+                    node.has("referenceConcepts") ? node.get("referenceConcepts").toString() : "[]", false);
+            QuestionStructureValidator.validate(question, outline);
+            result.add(question);
+        }
+        return result;
     }
 
     private GeneratedOutline parseOutline(JsonNode root) {
@@ -196,6 +274,23 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         return result;
     }
 
+    private String boundedText(JsonNode node, String field, int maxLength) {
+        String value = requiredText(node, field);
+        if (value.length() > maxLength) throw new IllegalArgumentException(field + " is too long");
+        return value;
+    }
+
+    private List<String> boundedStrings(JsonNode node, int min, int max, int itemMaxLength) {
+        List<String> values = strings(node);
+        if (values.size() < min || values.size() > max) {
+            throw new IllegalArgumentException("Array field has an invalid size");
+        }
+        if (values.stream().anyMatch(value -> value.length() > itemMaxLength)) {
+            throw new IllegalArgumentException("Array field contains oversized text");
+        }
+        return values;
+    }
+
     private List<String> strings(JsonNode node) {
         if (node == null || !node.isArray()) return List.of();
         List<String> result = new ArrayList<>();
@@ -217,6 +312,11 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
     private String optionalText(JsonNode node, String field) {
         JsonNode value = node == null ? null : node.get(field);
         return value == null || value.isNull() ? "" : value.asText().trim();
+    }
+
+    private String nullableText(JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.get(field);
+        return value == null || value.isNull() ? null : value.asText().trim();
     }
 
     private String extractJson(String value) {

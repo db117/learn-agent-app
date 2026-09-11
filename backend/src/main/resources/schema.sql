@@ -151,7 +151,12 @@ CREATE TABLE IF NOT EXISTS learn_unit
     lesson_intro TEXT NOT NULL,
     key_concepts_json TEXT NOT NULL,
     examples_json TEXT NOT NULL,
-    diagnostic_eligible INTEGER NOT NULL DEFAULT 1
+    diagnostic_eligible INTEGER NOT NULL DEFAULT 1,
+    ability TEXT NOT NULL DEFAULT '',
+    estimated_minutes INTEGER NOT NULL DEFAULT 0,
+    guided_practice_prompt TEXT NOT NULL DEFAULT '',
+    guided_practice_hints_json TEXT NOT NULL DEFAULT '[]',
+    independent_check_prompt TEXT NOT NULL DEFAULT ''
 );
 
 -- 学习 Journey 主记录；当前节点由 learning_path_item 的唯一 CURRENT 行决定。
@@ -211,6 +216,9 @@ CREATE TABLE IF NOT EXISTS learning_path_item
     started_at TEXT,
     passed_at TEXT,
     skipped_at TEXT,
+    learning_phase TEXT NOT NULL DEFAULT 'EXPLANATION',
+    skipped_phases_json TEXT NOT NULL DEFAULT '[]',
+    guided_practice_entries_json TEXT NOT NULL DEFAULT '[]',
     UNIQUE (journey_id, learn_unit_code)
 );
 
@@ -354,7 +362,7 @@ CREATE TABLE IF NOT EXISTS schema_metadata
 INSERT INTO schema_metadata (key, value)
 VALUES ('schema.marker', 'learning-agent-sqlite');
 INSERT INTO schema_metadata (key, value)
-VALUES ('schema.version', '2');
+VALUES ('schema.version', '3');
 INSERT INTO schema_metadata (key, value)
 VALUES ('snapshot.created_at', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 INSERT INTO schema_metadata (key, value)

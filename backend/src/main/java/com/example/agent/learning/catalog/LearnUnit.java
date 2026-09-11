@@ -24,6 +24,11 @@ import java.util.List;
  * @param keyConcepts 关键概念
  * @param examples 示例内容
  * @param diagnosticEligible 是否纳入初始诊断
+ * @param ability 本单元唯一可验证的能力
+ * @param estimatedMinutes 预计学习时长
+ * @param guidedPracticePrompt 引导练习题面
+ * @param guidedPracticeHints 引导练习提示
+ * @param independentCheckPrompt 独立检查说明
  */
 public record LearnUnit(
         String id,
@@ -41,18 +46,50 @@ public record LearnUnit(
         String lessonIntro,
         List<String> keyConcepts,
         List<String> examples,
-        boolean diagnosticEligible) {
+        boolean diagnosticEligible,
+        String ability,
+        int estimatedMinutes,
+        String guidedPracticePrompt,
+        List<String> guidedPracticeHints,
+        String independentCheckPrompt) {
 
     public LearnUnit {
         prerequisiteLearnUnitCodes = List.copyOf(prerequisiteLearnUnitCodes == null ? List.of() : prerequisiteLearnUnitCodes);
         learningObjectives = List.copyOf(learningObjectives == null ? List.of() : learningObjectives);
         keyConcepts = List.copyOf(keyConcepts == null ? List.of() : keyConcepts);
         examples = List.copyOf(examples == null ? List.of() : examples);
+        guidedPracticeHints = List.copyOf(guidedPracticeHints == null ? List.of() : guidedPracticeHints);
+    }
+
+    /** 大纲构造器；正文和阶段内容在首次进入 LearnUnit 时才填充。 */
+    public LearnUnit(
+            String id,
+            String languageCode,
+            String code,
+            String chapterCode,
+            String name,
+            String description,
+            int sequence,
+            List<String> prerequisiteLearnUnitCodes,
+            int passScore,
+            Integer minCodingScore,
+            boolean enabled,
+            List<String> learningObjectives,
+            String lessonIntro,
+            List<String> keyConcepts,
+            List<String> examples,
+            boolean diagnosticEligible) {
+        this(id, languageCode, code, chapterCode, name, description, sequence, prerequisiteLearnUnitCodes,
+                passScore, minCodingScore, enabled, learningObjectives, lessonIntro, keyConcepts, examples,
+                diagnosticEligible, "", 0, "", List.of(), "");
     }
 
     /** 大纲行在生成教学正文前允许为空；题目也不会在此阶段生成。 */
     public boolean hasDetailedContent() {
-        return lessonIntro != null && !lessonIntro.isBlank() && !examples.isEmpty();
+        return lessonIntro != null && !lessonIntro.isBlank() && !examples.isEmpty()
+                && ability != null && !ability.isBlank() && estimatedMinutes > 0
+                && guidedPracticePrompt != null && !guidedPracticePrompt.isBlank()
+                && independentCheckPrompt != null && !independentCheckPrompt.isBlank();
     }
 
     /** 保留稳定的目录身份，只替换模型按需生成的教学正文。 */
@@ -61,6 +98,23 @@ public record LearnUnit(
         return new LearnUnit(
                 id, languageCode, code, chapterCode, name, description, sequence, prerequisiteLearnUnitCodes,
                 passScore, minCodingScore, enabled, objectives, intro, concepts, generatedExamples,
-                diagnosticEligible);
+                diagnosticEligible, ability, estimatedMinutes, guidedPracticePrompt, guidedPracticeHints,
+                independentCheckPrompt);
+    }
+
+    /** 只替换首次进入时生成的教学内容，不改变目录身份和评分规则。 */
+    public LearnUnit withStructuredContent(
+            String generatedAbility,
+            int generatedEstimatedMinutes,
+            String intro,
+            List<String> generatedExamples,
+            String guidedPrompt,
+            List<String> generatedHints,
+            String independentPrompt) {
+        return new LearnUnit(
+                id, languageCode, code, chapterCode, name, description, sequence, prerequisiteLearnUnitCodes,
+                passScore, minCodingScore, enabled, learningObjectives, intro, keyConcepts, generatedExamples,
+                diagnosticEligible, generatedAbility, generatedEstimatedMinutes, guidedPrompt, generatedHints,
+                independentPrompt);
     }
 }

@@ -51,6 +51,7 @@ export type SessionDetail = SessionSummary & {
 
 export type JourneyStatus = "ACTIVE" | "COMPLETED" | "ARCHIVED";
 export type LearningPathItemStatus = "PENDING" | "CURRENT" | "COMPLETED" | "SKIPPED";
+export type LearningPhase = "EXPLANATION" | "EXAMPLE" | "GUIDED_PRACTICE" | "INDEPENDENT_CHECK";
 export type QuestionType = "MULTIPLE_CHOICE" | "CODING";
 export type AssessmentType = "DIAGNOSTIC" | "LEARN_UNIT";
 export type AssessmentStatus = "CREATED" | "IN_PROGRESS" | "COMPLETED";
@@ -89,6 +90,11 @@ export type LearnUnit = {
   keyConcepts: string[];
   examples: string[];
   diagnosticEligible: boolean;
+  ability: string;
+  estimatedMinutes: number;
+  guidedPracticePrompt: string;
+  guidedPracticeHints: string[];
+  independentCheckPrompt: string;
 };
 
 export type LearningJourney = {
@@ -122,6 +128,15 @@ export type LearningPathItem = {
   startedAt: string | null;
   passedAt: string | null;
   skippedAt: string | null;
+  learningPhase: LearningPhase;
+  skippedPhases: LearningPhase[];
+  guidedPracticeEntries: GuidedPracticeEntry[];
+};
+
+export type GuidedPracticeEntry = {
+  response: string;
+  feedback: string;
+  createdAt: string;
 };
 
 export type Question = {
@@ -376,6 +391,18 @@ export const api = {
     request<AssessmentResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/retry`, {method: "POST"}),
   learnUnit: (journeyId: string, learnUnitCode: string) =>
     request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}`),
+  advancePhase: (journeyId: string, learnUnitCode: string, phase: LearningPhase) =>
+    request<LearnUnitResponse>(
+      `/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/phase/${phase}/advance`,
+      {method: "POST"}),
+  skipPhase: (journeyId: string, learnUnitCode: string, phase: LearningPhase) =>
+    request<LearnUnitResponse>(
+      `/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/phase/${phase}/skip`,
+      {method: "POST"}),
+  guidedPractice: (journeyId: string, learnUnitCode: string, response: string) =>
+    request<LearnUnitResponse>(
+      `/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/guided-practice`,
+      {method: "POST", body: JSON.stringify({response})}),
   skipLearnUnit: (journeyId: string, learnUnitCode: string) =>
     request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/skip`, {method: "POST"}),
   nextLearnUnit: (journeyId: string, learnUnitCode: string) =>

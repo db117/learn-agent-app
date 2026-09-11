@@ -6,6 +6,8 @@ import com.example.agent.learning.journey.PassReason;
 import com.example.agent.learning.path.DeterministicLearningPathPlanner;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
+import com.example.agent.learning.path.LearningPhase;
+import com.example.agent.learning.path.GuidedPracticeEntry;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.learning.workflow.WorkflowTransition;
@@ -19,9 +21,12 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -211,6 +216,59 @@ class ProgressServiceTest {
         service.skipLearnUnit("journey", "learnUnit-b");
 
         verify(repository).updateJourney(eq("journey"), eq(JourneyStatus.COMPLETED), any(Instant.class));
+    }
+
+    @Test
+    void advancesOnlyTheCurrentPhaseAndRecordsARequestedSkip() {
+        LearningPathItem current = item("learnUnit-a", 1, LearningPathItemStatus.CURRENT, 0, 0, 0);
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
+
+        LearningPathItem result = service.advancePhase("journey", "learnUnit-a", LearningPhase.EXPLANATION);
+
+        assertEquals(LearningPhase.EXAMPLE, result.learningPhase());
+        verify(repository).updatePathItem(result);
+
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(result));
+        LearningPathItem skipped = service.skipPhase("journey", "learnUnit-a", LearningPhase.EXAMPLE);
+
+        assertEquals(LearningPhase.GUIDED_PRACTICE, skipped.learningPhase());
+        assertEquals(List.of(LearningPhase.EXAMPLE), skipped.skippedPhases());
+        verify(repository).updatePathItem(skipped);
+    }
+
+    @Test
+    void skippingIndependentCheckLeavesTheUnitCurrentAndUnresolved() {
+        LearningPathItem current = new LearningPathItem(
+                "item", "journey", "learnUnit-a", 1, LearningPathItemStatus.CURRENT,
+                0, 0, 0, null, Instant.EPOCH, null, null, LearningPhase.INDEPENDENT_CHECK,
+                List.of(), List.of());
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
+
+        LearningPathItem result = service.skipPhase("journey", "learnUnit-a", LearningPhase.INDEPENDENT_CHECK);
+
+        assertEquals(LearningPathItemStatus.CURRENT, result.status());
+        assertEquals(LearningPhase.INDEPENDENT_CHECK, result.learningPhase());
+        assertEquals(List.of(LearningPhase.INDEPENDENT_CHECK), result.skippedPhases());
+        verify(repository).updatePathItem(result);
+        verify(repository, never()).updateJourney(anyString(), any(), any(Instant.class));
+    }
+
+    @Test
+    void recordsGuidedPracticeFeedbackWithoutAssessmentOrScore() {
+        LearningPathItem current = new LearningPathItem(
+                "item", "journey", "learnUnit-a", 1, LearningPathItemStatus.CURRENT,
+                0, 0, 0, null, Instant.EPOCH, null, null, LearningPhase.GUIDED_PRACTICE,
+                List.of(), List.of());
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(current));
+
+        LearningPathItem result = service.recordGuidedPractice("journey", "learnUnit-a", "name = 'Ada'");
+
+        assertEquals(1, result.guidedPracticeEntries().size());
+        GuidedPracticeEntry entry = result.guidedPracticeEntries().get(0);
+        assertEquals("name = 'Ada'", entry.response());
+        assertTrue(entry.feedback().contains("已记录"));
+        verify(repository).updatePathItem(result);
+        verify(repository, never()).insertAssessment(any());
     }
 
     private LearningPathItem item(

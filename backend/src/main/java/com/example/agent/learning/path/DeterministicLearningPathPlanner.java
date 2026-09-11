@@ -56,7 +56,10 @@ public class DeterministicLearningPathPlanner {
                     previous == null ? null : previous.passReason(),
                     previous == null ? null : previous.startedAt(),
                     previous == null ? null : previous.passedAt(),
-                    previous == null ? null : previous.skippedAt()));
+                    previous == null ? null : previous.skippedAt(),
+                    previous == null ? LearningPhase.EXPLANATION : previous.learningPhase(),
+                    previous == null ? List.of() : previous.skippedPhases(),
+                    previous == null ? List.of() : previous.guidedPracticeEntries()));
         }
         for (int index = 0; index < result.size(); index++) {
             if (result.get(index).status() == LearningPathItemStatus.PENDING) {
@@ -64,7 +67,8 @@ public class DeterministicLearningPathPlanner {
                 result.set(index, new LearningPathItem(
                         item.id(), item.journeyId(), item.learnUnitCode(), item.sequence(), LearningPathItemStatus.CURRENT,
                         item.masteryScore(), item.bestAssessmentScore(), item.attemptCount(), item.passReason(),
-                        item.startedAt(), item.passedAt(), item.skippedAt()));
+                        item.startedAt(), item.passedAt(), item.skippedAt(), item.learningPhase(),
+                        item.skippedPhases(), item.guidedPracticeEntries()));
                 break;
             }
         }

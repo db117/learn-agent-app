@@ -3,6 +3,7 @@ package com.example.agent.learning.path;
 import com.example.agent.learning.journey.PassReason;
 
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Journey Path 中的一个 LearnUnit 节点。
@@ -19,6 +20,9 @@ import java.time.Instant;
  * @param startedAt 首次开始该 LearnUnit 的时间
  * @param passedAt 最近一次通过时间
  * @param skippedAt 跳过时间
+ * @param learningPhase 当前教学阶段
+ * @param skippedPhases 已显式跳过的教学阶段
+ * @param guidedPracticeEntries 不计分的引导练习记录
  */
 public record LearningPathItem(
         String id,
@@ -32,7 +36,16 @@ public record LearningPathItem(
         PassReason passReason,
         Instant startedAt,
         Instant passedAt,
-        Instant skippedAt) {
+        Instant skippedAt,
+        LearningPhase learningPhase,
+        List<LearningPhase> skippedPhases,
+        List<GuidedPracticeEntry> guidedPracticeEntries) {
+
+    public LearningPathItem {
+        learningPhase = learningPhase == null ? LearningPhase.EXPLANATION : learningPhase;
+        skippedPhases = List.copyOf(skippedPhases == null ? List.of() : skippedPhases);
+        guidedPracticeEntries = List.copyOf(guidedPracticeEntries == null ? List.of() : guidedPracticeEntries);
+    }
 
     public LearningPathItem(
             String id,
@@ -40,6 +53,24 @@ public record LearningPathItem(
             String learnUnitCode,
             int sequence,
             LearningPathItemStatus status) {
-        this(id, journeyId, learnUnitCode, sequence, status, 0, 0, 0, null, null, null, null);
+        this(id, journeyId, learnUnitCode, sequence, status, 0, 0, 0, null, null, null, null,
+                LearningPhase.EXPLANATION, List.of(), List.of());
+    }
+
+    public LearningPathItem(
+            String id,
+            String journeyId,
+            String learnUnitCode,
+            int sequence,
+            LearningPathItemStatus status,
+            int masteryScore,
+            int bestAssessmentScore,
+            int attemptCount,
+            PassReason passReason,
+            Instant startedAt,
+            Instant passedAt,
+            Instant skippedAt) {
+        this(id, journeyId, learnUnitCode, sequence, status, masteryScore, bestAssessmentScore, attemptCount,
+                passReason, startedAt, passedAt, skippedAt, LearningPhase.EXPLANATION, List.of(), List.of());
     }
 }
