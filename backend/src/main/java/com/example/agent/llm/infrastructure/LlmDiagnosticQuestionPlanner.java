@@ -57,7 +57,7 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
                 {"questions":[...]}.
                 The existing catalog may be empty. For an existing question return exactly
                 {"existingQuestionId":"..."} using one of the catalog ids.
-                You may also create a new question with learnUnitCode, type (MULTIPLE_CHOICE or CODING), difficulty,
+                You may also create a new question with learnUnitCode, type (MULTIPLE_CHOICE or CODING), difficulty as a JSON integer from 1 to 5 (never a string or label). For CODING questions, rubric must be a JSON object whose values are integer weights from 0 to 100, never a prose string,
                 prompt, points, language, starterCode, rubric, referenceConcepts, and for multiple choice an options array
                 of {"id":"A","text":"..."} plus correctOptionIds and boolean multiple. New questions must assess the listed LearnUnits.
                 A LearnUnit with null minCodingScore has no coding learning objective and must not receive a CODING question.

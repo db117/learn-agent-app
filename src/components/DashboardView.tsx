@@ -117,7 +117,8 @@ export function DashboardView({
                         )}
                         <div className="button-row">
                             <button className="primary" onClick={() => void onOpenLearnUnit(current.learnUnit.code)}
-                                    disabled={busy || !currentLearnUnit}>{hasDetailedContent ? "继续学习" : "开始学习"}
+                                    disabled={busy || !currentLearnUnit} aria-busy={busy}>
+                                {busy ? "处理中…" : hasDetailedContent ? "继续学习" : "开始学习"}
                             </button>
                             <button className="secondary" onClick={() => void onRetryCurrentLearnUnit()}
                                     disabled={busy || !canRetry}>Retry

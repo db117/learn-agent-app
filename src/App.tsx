@@ -427,6 +427,10 @@ export default function App() {
 
   async function openLearnUnit(code: string) {
     if (!journeyId) return;
+    if (learnUnit?.learnUnit.code === code && learnUnit.learnUnit.lessonIntro.trim() && learnUnit.learnUnit.examples.length) {
+      await startLearnUnitAssessment();
+      return;
+    }
     setBusy(true);
     setError(null);
     try {

@@ -262,6 +262,11 @@ h3 { margin-bottom: 10px; font-size: 14px; }
     line-height: 1.65;
 }
 
+.lesson .lead {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .generation-status {
     margin: 18px 0 -8px;
     color: var(--accent-strong);
@@ -443,7 +448,12 @@ ul {
     padding: 3px 0 3px 16px;
     color: var(--text-content);
 }
-.example-block p { line-height: 1.6; }
+
+.example-block p {
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
 
 .feedback-block {
     margin-top: 22px;
