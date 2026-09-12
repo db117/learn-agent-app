@@ -97,3 +97,8 @@ chain acceptance, current Definition of Done
 **Migration Cutover**:
 The replacement of the former runtime is complete in the Spring Boot WebFlux + AgentScope JVM chain. This is a
 replacement, not a compatibility or rollback phase. _Avoid_: Native Gate, dual-runtime fallback, old-data migration
+
+**Model provider configuration**:
+A learner's app-wide connection choice for the model provider used by TutorAgent and LLM-assisted learning operations.
+It identifies the provider protocol, endpoint, model, and credential; it is independent of any Learning Journey.
+_Avoid_: Skill, LearnUnit, TutorContext, Journey-scoped model choice

@@ -6,7 +6,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const backend = path.join(root, "backend");
 const command = process.platform === "win32" ? "mvnw.cmd" : "./mvnw";
 if (!process.env.OPENAI_API_KEY?.trim()) {
-    console.warn("OPENAI_API_KEY is not set; starting dev backend without an LLM provider.");
+    console.warn("OPENAI_API_KEY is not set; the App model settings can still provide an LLM provider.");
 }
 const child = spawn(command, ["spring-boot:run"], {
     cwd: backend,

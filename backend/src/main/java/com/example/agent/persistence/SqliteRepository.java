@@ -207,20 +207,31 @@ public class SqliteRepository {
             .list();
   }
 
-  /** 执行最小数据库探针，用于健康检查。 */
-  public void probe() {
+  /** Reads one app setting without exposing the setting table outside the persistence boundary. */
+  public Optional<String> findSetting(String key) {
+    return jdbc.sql("SELECT value FROM setting WHERE key = :key")
+            .param("key", key)
+            .query(String.class)
+            .optional();
+  }
+
+  /** Upserts one app setting and keeps its update timestamp local to the persistence layer. */
+  public void upsertSetting(String key, String value) {
     String now = Instant.now().toString();
     jdbc.sql("""
                     INSERT INTO setting (key, value, updated_at) VALUES (:key, :value, :updatedAt)
                     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
                     """)
-            .param("key", "health.lastChecked")
-            .param("value", now)
+            .param("key", key)
+            .param("value", value)
             .param("updatedAt", now)
             .update();
-    jdbc.sql("SELECT value FROM setting WHERE key = :key")
-            .param("key", "health.lastChecked")
-            .query(String.class)
-            .single();
+  }
+
+  /** 执行最小数据库探针，用于健康检查。 */
+  public void probe() {
+    String now = Instant.now().toString();
+    upsertSetting("health.lastChecked", now);
+    findSetting("health.lastChecked").orElseThrow();
   }
 }

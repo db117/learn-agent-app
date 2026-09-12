@@ -5,6 +5,29 @@ export type BackendHealth = {
   llm: string;
 };
 
+export type ModelConfiguration = {
+  provider: string;
+  baseUrl: string;
+  model: string;
+  apiKeyConfigured: boolean;
+  apiKeyMasked: string;
+  source: "app" | "environment" | "default";
+  restartRequired: boolean;
+};
+
+export type ModelConfigurationInput = {
+  provider: string;
+  baseUrl: string;
+  model: string;
+  apiKey: string | null;
+};
+
+export type ModelTestResponse = {
+  status: string;
+  message: string;
+  model: string;
+};
+
 export type SessionSummary = {
   id: string;
   title: string;
@@ -365,6 +388,15 @@ export const api = {
   exportDatabase,
   importDatabase,
   health: () => request<BackendHealth>("/health"),
+  modelConfiguration: () => request<ModelConfiguration>("/settings/model"),
+  saveModelConfiguration: (input: ModelConfigurationInput) => request<ModelConfiguration>("/settings/model", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  }),
+  testModelConfiguration: (input: ModelConfigurationInput) => request<ModelTestResponse>("/settings/model/test", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }),
   languages: () => request<LearningLanguage[]>("/learning/languages"),
   journeyLearnUnits: (journeyId: string) => request<LearnUnit[]>(`/learning/journeys/${encodeURIComponent(journeyId)}/learn-units`),
   journeys: () => request<LearningJourney[]>("/learning/journeys"),

@@ -4,6 +4,7 @@ import {listen} from "@tauri-apps/api/event";
 import {type AnswerDraft, AssessmentView, emptyDraft} from "./components/AssessmentView";
 import {DashboardView} from "./components/DashboardView";
 import {JourneyDraftView} from "./components/JourneyDraftView";
+import {ModelSettingsView} from "./components/ModelSettingsView";
 import {ResultView} from "./components/ResultView";
 import {type JourneyForm, WelcomeView} from "./components/WelcomeView";
 import {type BackendStatus, type ImportedState, useDatabaseTransfer} from "./hooks/useDatabaseTransfer";
@@ -22,7 +23,7 @@ import {
   type LearningPhase,
 } from "./lib/api";
 
-type View = "welcome" | "journey-draft" | "diagnostic" | "result" | "dashboard" | "assessment";
+type View = "welcome" | "journey-draft" | "diagnostic" | "result" | "dashboard" | "assessment" | "settings";
 type Theme = "dark" | "light";
 
 const THEME_STORAGE_KEY = "learning-journey-theme";
@@ -100,6 +101,7 @@ export default function App() {
   const [answers, setAnswers] = useState<Record<string, AnswerDraft>>({});
   const [questionIndex, setQuestionIndex] = useState(0);
   const [view, setView] = useState<View>("welcome");
+  const [settingsReturnView, setSettingsReturnView] = useState<View>("welcome");
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -662,6 +664,34 @@ export default function App() {
     saveTheme(nextTheme);
   }
 
+  function openSettings() {
+    if (draftRunId || activeTutorRunId) {
+      setError("Agent 正在运行，请等待本次调用结束后再修改模型设置。");
+      return;
+    }
+    setSettingsReturnView(view);
+    setView("settings");
+  }
+
+  async function applyModelConfiguration() {
+    if (!isTauri()) return "配置已保存。开发模式请手动重启 backend 后生效。";
+    setBackend({status: "restarting", detail: "127.0.0.1:18080"});
+    try {
+      const stopped = await invoke<BackendStatus>("stop_backend");
+      if (stopped.status === "external") {
+        setBackend(stopped);
+        return "配置已保存；当前连接的是外部后端，请手动重启它后生效。";
+      }
+      const started = await invoke<BackendStatus>("start_backend");
+      setBackend(started);
+      setHealth(await api.health());
+      return "配置已保存，后端已重启。";
+    } catch (cause) {
+      setBackend({status: "error", detail: "127.0.0.1:18080"});
+      throw new Error(`配置已保存，但后端重启失败：${errorMessage(cause, "重启失败")}`);
+    }
+  }
+
   return (
       <main className={`shell theme-${theme}`}>
       <header className="topbar">
@@ -669,6 +699,7 @@ export default function App() {
         <div className="status-row">
           {journey && <button className="link-button" onClick={() => setView("dashboard")}>我的 Journey</button>}
           {journey && <button className="link-button" onClick={newJourney}>新建</button>}
+          <button className="link-button" onClick={openSettings}>模型设置</button>
             <button className="link-button" onClick={() => void exportDatabase()}
                     disabled={exportStatus === "exporting"}>
                 {exportStatus === "exporting" ? "导出中…" : "导出数据库"}
@@ -693,6 +724,12 @@ export default function App() {
         </div>
       </header>
       {error && <div className="error-banner" role="alert">{error}</div>}
+      {view === "settings" && (
+          <ModelSettingsView
+              onBack={() => setView(settingsReturnView)}
+              onSaved={applyModelConfiguration}
+          />
+      )}
       {view === "welcome" && (
           <WelcomeView
               journey={journey}

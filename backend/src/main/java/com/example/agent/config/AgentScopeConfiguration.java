@@ -14,10 +14,8 @@ import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.skill.repository.ClasspathSkillRepository;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import io.agentscope.harness.agent.HarnessAgent;
 import io.agentscope.harness.agent.tools.ToolsConfig;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -47,17 +45,10 @@ public class AgentScopeConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(Model.class)
-    Model agentScopeOpenAiModel(
-            @Value("${app.openai.api-key:}") String apiKey,
-            @Value("${app.openai.base-url:https://api.openai.com}") String baseUrl,
-            @Value("${app.openai.model:gpt-4.1-mini}") String modelName) {
-        if (apiKey == null || apiKey.isBlank()) return new UnavailableModel();
-        return OpenAIChatModel.builder()
-                .apiKey(apiKey)
-                .baseUrl(baseUrl)
-                .modelName(modelName)
-                .stream(true)
-                .build();
+    Model agentScopeModel(ModelProviderConfigurationService configuration) {
+        ModelProviderConfiguration value = configuration.current();
+        if (value.apiKey() == null || value.apiKey().isBlank()) return new UnavailableModel();
+        return configuration.createModel(value);
     }
 
     @Bean
@@ -109,7 +100,8 @@ public class AgentScopeConfiguration {
 
         @Override
         public Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-            return Flux.error(new IllegalStateException("LLM is not configured; set OPENAI_API_KEY"));
+            return Flux.error(new IllegalStateException(
+                    "LLM is not configured; set OPENAI_API_KEY or configure it in the app"));
         }
 
         @Override

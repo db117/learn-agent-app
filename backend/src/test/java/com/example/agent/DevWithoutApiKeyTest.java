@@ -28,6 +28,6 @@ class DevWithoutApiKeyTest {
                 () -> model.stream(java.util.List.of(new UserMessage("health check")), java.util.List.of(), null)
                         .blockLast());
 
-        assertEquals("LLM is not configured; set OPENAI_API_KEY", error.getMessage());
+        assertEquals("LLM is not configured; set OPENAI_API_KEY or configure it in the app", error.getMessage());
     }
 }
