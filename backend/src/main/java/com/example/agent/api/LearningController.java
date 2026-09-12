@@ -13,11 +13,11 @@ import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.journey.LearnerProfile;
-import com.example.agent.learning.journey.JourneyDraftEvent;
 import com.example.agent.learning.journey.JourneyDraftInput;
 import com.example.agent.learning.journey.JourneyDraftRunService;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
+import com.example.agent.learning.generation.GenerationEvent;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.persistence.LearningRepository;
@@ -109,11 +109,25 @@ public class LearningController {
 
     /** 订阅首次 Journey 的 Agent/模型对话和大纲事件。 */
     @GetMapping(value = "/journey-drafts/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<org.springframework.http.codec.ServerSentEvent<JourneyDraftEvent>> journeyDraftEvents(
-            @PathVariable String runId) {
-        return journeyDrafts.events(runId)
-                .map(event -> org.springframework.http.codec.ServerSentEvent.<JourneyDraftEvent>builder(event)
+    public Flux<org.springframework.http.codec.ServerSentEvent<GenerationEvent>> journeyDraftEvents(
+            @PathVariable String runId,
+            @org.springframework.web.bind.annotation.RequestHeader(name = "Last-Event-ID", required = false)
+            String lastEventId) {
+        return journeyDrafts.events(runId, parseLastEventId(lastEventId))
+                .map(event -> org.springframework.http.codec.ServerSentEvent.<GenerationEvent>builder(event)
                         .id(Long.toString(event.sequence())).build());
+    }
+
+    private long parseLastEventId(String value) {
+        if (value == null || value.isBlank()) return -1L;
+        try {
+            long sequence = Long.parseLong(value);
+            if (sequence < 0) throw new NumberFormatException();
+            return sequence;
+        } catch (NumberFormatException error) {
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Last-Event-ID must be a non-negative integer");
+        }
     }
 
     /** 把用户的调整要求排入下一轮模型对话。 */

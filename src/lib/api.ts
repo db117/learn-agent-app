@@ -300,17 +300,36 @@ export type JourneyDraftOutline = {
   learnUnits: LearnUnit[];
 };
 
-export type JourneyDraftEvent = {
+export type JourneyOutlinePreview = {
+  chapterCount: number;
+  learnUnitCount: number;
+  chapters: Array<{
+    sequence: number;
+    name: string;
+    goal: string;
+    learnUnitCount: number;
+    learnUnits: Array<{sequence: number; name: string; description: string}>;
+  }>;
+};
+
+export type GenerationEvent = {
   sequence: number;
   runId: string;
+  operation: string;
+  stage: string;
   author: string;
-  eventType: "run_started" | "user_message" | "agent_message" | "model_delta" | "outline_ready" | "confirmed" | "error" | "cancelled";
+  eventType: "run_started" | "user_message" | "agent_message" | "model_preview" | "stage_changed"
+    | "validation" | "persistence" | "draft_ready" | "heartbeat" | "completed" | "failed" | "cancelled";
   content: string;
-  outline: JourneyDraftOutline | null;
-  journeyId: string | null;
-  status: string;
+  status: "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  elapsedMs: number;
+  preview: JourneyOutlinePreview | null;
+  resourceType: string | null;
+  resourceId: string | null;
   timestamp: string;
 };
+
+export type JourneyDraftEvent = GenerationEvent;
 
 export type JourneyDraftStartResponse = {runId: string};
 export type JourneyDraftAck = {status: string};

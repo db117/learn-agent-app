@@ -1,4 +1,4 @@
-import {type SyntheticEvent, useEffect, useState} from "react";
+import {type SyntheticEvent, useEffect, useRef, useState} from "react";
 import {invoke, isTauri} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {type AnswerDraft, AssessmentView, emptyDraft} from "./components/AssessmentView";
@@ -9,6 +9,7 @@ import {ResultView} from "./components/ResultView";
 import {type JourneyForm, WelcomeView} from "./components/WelcomeView";
 import {type BackendStatus, type ImportedState, useDatabaseTransfer} from "./hooks/useDatabaseTransfer";
 import {useTutorSession} from "./hooks/useTutorSession";
+import {useGenerationRun} from "./hooks/useGenerationRun";
 import {
   api,
   type AssessmentResponse,
@@ -16,8 +17,6 @@ import {
   type BackendHealth,
   type CreateJourneyInput,
   type JourneyDetail,
-  type JourneyDraftEvent,
-  type JourneyDraftOutline,
   type LearnUnit,
   type LearnUnitResponse,
   type LearningPhase,
@@ -106,9 +105,6 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftRunId, setDraftRunId] = useState<string | null>(null);
-  const [draftEvents, setDraftEvents] = useState<JourneyDraftEvent[]>([]);
-  const [draftOutline, setDraftOutline] = useState<JourneyDraftOutline | null>(null);
-  const [draftStatus, setDraftStatus] = useState("GENERATING");
   const [form, setForm] = useState<JourneyForm>({
     languageCode: "",
     goal: "Build a practical programming foundation",
@@ -118,6 +114,19 @@ export default function App() {
     learningGoal: "掌握所选语言，并能读写真实项目代码",
   });
   const journeyId = journey?.journey.id;
+  const generationRun = useGenerationRun({
+    runId: draftRunId,
+    eventsUrl: api.journeyDraftEventsUrl,
+    cancel: api.cancelJourneyDraft,
+  });
+  const draftEvents = generationRun.events;
+  const draftOutline = generationRun.preview;
+  const draftStatus = generationRun.status === "COMPLETED" ? "CONFIRMED"
+    : generationRun.status === "FAILED" ? "FAILED"
+      : generationRun.status === "CANCELLED" ? "CANCELLED"
+        : generationRun.stage === "WAITING_CONFIRMATION" ? "WAITING_CONFIRMATION"
+          : generationRun.stage === "PERSISTING" ? "CONFIRMING" : "GENERATING";
+  const handledDraftCompletion = useRef<string | null>(null);
   const {
     tutor,
     tutorInput,
@@ -135,8 +144,6 @@ export default function App() {
     if (draftRunId) void api.cancelJourneyDraft(draftRunId).catch(() => undefined);
     resetTutor();
     setDraftRunId(null);
-    setDraftEvents([]);
-    setDraftOutline(null);
     setJourney(null);
     setLearnUnits([]);
     setLearnUnit(null);
@@ -244,50 +251,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!draftRunId) return;
-    let terminal = false;
-    const source = new EventSource(api.journeyDraftEventsUrl(draftRunId));
-    source.onmessage = (message) => {
+    const next = draftEvents.at(-1);
+    if (!draftRunId || !next) return;
+    if (next.status === "FAILED" || next.status === "CANCELLED") {
+      setBusy(false);
+      if (next.status === "FAILED") setError(next.content);
+      return;
+    }
+    if (next.status !== "COMPLETED" || handledDraftCompletion.current === draftRunId) return;
+    handledDraftCompletion.current = draftRunId;
+    setBusy(false);
+    void (async () => {
       try {
-        const next = JSON.parse(message.data) as JourneyDraftEvent;
-        setDraftEvents((current) => current.some((item) => item.sequence === next.sequence) ? current : [...current, next]);
-        setDraftStatus(next.status);
-        if (next.outline) setDraftOutline(next.outline);
-        if (next.eventType === "error" || next.eventType === "cancelled") {
-          terminal = true;
-          setBusy(false);
-          if (next.eventType === "error") {
-            setDraftOutline(null);
-            setError(next.content);
-          }
-        }
-        if (next.eventType === "confirmed") {
-          terminal = true;
-          setBusy(false);
-          void (async () => {
-            try {
-              const id = next.journeyId ?? next.runId;
-              const detail = await api.journey(id);
-              setJourney(detail);
-              const current = detail.path.find((item) => item.status === "CURRENT");
-              setLearnUnit(current ? await api.learnUnit(id, current.learnUnitCode) : null);
-              setDraftRunId(null);
-              setView("dashboard");
-            } catch (cause) {
-              setError(errorMessage(cause, "Journey 已保存，但学习路径加载失败"));
-              setBusy(false);
-            }
-          })();
-        }
-      } catch {
-        setError("无法读取 Journey 草稿事件");
+        const id = next.resourceId ?? next.runId;
+        const detail = await api.journey(id);
+        setJourney(detail);
+        const current = detail.path.find((item) => item.status === "CURRENT");
+        setLearnUnit(current ? await api.learnUnit(id, current.learnUnitCode) : null);
+        setDraftRunId(null);
+        setView("dashboard");
+      } catch (cause) {
+        setError(errorMessage(cause, "Journey 已保存，但学习路径加载失败"));
+        setBusy(false);
       }
-    };
-    source.onerror = () => {
-      if (!terminal) setError("Agent 对话连接中断，请重试");
-    };
-    return () => source.close();
-  }, [draftRunId]);
+    })();
+  }, [draftEvents, draftRunId]);
 
   useEffect(() => {
     if (!journey?.journey.id) return;
@@ -359,9 +347,6 @@ export default function App() {
     try {
       const started = await api.startJourneyDraft(input);
       setDraftRunId(started.runId);
-      setDraftEvents([]);
-      setDraftOutline(null);
-      setDraftStatus("GENERATING");
       setView("journey-draft");
     } catch (cause) {
       setError(errorMessage(cause, "Journey 生成失败，请检查输入后重试"));
@@ -405,8 +390,6 @@ export default function App() {
       }
     }
     setDraftRunId(null);
-    setDraftEvents([]);
-    setDraftOutline(null);
     setView("welcome");
     setBusy(false);
   }
@@ -648,8 +631,6 @@ export default function App() {
   function newJourney() {
     if (draftRunId) void api.cancelJourneyDraft(draftRunId).catch(() => undefined);
     setDraftRunId(null);
-    setDraftEvents([]);
-    setDraftOutline(null);
     setJourney(null);
     setLearnUnit(null);
     setAssessment(null);
@@ -746,6 +727,9 @@ export default function App() {
               events={draftEvents}
               outline={draftOutline}
               status={draftStatus}
+              stage={generationRun.stage}
+              elapsedMs={generationRun.elapsedMs}
+              connection={generationRun.connection}
               busy={busy}
               onSendGuidance={sendDraftGuidance}
               onConfirm={confirmDraft}

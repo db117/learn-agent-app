@@ -2,7 +2,7 @@ package com.example.agent;
 
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
-import com.example.agent.learning.journey.JourneyDraftEvent;
+import com.example.agent.learning.generation.GenerationEvent;
 import com.example.agent.learning.progress.ProgressService;
 import com.example.agent.learning.scoring.AssessmentScore;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -66,14 +66,14 @@ class LearningControllerWebFluxAcceptanceTest {
                 "selfDescription", "beginner",
                 "learningGoal", "learn the core TypeScript path"));
         String runId = draft.at("/runId").asText();
-        List<JourneyDraftEvent> outlineEvents = streamDraftEvents(runId, "outline_ready");
-        assertEquals("outline_ready", outlineEvents.get(outlineEvents.size() - 1).eventType());
+        List<GenerationEvent> outlineEvents = streamDraftEvents(runId, "draft_ready");
+        assertEquals("draft_ready", outlineEvents.get(outlineEvents.size() - 1).eventType());
         post("/api/learning/journey-drafts/" + runId + "/confirm");
-        JourneyDraftEvent confirmed = streamDraftEvents(runId, "confirmed").stream()
-                .filter(event -> event.eventType().equals("confirmed"))
+        GenerationEvent confirmed = streamDraftEvents(runId, "completed").stream()
+                .filter(event -> event.eventType().equals("completed"))
                 .findFirst()
                 .orElseThrow();
-        String base = "/api/learning/journeys/" + confirmed.journeyId();
+        String base = "/api/learning/journeys/" + confirmed.resourceId();
 
         JsonNode detail = get(base);
         assertEquals(1, detail.at("/chapters").size());
@@ -205,13 +205,13 @@ class LearningControllerWebFluxAcceptanceTest {
         return get("/api/learning/journeys/" + journeyId).at("/path/0/learnUnitCode").asText();
     }
 
-    private List<JourneyDraftEvent> streamDraftEvents(String runId, String terminalEventType) {
+    private List<GenerationEvent> streamDraftEvents(String runId, String terminalEventType) {
         return Objects.requireNonNull(client.get()
                 .uri("/api/learning/journey-drafts/{runId}/events", runId)
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .exchange()
                 .expectStatus().isOk()
-                .returnResult(new ParameterizedTypeReference<ServerSentEvent<JourneyDraftEvent>>() {})
+                .returnResult(new ParameterizedTypeReference<ServerSentEvent<GenerationEvent>>() {})
                 .getResponseBody()
                 .map(ServerSentEvent::data)
                 .filter(Objects::nonNull)

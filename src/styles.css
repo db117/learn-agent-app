@@ -276,6 +276,11 @@ h3 { margin-bottom: 10px; font-size: 14px; }
     margin: 8px auto 0;
     padding: 28px;
 }
+.generation-progress { margin-bottom: 18px; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--surface-card); }
+.generation-progress-header { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
+.generation-progress-header strong { display: block; margin-top: 6px; color: var(--text-panel); font-size: 14px; }
+.generation-progress-meta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 12px; color: var(--text-subtle); font-size: 12px; }
+.generation-progress-meta button { margin-left: auto; }
 .draft-header { display: flex; align-items: start; justify-content: space-between; gap: 20px; }
 .draft-header h2 { margin-top: 7px; font-size: 29px; }
 .draft-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(360px, .9fr); gap: 14px; min-height: 560px; }

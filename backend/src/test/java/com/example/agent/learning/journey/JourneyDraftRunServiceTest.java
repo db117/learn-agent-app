@@ -1,11 +1,11 @@
 package com.example.agent.learning.journey;
 
-import com.example.agent.config.AppProperties;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
+import com.example.agent.learning.generation.GenerationRunService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -43,19 +43,19 @@ class JourneyDraftRunServiceTest {
             when(journeys.learningContext(input)).thenReturn("context");
             when(curriculum.generateOutlineForJourney(anyString(), eq("python"), anyString(), any()))
                     .thenReturn(outline);
-            JourneyDraftRunService service = new JourneyDraftRunService(
-                    curriculum, journeys, new AppProperties(tempDir.toString(), "learning.db", "local", "app"), executor);
+            GenerationRunService generation = new GenerationRunService(executor);
+            JourneyDraftRunService service = new JourneyDraftRunService(curriculum, journeys, generation);
 
             String runId = service.start("local", input);
             service.events(runId)
-                    .filter(event -> event.eventType().equals("outline_ready"))
+                    .filter(event -> event.eventType().equals("draft_ready"))
                     .next()
                     .block(Duration.ofSeconds(2));
 
             verify(journeys, never()).confirmOutline(anyString(), anyString(), any(), any());
 
             var nextOutline = service.events(runId)
-                    .filter(event -> event.eventType().equals("outline_ready"))
+                    .filter(event -> event.eventType().equals("draft_ready"))
                     .skip(1)
                     .next();
             service.guide(runId, "增加泛型和 API 错误处理");
@@ -67,10 +67,11 @@ class JourneyDraftRunServiceTest {
 
             service.confirm(runId);
             assertTrue(service.events(runId)
-                    .filter(event -> event.eventType().equals("confirmed"))
+                    .filter(event -> event.eventType().equals("completed"))
                     .next()
                     .block(Duration.ofSeconds(2)) != null);
             verify(journeys).confirmOutline(eq("local"), eq(runId), eq(input), eq(outline));
+            generation.close();
         } finally {
             executor.shutdownNow();
         }

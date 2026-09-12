@@ -1,19 +1,22 @@
 import {useState} from "react";
-import type {JourneyDraftEvent, JourneyDraftOutline} from "../lib/api";
-import {mergeModelDeltas} from "../lib/journeyDraftEvents";
+import type {GenerationEvent, JourneyOutlinePreview} from "../lib/api";
+import {GenerationProgressPanel} from "./GenerationProgressPanel";
 
 type JourneyDraftViewProps = {
-    events: JourneyDraftEvent[];
-    outline: JourneyDraftOutline | null;
+    events: GenerationEvent[];
+    outline: JourneyOutlinePreview | null;
     status: string;
+    stage: string;
+    elapsedMs: number;
+    connection: "connected" | "reconnecting";
     busy: boolean;
     onSendGuidance: (content: string) => void | Promise<void>;
     onConfirm: () => void | Promise<void>;
     onCancel: () => void | Promise<void>;
 };
 
-function eventLabel(event: JourneyDraftEvent) {
-    if (event.eventType === "model_delta") return "大模型";
+function eventLabel(event: GenerationEvent) {
+    if (event.eventType === "model_preview") return "大模型";
     if (event.eventType === "user_message") return "你";
     return event.author;
 }
@@ -37,29 +40,21 @@ function statusLabel(status: string) {
     }
 }
 
-function Outline({outline}: {outline: JourneyDraftOutline}) {
+function Outline({outline}: {outline: JourneyOutlinePreview}) {
     return (
         <div className="draft-outline-content">
-            <p className="muted">{outline.languages.map((language) => language.name).join("、")}</p>
-            {outline.chapters.map((chapter) => {
-                const units = outline.learnUnits
-                    .filter((unit) => unit.chapterCode === chapter.code)
-                    .sort((left, right) => left.sequence - right.sequence || left.code.localeCompare(right.code));
-                return <details className="draft-chapter" key={chapter.code} open>
-                    <summary><strong>{chapter.sequence}. {chapter.name}</strong><span className="muted">{units.length} 个单元</span></summary>
+            {outline.chapters.map((chapter) => (
+                <details className="draft-chapter" key={`${chapter.sequence}-${chapter.name}`} open>
+                    <summary><strong>{chapter.sequence}. {chapter.name}</strong><span className="muted">{chapter.learnUnitCount} 个单元</span></summary>
                     <p className="muted">{chapter.goal}</p>
-                    {units.map((unit) => (
-                        <article className="draft-unit" key={unit.code}>
+                    {chapter.learnUnits.map((unit) => (
+                        <article className="draft-unit" key={`${unit.sequence}-${unit.name}`}>
                             <div className="draft-unit-title"><span>{unit.sequence}</span><strong>{unit.name}</strong></div>
                             <p>{unit.description}</p>
-                            <h4>学习目标</h4>
-                            <ul>{unit.learningObjectives.map((item) => <li key={item}>{item}</li>)}</ul>
-                            <h4>关键概念</h4>
-                            <div className="tag-list">{unit.keyConcepts.map((item) => <span key={item}>{item}</span>)}</div>
                         </article>
                     ))}
-                </details>;
-            })}
+                </details>
+            ))}
         </div>
     );
 }
@@ -68,6 +63,9 @@ export function JourneyDraftView({
                                     events,
                                     outline,
                                     status,
+                                    stage,
+                                    elapsedMs,
+                                    connection,
                                     busy,
                                     onSendGuidance,
                                     onConfirm,
@@ -76,7 +74,7 @@ export function JourneyDraftView({
     const [guidance, setGuidance] = useState("");
     const canConfirm = status === "WAITING_CONFIRMATION" && outline !== null;
     const terminal = status === "FAILED" || status === "CANCELLED" || status === "CONFIRMED";
-    const displayEvents = mergeModelDeltas(events);
+    const displayEvents = events;
 
     async function sendGuidance() {
         const content = guidance.trim();
@@ -87,6 +85,8 @@ export function JourneyDraftView({
 
     return (
         <section className="journey-draft panel">
+            <GenerationProgressPanel operation="Journey 大纲" events={events} status={status as GenerationEvent["status"]}
+                                      stage={stage} elapsedMs={elapsedMs} connection={connection} onCancel={onCancel}/>
             <div className="draft-header">
                 <div>
                     <div className="section-kicker">AGENT · JOURNEY OUTLINE</div>
@@ -117,7 +117,7 @@ export function JourneyDraftView({
                     </div>
                 </section>
                 <aside className="draft-outline panel">
-                    <div className="panel-title"><span>知识点和路径</span><span className="muted">{outline?.chapters.length ?? 0} 个 Chapter · {outline?.learnUnits.length ?? 0} 个单元</span></div>
+                    <div className="panel-title"><span>知识点和路径</span><span className="muted">{outline?.chapterCount ?? 0} 个 Chapter · {outline?.learnUnitCount ?? 0} 个单元</span></div>
                     {outline ? <Outline outline={outline}/> : <p className="empty">大纲生成后会显示在这里。</p>}
                 </aside>
             </div>
