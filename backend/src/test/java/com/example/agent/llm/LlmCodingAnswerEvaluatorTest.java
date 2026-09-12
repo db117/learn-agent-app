@@ -10,9 +10,11 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
+import java.util.ArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
@@ -34,6 +36,19 @@ class LlmCodingAnswerEvaluatorTest {
 
         assertEquals(90, result.totalScore());
         assertEquals(List.of("Add a constraint"), result.issues());
+    }
+
+    @Test
+    void reportsDeterministicModelTextThroughTheCallback() {
+        var evaluator = new LlmCodingAnswerEvaluator(model("""
+                {"correctness":60,"languageUsage":20,"clarity":20,"feedback":"Good","issues":[]}
+                """));
+        List<String> chunks = new ArrayList<>();
+
+        evaluator.evaluate(question, "code", chunks::add);
+
+        assertEquals(1, chunks.size());
+        assertTrue(chunks.get(0).contains("correctness"));
     }
 
     @Test

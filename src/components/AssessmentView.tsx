@@ -106,10 +106,15 @@ export function AssessmentView({
     </section> : <p className="empty">正在准备题目…</p>;
     const diagnostic = assessment.assessment.type === "DIAGNOSTIC";
     const synthesis = assessment.assessment.type === "CHAPTER_SYNTHESIS";
+    const evaluating = generation?.status === "RUNNING";
     const questionConfig = parseQuestionConfig(currentQuestion.configJson);
 
     return (
         <section className="assessment panel">
+            {generation?.events.length ? <GenerationProgressPanel
+                operation="Coding 评估" events={generation.events} status={generation.status}
+                stage={generation.stage} elapsedMs={generation.elapsedMs}
+                connection={generation.connection} onCancel={generation.onCancel}/> : null}
             <div className="assessment-header">
                 <div>
                     <div className="section-kicker">{diagnostic ? "DIAGNOSTIC" : synthesis ? "CHAPTER SYNTHESIS" : "LEARN UNIT CHECK"}</div>
@@ -173,11 +178,11 @@ export function AssessmentView({
             </div>
             <div className="assessment-actions">
                 <button className="secondary" onClick={() => void onBack()}
-                        disabled={busy || questionIndex === 0}>上一题
+                        disabled={busy || evaluating || questionIndex === 0}>上一题
                 </button>
                 <span className="muted">答案会保存到 SQLite</span>
                 <button className="primary" onClick={() => void onNext()}
-                        disabled={busy}>{busy ? "保存中…" : questionIndex + 1 === assessment.questions.length ? "提交评估" : "保存并继续"}</button>
+                        disabled={busy || evaluating}>{busy ? "保存中…" : questionIndex + 1 === assessment.questions.length ? "提交评估" : "保存并继续"}</button>
             </div>
         </section>
     );

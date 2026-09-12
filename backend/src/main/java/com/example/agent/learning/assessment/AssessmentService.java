@@ -80,6 +80,24 @@ public class AssessmentService {
         return !hasCoverage(input.available(), input.learnUnits(), MIN_DIAGNOSTIC_EVIDENCE);
     }
 
+    /** Coding 评估需要模型时走异步 GenerationRun；已完成的固定题集不会重新生成。 */
+    public boolean requiresCodingEvaluation(String assessmentId) {
+        Assessment assessment = requireAssessment(assessmentId);
+        if (assessment.status() != AssessmentStatus.IN_PROGRESS) {
+            throw new IllegalArgumentException("assessment is not in progress");
+        }
+        AssessmentAttempt attempt = openAttempt(assessmentId);
+        Map<String, QuestionAttempt> attempts = new HashMap<>();
+        repository.listQuestionAttempts(attempt.id()).forEach(value -> attempts.put(value.questionId(), value));
+        return repository.listQuestionsForAssessment(assessmentId).stream()
+                .filter(question -> question.type() == QuestionType.CODING)
+                .anyMatch(question -> {
+                    QuestionAttempt current = attempts.get(question.id());
+                    return current == null || current.score() == null
+                            || current.evaluationJson() == null || current.evaluationJson().isBlank();
+                });
+    }
+
     /** Creates the fixed diagnostic set while reporting safe lifecycle milestones to its run adapter. */
     @Transactional
     public AssessmentState createDiagnostic(
@@ -287,6 +305,12 @@ public class AssessmentService {
      */
     @Transactional(noRollbackFor = AssessmentEvaluationException.class)
     public AssessmentSubmission submit(String assessmentId) {
+        return submit(assessmentId, ignored -> {
+        });
+    }
+
+    @Transactional(noRollbackFor = AssessmentEvaluationException.class)
+    public AssessmentSubmission submit(String assessmentId, Consumer<String> onProgress) {
         Assessment assessment = requireAssessment(assessmentId);
         if (assessment.status() != AssessmentStatus.IN_PROGRESS) throw new IllegalArgumentException("assessment is not in progress");
         AssessmentAttempt attempt = openAttempt(assessmentId);
@@ -302,7 +326,8 @@ public class AssessmentService {
             if (question.type() == QuestionType.CODING
                     && (current.score() == null || current.evaluationJson() == null || current.evaluationJson().isBlank())) {
                 try {
-                    current = evaluateCoding(question, current);
+                    onProgress.accept("ANALYZING");
+                    current = evaluateCoding(question, current, onProgress);
                 } catch (AssessmentEvaluationException error) {
                     if (assessment.type() == AssessmentType.LEARN_UNIT) {
                         progress.markAssessmentFailed(assessment.journeyId(), assessment.learnUnitCode());
@@ -356,6 +381,43 @@ public class AssessmentService {
                 requireAssessment(assessmentId), repository.findAttempt(attempt.id()).orElseThrow(), score, passed,
                 learnUnitResults, completedQuestions, passScore, codingPassScore,
                 reviewLearnUnitCode, chapterCompleted);
+    }
+
+    /** 读取已完成 Attempt 的普通结果 DTO 所需领域数据，不触发新的评分或路径迁移。 */
+    @Transactional(readOnly = true)
+    public AssessmentSubmission completedResult(String assessmentId) {
+        Assessment assessment = requireAssessment(assessmentId);
+        if (assessment.status() != AssessmentStatus.COMPLETED) {
+            throw new IllegalStateException("assessment is not completed");
+        }
+        AssessmentAttempt attempt = repository.listAttemptsForAssessment(assessmentId).stream()
+                .filter(value -> value.completedAt() != null)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("completed assessment has no completed attempt"));
+        List<Question> questions = repository.listQuestionsForAssessment(assessmentId);
+        List<QuestionAttempt> questionAttempts = repository.listQuestionAttempts(attempt.id());
+        Map<String, QuestionType> types = new HashMap<>();
+        questions.forEach(question -> types.put(question.id(), question.type()));
+        AssessmentScore score = scoreEngine.scoreAttempts(questionAttempts, types);
+        int passScore = switch (assessment.type()) {
+            case DIAGNOSTIC -> LearnUnitPassPolicy.DIAGNOSTIC_PASS_SCORE;
+            case CHAPTER_SYNTHESIS -> LearnUnitPassPolicy.SYNTHESIS_PASS_SCORE;
+            case LEARN_UNIT -> repository.findLearnUnit(assessment.learnUnitCode()).orElseThrow().passScore();
+        };
+        Integer codingPassScore = assessment.type() == AssessmentType.LEARN_UNIT && score.hasCodingQuestions()
+                ? repository.findLearnUnit(assessment.learnUnitCode()).orElseThrow().minCodingScore() : null;
+        List<DiagnosticLearnUnitResult> diagnosticResults = assessment.type() == AssessmentType.DIAGNOSTIC
+                ? diagnosticResults(assessment.journeyId(), questions, questionAttempts, false) : List.of();
+        String reviewLearnUnitCode = null;
+        boolean chapterCompleted = false;
+        if (assessment.type() == AssessmentType.CHAPTER_SYNTHESIS) {
+            ChapterResult chapter = chapterResult(assessment, Boolean.TRUE.equals(attempt.passed()));
+            reviewLearnUnitCode = chapter.reviewLearnUnitCode();
+            chapterCompleted = chapter.completed();
+        }
+        return new AssessmentSubmission(
+                assessment, attempt, score, Boolean.TRUE.equals(attempt.passed()), diagnosticResults,
+                questionAttempts, passScore, codingPassScore, reviewLearnUnitCode, chapterCompleted);
     }
 
     /** 从数据库重新组装评估、固定题集、当前 Attempt 和历史 Attempt 的完整状态。 */
@@ -558,6 +620,11 @@ public class AssessmentService {
 
     private List<DiagnosticLearnUnitResult> diagnosticResults(
             String journeyId, List<Question> questions, List<QuestionAttempt> attempts) {
+        return diagnosticResults(journeyId, questions, attempts, true);
+    }
+
+    private List<DiagnosticLearnUnitResult> diagnosticResults(
+            String journeyId, List<Question> questions, List<QuestionAttempt> attempts, boolean updateProgress) {
         Map<String, List<Question>> questionsByLearnUnit = new LinkedHashMap<>();
         for (Question question : questions) questionsByLearnUnit.computeIfAbsent(question.learnUnitCode(), ignored -> new ArrayList<>()).add(question);
         Map<String, QuestionAttempt> attemptsByQuestion = new HashMap<>();
@@ -572,17 +639,21 @@ public class AssessmentService {
             entry.getValue().forEach(question -> types.put(question.id(), question.type()));
             AssessmentScore score = scoreEngine.scoreAttempts(learnUnitAttempts, types);
             boolean passed = passPolicy.diagnosticPassed(score, learnUnitAttempts.size());
-            progress.recordDiagnosticResult(journeyId, entry.getKey(), score, passed);
+            if (updateProgress) progress.recordDiagnosticResult(journeyId, entry.getKey(), score, passed);
             result.add(new DiagnosticLearnUnitResult(entry.getKey(), score, passed, learnUnitAttempts.size()));
         }
         return result;
     }
 
-    private QuestionAttempt evaluateCoding(Question question, QuestionAttempt current) {
+    private QuestionAttempt evaluateCoding(
+            Question question, QuestionAttempt current, Consumer<String> onProgress) {
         try {
             CodingEvaluationResult evaluation = codingEvaluator.evaluate(
-                    CodingQuestion.from(question), current.submittedCode());
+                    CodingQuestion.from(question), current.submittedCode(),
+                    ignored -> onProgress.accept("MODEL_ACTIVITY"));
+            onProgress.accept("VALIDATING");
             int score = (int) Math.round(evaluation.totalScore() * question.points() / 100.0);
+            onProgress.accept("PERSISTING");
             return new QuestionAttempt(
                     current.questionId(), current.assessmentAttemptId(), current.answerJson(), score,
                     current.maxScore(), evaluation.feedback(), null, current.submittedCode(),
@@ -590,11 +661,37 @@ public class AssessmentService {
         } catch (RuntimeException error) {
             QuestionAttempt draft = new QuestionAttempt(
                     current.questionId(), current.assessmentAttemptId(), current.answerJson(), null, current.maxScore(),
-                    "Evaluation unavailable: " + error.getMessage(), null, current.submittedCode(), null,
+                    "评分暂不可用，请保留答案后重试。", null, current.submittedCode(), null,
                     current.selectedOptionIdsJson());
             repository.saveQuestionAttempt(draft);
             throw new AssessmentEvaluationException("Coding evaluation failed; draft was preserved", error);
         }
+    }
+
+    private ChapterResult chapterResult(Assessment assessment, boolean passed) {
+        List<LearnUnit> units = repository.listLearnUnitsForJourney(assessment.journeyId()).stream()
+                .filter(unit -> assessment.chapterCode().equals(unit.chapterCode()))
+                .toList();
+        Set<String> codes = units.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
+        List<com.example.agent.learning.path.LearningPathItem> chapterPath = repository.listPath(assessment.journeyId()).stream()
+                .filter(item -> codes.contains(item.learnUnitCode()))
+                .sorted(java.util.Comparator.comparingInt(com.example.agent.learning.path.LearningPathItem::sequence)
+                        .thenComparing(com.example.agent.learning.path.LearningPathItem::learnUnitCode))
+                .toList();
+        String firstWeak = chapterPath.stream()
+                .filter(item -> passed
+                        ? item.status() != com.example.agent.learning.path.LearningPathItemStatus.COMPLETED || item.needsReview()
+                        : item.needsReview())
+                .map(com.example.agent.learning.path.LearningPathItem::learnUnitCode)
+                .findFirst().orElse(null);
+        boolean completed = passed && chapterPath.size() == units.size()
+                && chapterPath.stream().allMatch(item ->
+                item.status() == com.example.agent.learning.path.LearningPathItemStatus.COMPLETED
+                        && !item.needsReview());
+        return new ChapterResult(firstWeak, completed);
+    }
+
+    private record ChapterResult(String reviewLearnUnitCode, boolean completed) {
     }
 
     private QuestionAttempt emptyAttempt(Question question, String attemptId) {

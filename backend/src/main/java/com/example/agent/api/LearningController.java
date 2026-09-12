@@ -4,6 +4,7 @@ import com.example.agent.config.AppProperties;
 import com.example.agent.learning.assessment.Assessment;
 import com.example.agent.learning.assessment.AssessmentAttempt;
 import com.example.agent.learning.assessment.AssessmentService;
+import com.example.agent.learning.assessment.CodingEvaluationRunService;
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAnswer;
 import com.example.agent.learning.assessment.QuestionAttempt;
@@ -68,6 +69,7 @@ public class LearningController {
     private final JourneyDraftRunService journeyDrafts;
     private final LearnUnitContentRunService learnUnitContentRuns;
     private final DiagnosticQuestionRunService diagnosticQuestionRuns;
+    private final CodingEvaluationRunService codingEvaluationRuns;
     private final GenerationRunService generation;
     private final AppProperties properties;
 
@@ -81,6 +83,7 @@ public class LearningController {
             JourneyDraftRunService journeyDrafts,
             LearnUnitContentRunService learnUnitContentRuns,
             DiagnosticQuestionRunService diagnosticQuestionRuns,
+            CodingEvaluationRunService codingEvaluationRuns,
             GenerationRunService generation,
             AppProperties properties) {
         this.learning = learning;
@@ -92,6 +95,7 @@ public class LearningController {
         this.journeyDrafts = journeyDrafts;
         this.learnUnitContentRuns = learnUnitContentRuns;
         this.diagnosticQuestionRuns = diagnosticQuestionRuns;
+        this.codingEvaluationRuns = codingEvaluationRuns;
         this.generation = generation;
         this.properties = properties;
     }
@@ -151,6 +155,8 @@ public class LearningController {
             learnUnitContentRuns.cancel(runId);
         } else if ("DIAGNOSTIC_QUESTIONS".equals(run.operation())) {
             diagnosticQuestionRuns.cancel(runId);
+        } else if ("CODING_EVALUATION".equals(run.operation())) {
+            codingEvaluationRuns.cancel(runId);
         } else {
             run.cancel("本次生成已取消。");
         }
@@ -279,6 +285,13 @@ public class LearningController {
                 learning.findAssessment(assessmentId).orElseThrow(() -> new IllegalArgumentException("assessment not found"))));
     }
 
+    /** 查询已完成评估的普通结果；异步 Coding 完成后由前端重新读取。 */
+    @GetMapping("/assessments/{assessmentId}/result")
+    public Mono<AssessmentResultResponse> assessmentResult(@PathVariable String assessmentId) {
+        return Mono.fromCallable(() -> AssessmentResultResponse.from(assessments.completedResult(assessmentId)))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
     /** 开始评估并创建一个可重试的 Attempt。 */
     @PostMapping("/assessments/{assessmentId}/start")
     public AssessmentResponse startAssessment(@PathVariable String assessmentId) {
@@ -298,8 +311,14 @@ public class LearningController {
 
     /** 提交评估，计算分数并更新 LearnUnit 进度。 */
     @PostMapping("/assessments/{assessmentId}/submit")
-    public AssessmentResultResponse submit(@PathVariable String assessmentId) {
-        return AssessmentResultResponse.from(assessments.submit(assessmentId));
+    public Mono<Object> submit(@PathVariable String assessmentId) {
+        return Mono.<Object>fromCallable(() -> {
+                    CodingEvaluationRunService.Start started = codingEvaluationRuns.start(assessmentId);
+                    return started.runId() == null
+                            ? AssessmentResultResponse.from(started.submission())
+                            : new JourneyDraftStartResponse(started.runId());
+                })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /** 将当前 Path 节点置为学习中。 */

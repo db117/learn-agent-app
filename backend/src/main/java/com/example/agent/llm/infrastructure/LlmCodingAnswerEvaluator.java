@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * 基于 AgentScope Model 的 Coding 评分实现。
@@ -31,6 +32,13 @@ public final class LlmCodingAnswerEvaluator implements CodingAnswerEvaluator {
 
     @Override
     public CodingEvaluationResult evaluate(CodingQuestion question, String submittedCode) {
+        return evaluate(question, submittedCode, ignored -> {
+        });
+    }
+
+    @Override
+    public CodingEvaluationResult evaluate(
+            CodingQuestion question, String submittedCode, Consumer<String> onModelText) {
         String prompt = """
                 Evaluate this %s learning answer. Return JSON only, with exactly these fields:
                 {"correctness": integer 0..60, "languageUsage": integer 0..20,
@@ -46,7 +54,7 @@ public final class LlmCodingAnswerEvaluator implements CodingAnswerEvaluator {
                 """.formatted(
                 question.language() == null ? "programming" : question.language(), question.prompt(), question.referenceConceptsJson(), question.rubricJson(),
                 question.starterCode(), submittedCode == null ? "" : submittedCode);
-        String text = AgentScopeTextGenerator.generate(model, prompt);
+        String text = AgentScopeTextGenerator.generate(model, prompt, onModelText);
         try {
             JsonNode root = MAPPER.readTree(extractJson(text));
             if (root == null || !root.isObject()) throw new IllegalArgumentException("response must be an object");

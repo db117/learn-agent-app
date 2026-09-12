@@ -111,6 +111,7 @@ export default function App() {
   const [learnUnitRunId, setLearnUnitRunId] = useState<string | null>(null);
   const [learnUnitRunCode, setLearnUnitRunCode] = useState<string | null>(null);
   const [diagnosticRunId, setDiagnosticRunId] = useState<string | null>(null);
+  const [codingRunId, setCodingRunId] = useState<string | null>(null);
   const [form, setForm] = useState<JourneyForm>({
     languageCode: "",
     goal: "Build a practical programming foundation",
@@ -142,9 +143,16 @@ export default function App() {
     eventsUrl: api.generationRunEventsUrl,
     cancel: api.cancelGenerationRun,
   });
+  const codingGeneration = useGenerationRun<DiagnosticQuestionPreview>({
+    runId: codingRunId,
+    eventsUrl: api.generationRunEventsUrl,
+    cancel: api.cancelGenerationRun,
+  });
   const handledDraftCompletion = useRef<string | null>(null);
   const handledLearnUnitCompletion = useRef<string | null>(null);
   const handledDiagnosticCompletion = useRef<string | null>(null);
+  const handledCodingCompletion = useRef<string | null>(null);
+  const handledCodingFailure = useRef<string | null>(null);
   const {
     tutor,
     tutorInput,
@@ -162,11 +170,13 @@ export default function App() {
     if (draftRunId) void api.cancelJourneyDraft(draftRunId).catch(() => undefined);
     if (learnUnitRunId) void api.cancelGenerationRun(learnUnitRunId).catch(() => undefined);
     if (diagnosticRunId) void api.cancelGenerationRun(diagnosticRunId).catch(() => undefined);
+    if (codingRunId) void api.cancelGenerationRun(codingRunId).catch(() => undefined);
     resetTutor();
     setDraftRunId(null);
     setLearnUnitRunId(null);
     setLearnUnitRunCode(null);
     setDiagnosticRunId(null);
+    setCodingRunId(null);
     setJourney(null);
     setLearnUnits([]);
     setLearnUnit(null);
@@ -361,6 +371,41 @@ export default function App() {
   }, [diagnosticGeneration.events, diagnosticRunId]);
 
   useEffect(() => {
+    const next = codingGeneration.events.at(-1);
+    if (!codingRunId || !next) return;
+    if (next.status === "FAILED" || next.status === "CANCELLED") {
+      if (handledCodingFailure.current === codingRunId) return;
+      handledCodingFailure.current = codingRunId;
+      setBusy(false);
+      setError(next.content);
+      if (assessment) {
+        void api.assessment(assessment.assessment.id).then(hydrateAssessment).catch(() => undefined);
+      }
+      return;
+    }
+    if (next.status !== "COMPLETED" || handledCodingCompletion.current === codingRunId) return;
+    handledCodingCompletion.current = codingRunId;
+    const assessmentId = next.resourceId ?? assessment?.assessment.id;
+    if (!assessmentId) {
+      setError("Coding 评估已完成，但 Assessment 编号缺失");
+      setBusy(false);
+      return;
+    }
+    void (async () => {
+      try {
+        const result = await api.assessmentResult(assessmentId);
+        setAssessmentResult(result);
+        if (journeyId) await refreshJourney(journeyId);
+        setCodingRunId(null);
+        setBusy(false);
+        setView("result");
+      } catch (cause) {
+        setError(errorMessage(cause, "Coding 评估已完成，但结果加载失败"));
+        setBusy(false);
+      }
+    })();
+  }, [assessment, codingGeneration.events, codingRunId, journeyId]);
+  useEffect(() => {
     if (!journey?.journey.id) return;
     void api.journeyLearnUnits(journey.journey.id).then(setLearnUnits).catch(() => undefined);
   }, [journey?.journey.id]);
@@ -504,8 +549,13 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
-      const result = await api.submit(assessment.assessment.id);
-      setAssessmentResult(result);
+      const submitted = await api.submit(assessment.assessment.id);
+      if ("runId" in submitted) {
+        setCodingRunId(submitted.runId);
+        setBusy(false);
+        return;
+      }
+      setAssessmentResult(submitted);
       if (journeyId) await refreshJourney(journeyId);
       setView("result");
     } catch (cause) {
@@ -885,7 +935,15 @@ export default function App() {
                 connection: diagnosticGeneration.connection,
                 preview: diagnosticGeneration.preview,
                 onCancel: diagnosticGeneration.cancel,
-              } : undefined}
+              } : {
+                events: codingGeneration.events,
+                status: codingGeneration.status,
+                stage: codingGeneration.stage,
+                elapsedMs: codingGeneration.elapsedMs,
+                connection: codingGeneration.connection,
+                preview: null,
+                onCancel: codingGeneration.cancel,
+              }}
               onSelectedOptionIds={(selectedOptionIds) => {
                 if (!currentQuestion) return;
                 setAnswers((current) => ({

@@ -351,6 +351,7 @@ export type GenerationEvent<TPreview = GenerationPreview> = {
 export type JourneyDraftEvent = GenerationEvent<JourneyOutlinePreview>;
 
 export type JourneyDraftStartResponse = {runId: string};
+export type AssessmentSubmitResponse = AssessmentResultResponse | JourneyDraftStartResponse;
 export type LearnUnitEntryResponse = LearnUnitResponse | JourneyDraftStartResponse;
 export type JourneyDraftAck = {status: string};
 export type DiagnosticStartResponse = {runId: string | null; assessment: AssessmentResponse | null};
@@ -467,7 +468,9 @@ export const api = {
       method: "POST",
       body: JSON.stringify(answer),
     }),
-  submit: (id: string) => request<AssessmentResultResponse>(`/learning/assessments/${id}/submit`, {method: "POST"}),
+  submit: (id: string) => request<AssessmentSubmitResponse>(`/learning/assessments/${id}/submit`, {method: "POST"}),
+  assessmentResult: (id: string) =>
+    request<AssessmentResultResponse>(`/learning/assessments/${id}/result`),
   startLearnUnit: (journeyId: string, learnUnitCode: string) =>
     request<LearnUnitEntryResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/start`, {method: "POST"}),
   continueLearnUnit: (journeyId: string, learnUnitCode: string) =>
