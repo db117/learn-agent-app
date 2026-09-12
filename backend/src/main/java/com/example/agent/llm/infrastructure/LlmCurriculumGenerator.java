@@ -12,6 +12,8 @@ import com.example.agent.learning.catalog.LearningLanguage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.agentscope.core.formatter.JsonSchema;
+import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.model.Model;
 import org.springframework.stereotype.Component;
 
@@ -34,6 +36,13 @@ import java.util.function.Consumer;
 public final class LlmCurriculumGenerator implements CurriculumGenerator {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ResponseFormat CONTENT_RESPONSE_FORMAT = ResponseFormat.jsonSchema(
+            JsonSchema.builder()
+                    .name("learn_unit_content")
+                    .description("Structured teaching content and independent questions for one LearnUnit")
+                    .schema(contentSchema())
+                    .strict(true)
+                    .build());
     private final Model model;
 
     public LlmCurriculumGenerator(Model model) {
@@ -92,36 +101,18 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         if (outline == null) throw new IllegalArgumentException("LearnUnit outline is required");
         if (outline.hasDetailedContent()) return new GeneratedLearnUnitContent(outline, List.of());
         String prompt = """
-                你是一个学习系统的教学内容作者。请为下面这个已经确认的 LearnUnit 生成一个短小、结构化的教学循环，返回 JSON，不要返回 Markdown：
-                {
-                  "ability":"本单元唯一可独立验证的能力",
-                  "estimatedMinutes":10,
-                  "lessonIntro":"...",
-                  "examples":["..."],
-                  "guidedPracticePrompt":"...",
-                  "guidedPracticeHints":["..."],
-                  "independentCheckPrompt":"...",
-                  "questions":[
-                    {"type":"MULTIPLE_CHOICE","difficulty":1,"prompt":"...","points":20,
-                      "options":[{"id":"A","text":"..."},{"id":"B","text":"..."}],
-                      "correctOptionIds":["A"],"multiple":false,"referenceConcepts":["..."]},
-                    {"type":"CODING","difficulty":2,"prompt":"...","points":80,
-                      "language":"%s","starterCode":"","rubric":{"correctness":60,"languageUsage":20,"clarity":20},
-                      "referenceConcepts":["..."]}
-                  ]
-                }
+                你是一个学习系统的教学内容作者。请为下面这个已经确认的 LearnUnit 生成一个短小、结构化的教学循环，返回符合 response schema 的 JSON，不要返回 Markdown。
                 学习者背景：%s
                 LearnUnit 大纲：目标语言=%s, code=%s, name=%s, description=%s, objectives=%s, concepts=%s
                 ability 必须只有一个能力，estimatedMinutes 必须是 1 到 30 的整数。
                 lessonIntro 不超过 2000 字；examples 至少一个且不超过 5 个；guidedPracticePrompt 和 independentCheckPrompt 必须具体。
                 questions 必须包含 1 到 5 道固定的独立检查题，只能使用 MULTIPLE_CHOICE 或 CODING，且必须能验证这个 LearnUnit。
-                MULTIPLE_CHOICE 必须提供 options、correctOptionIds、multiple；CODING 必须提供 language、starterCode 和 rubric，不能使用选择题字段。
-                CODING 的 language 必须是目标语言；rubric 必须是 JSON 对象，键为 correctness、languageUsage、clarity，值为 0 到 100 的整数且总和为 100。
+                CODING 题必须使用目标语言，并且题目内容要能验证这个 LearnUnit 的能力。
                 不要生成诊断题、分数结论或多个能力。
                 """.formatted(
-                outline.languageCode(), learningContext == null ? "" : learningContext.trim(), outline.languageCode(),
+                learningContext == null ? "" : learningContext.trim(), outline.languageCode(),
                 outline.code(), outline.name(), outline.description(), outline.learningObjectives(), outline.keyConcepts());
-        String response = AgentScopeTextGenerator.generate(model, prompt);
+        String response = AgentScopeTextGenerator.generate(model, prompt, CONTENT_RESPONSE_FORMAT);
         JsonNode root;
         try {
             root = MAPPER.readTree(extractJson(response));
@@ -155,6 +146,91 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                     "LearnUnit content generator returned invalid content"
                             + (reason == null || reason.isBlank() ? "" : ": " + reason), error);
         }
+    }
+
+    private static Map<String, Object> contentSchema() {
+        return objectSchema(Map.of(
+                "ability", Map.of("type", "string"),
+                "estimatedMinutes", Map.of("type", "integer"),
+                "lessonIntro", Map.of("type", "string"),
+                "examples", arraySchema(Map.of("type", "string")),
+                "guidedPracticePrompt", Map.of("type", "string"),
+                "guidedPracticeHints", arraySchema(Map.of("type", "string")),
+                "independentCheckPrompt", Map.of("type", "string"),
+                "questions", arraySchema(questionSchema())));
+    }
+
+    private static Map<String, Object> questionSchema() {
+        return Map.of("anyOf", List.of(
+                objectSchema(Map.ofEntries(
+                        Map.entry("type", Map.of("type", "string", "enum", List.of("MULTIPLE_CHOICE"))),
+                        Map.entry("difficulty", Map.of("type", "integer")),
+                        Map.entry("prompt", Map.of("type", "string")),
+                        Map.entry("points", Map.of("type", "integer")),
+                        Map.entry("options", arraySchema(optionSchema())),
+                        Map.entry("correctOptionIds", arraySchema(Map.of("type", "string"))),
+                        Map.entry("multiple", Map.of("type", "boolean")),
+                        Map.entry("language", nullableSchema("string")),
+                        Map.entry("starterCode", nullableSchema("string")),
+                        Map.entry("rubric", nullableObjectSchema(rubricProperties())),
+                        Map.entry("referenceConcepts", arraySchema(Map.of("type", "string"))))),
+                objectSchema(Map.ofEntries(
+                        Map.entry("type", Map.of("type", "string", "enum", List.of("CODING"))),
+                        Map.entry("difficulty", Map.of("type", "integer")),
+                        Map.entry("prompt", Map.of("type", "string")),
+                        Map.entry("points", Map.of("type", "integer")),
+                        Map.entry("options", nullableArraySchema(optionSchema())),
+                        Map.entry("correctOptionIds", nullableArraySchema(Map.of("type", "string"))),
+                        Map.entry("multiple", nullableSchema("boolean")),
+                        Map.entry("language", Map.of("type", "string")),
+                        Map.entry("starterCode", Map.of("type", "string")),
+                        Map.entry("rubric", rubricSchema()),
+                        Map.entry("referenceConcepts", arraySchema(Map.of("type", "string")))))));
+    }
+
+    private static Map<String, Object> optionSchema() {
+        return objectSchema(Map.of(
+                "id", Map.of("type", "string"),
+                "text", Map.of("type", "string")));
+    }
+
+    private static Map<String, Object> rubricSchema() {
+        return objectSchema(rubricProperties());
+    }
+
+    private static Map<String, Object> rubricProperties() {
+        return Map.of(
+                "correctness", Map.of("type", "integer"),
+                "languageUsage", Map.of("type", "integer"),
+                "clarity", Map.of("type", "integer"));
+    }
+
+    private static Map<String, Object> arraySchema(Map<String, Object> items) {
+        return Map.of("type", "array", "items", items);
+    }
+
+    private static Map<String, Object> nullableArraySchema(Map<String, Object> items) {
+        return Map.of("type", List.of("array", "null"), "items", items);
+    }
+
+    private static Map<String, Object> nullableSchema(String type) {
+        return Map.of("type", List.of(type, "null"));
+    }
+
+    private static Map<String, Object> nullableObjectSchema(Map<String, Object> properties) {
+        return Map.of(
+                "type", List.of("object", "null"),
+                "properties", properties,
+                "required", List.copyOf(properties.keySet()),
+                "additionalProperties", false);
+    }
+
+    private static Map<String, Object> objectSchema(Map<String, Object> properties) {
+        return Map.of(
+                "type", "object",
+                "properties", properties,
+                "required", List.copyOf(properties.keySet()),
+                "additionalProperties", false);
     }
 
     private List<Question> parseIndependentQuestions(JsonNode nodes, LearnUnit outline) {

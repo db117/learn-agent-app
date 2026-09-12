@@ -16,24 +16,34 @@ import java.util.function.Consumer;
 /** Collects text from one AgentScope model call for synchronous learning operations. */
 final class AgentScopeTextGenerator {
 
-    private static final GenerateOptions JSON_OPTIONS = GenerateOptions.builder()
-            .responseFormat(ResponseFormat.jsonObject())
-            .build();
+    private static final ResponseFormat JSON_OBJECT = ResponseFormat.jsonObject();
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentScopeTextGenerator.class);
 
     private AgentScopeTextGenerator() {
     }
 
     static String generate(Model model, String prompt) {
-        return generate(model, prompt, ignored -> {
+        return generate(model, prompt, JSON_OBJECT, ignored -> {
         });
     }
 
     static String generate(Model model, String prompt, Consumer<String> onText) {
+        return generate(model, prompt, JSON_OBJECT, onText);
+    }
+
+    static String generate(Model model, String prompt, ResponseFormat responseFormat) {
+        return generate(model, prompt, responseFormat, ignored -> {
+        });
+    }
+
+    static String generate(Model model, String prompt, ResponseFormat responseFormat, Consumer<String> onText) {
+        GenerateOptions options = GenerateOptions.builder()
+                .responseFormat(responseFormat)
+                .build();
         LOGGER.info("[LLM-TRACE] request model={} responseFormat={} tools=[] prompt={}",
-                model.getModelName(), JSON_OPTIONS.getResponseFormat().getType(), prompt);
+                model.getModelName(), responseFormat.getType(), prompt);
         AtomicInteger blockIndex = new AtomicInteger();
-        String text = model.stream(List.of(new UserMessage(prompt)), List.of(), JSON_OPTIONS)
+        String text = model.stream(List.of(new UserMessage(prompt)), List.of(), options)
                 .flatMapIterable(response -> response.getContent() == null
                         ? List.<ContentBlock>of() : response.getContent())
                 .doOnNext(block -> LOGGER.info("[LLM-TRACE] response.block index={} type={} value={}",

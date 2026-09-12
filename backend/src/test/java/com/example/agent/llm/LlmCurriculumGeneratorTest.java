@@ -7,7 +7,6 @@ import com.example.agent.llm.infrastructure.LlmCurriculumGenerator;
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionType;
-import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -24,7 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -110,7 +108,7 @@ class LlmCurriculumGeneratorTest {
     }
 
     @Test
-    void contentPromptDefinesCodingQuestionFields() {
+    void contentRequestUsesStrictJsonSchema() {
         LearnUnit outline = new LearnUnit(
                 "unit", "typescript", "typescript.arrays", "typescript-basics", "数组", "数组基础", 1, List.of(),
                 80, 70, true, List.of("掌握数组"), "", List.of("T[]"), List.of(), true);
@@ -120,17 +118,16 @@ class LlmCurriculumGeneratorTest {
                  "guidedPracticeHints":[],"independentCheckPrompt":"完成数组题",
                  "questions":[{"type":"MULTIPLE_CHOICE","difficulty":1,"prompt":"哪一个是数组？","points":20,
                    "options":[{"id":"A","text":"number[]"},{"id":"B","text":"number"}],
-                   "correctOptionIds":["A"],"multiple":false,"referenceConcepts":["T[]"]}]}
+                   "correctOptionIds":["A"],"multiple":false,"language":null,"starterCode":null,"rubric":null,"referenceConcepts":["T[]"]}]}
                 """);
-
         new LlmCurriculumGenerator(model).generateContent(outline, "context");
 
-        ArgumentCaptor<List<Msg>> messages = ArgumentCaptor.forClass(List.class);
-        verify(model).stream(messages.capture(), anyList(), any(GenerateOptions.class));
-        String prompt = messages.getValue().get(0).getTextContent();
-        assertTrue(prompt.contains("\"type\":\"CODING\""));
-        assertTrue(prompt.contains("\"language\":\"typescript\""));
-        assertTrue(prompt.contains("\"rubric\":{\"correctness\":60,\"languageUsage\":20,\"clarity\":20}"));
+        ArgumentCaptor<GenerateOptions> options = ArgumentCaptor.forClass(GenerateOptions.class);
+        verify(model).stream(anyList(), anyList(), options.capture());
+        assertEquals("json_schema", options.getValue().getResponseFormat().getType());
+        assertEquals("learn_unit_content", options.getValue().getResponseFormat().getJsonSchema().getName());
+        assertEquals(true, options.getValue().getResponseFormat().getJsonSchema().getStrict());
+        assertTrue(options.getValue().getResponseFormat().getJsonSchema().getSchema().toString().contains("rubric"));
     }
 
     @Test
@@ -200,9 +197,7 @@ class LlmCurriculumGeneratorTest {
 
     private Model model(String response) {
         Model model = mock(Model.class);
-        when(model.stream(anyList(), anyList(), argThat((GenerateOptions options) ->
-                options != null && options.getResponseFormat() != null
-                        && "json_object".equals(options.getResponseFormat().getType())))).thenReturn(
+        when(model.stream(anyList(), anyList(), any(GenerateOptions.class))).thenReturn(
                 Flux.just(ChatResponse.builder()
                         .content(List.of(TextBlock.builder().text(response).build()))
                         .build()));
