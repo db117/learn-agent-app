@@ -28,6 +28,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -55,6 +56,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
                 "app.openai.base-url=http://localhost"
         })
 @Import(TutorAgentWebFluxE2ETest.DeterministicModelConfiguration.class)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class TutorAgentWebFluxE2ETest {
 
     private WebTestClient client;

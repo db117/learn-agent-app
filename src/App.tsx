@@ -85,6 +85,10 @@ function learnUnitLabel(learnUnits: LearnUnit[], code: string | null) {
   return learnUnits.find((learnUnit) => learnUnit.code === code)?.name ?? code.split(".").pop() ?? code;
 }
 
+function openAttempt(response: LearnUnitResponse) {
+  return response.attempts.find((attempt) => attempt.completedAt === null);
+}
+
 export default function App() {
   const [health, setHealth] = useState<BackendHealth | null>(null);
   const [backend, setBackend] = useState<BackendStatus>({status: "checking"});
@@ -303,33 +307,32 @@ export default function App() {
   }
 
   async function restoreOpenAssessment(detail: JourneyDetail) {
-    let currentResponse: LearnUnitResponse | null = null;
+    const current = detail.path.find((item) => item.status === "CURRENT");
+    const currentResponse = current
+      ? await api.learnUnit(detail.journey.id, current.learnUnitCode)
+      : null;
+    const restore = async (response: LearnUnitResponse | null, assessmentId: string) => {
+      const restored = await api.assessment(assessmentId);
+      if (!restored.openAttempt) return false;
+      setLearnUnit(response);
+      hydrateAssessment(restored);
+      setQuestionIndex(firstUnanswered(restored));
+      setView("assessment");
+      return true;
+    };
+    const currentAttempt = currentResponse && openAttempt(currentResponse);
+    if (currentAttempt && await restore(currentResponse, currentAttempt.assessmentId)) return;
+
     for (const item of detail.path) {
-      if (item.status !== "CURRENT" && item.status !== "COMPLETED") continue;
+      if (item.status !== "COMPLETED") continue;
       const response = await api.learnUnit(detail.journey.id, item.learnUnitCode);
-      if (item.status === "CURRENT") currentResponse = response;
-      const openAttempt = response.attempts.find((attempt) => attempt.completedAt === null);
-      if (!openAttempt) continue;
-      const restored = await api.assessment(openAttempt.assessmentId);
-      if (restored.openAttempt) {
-        setLearnUnit(response);
-        hydrateAssessment(restored);
-        setQuestionIndex(firstUnanswered(restored));
-        setView("assessment");
-        return;
-      }
+      const attempt = openAttempt(response);
+      if (attempt && await restore(response, attempt.assessmentId)) return;
     }
     setLearnUnit(currentResponse);
     for (const chapter of detail.chapters) {
       if (!chapter.synthesisAssessmentId || chapter.synthesisCompleted) continue;
-      const restored = await api.assessment(chapter.synthesisAssessmentId);
-      if (restored.openAttempt) {
-        setLearnUnit(null);
-        hydrateAssessment(restored);
-        setQuestionIndex(firstUnanswered(restored));
-        setView("assessment");
-        return;
-      }
+      if (await restore(null, chapter.synthesisAssessmentId)) return;
     }
     setView("dashboard");
   }
@@ -481,7 +484,10 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
-      setLearnUnit(await api.learnUnit(journeyId, code));
+      const item = journey?.path.find((pathItem) => pathItem.learnUnitCode === code);
+      setLearnUnit(await (item?.status === "COMPLETED"
+        ? api.reviewLearnUnit(journeyId, code)
+        : api.learnUnit(journeyId, code)));
       closeTutor();
       setView("dashboard");
     } catch (cause) {

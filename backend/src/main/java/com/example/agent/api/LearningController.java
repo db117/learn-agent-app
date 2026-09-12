@@ -258,6 +258,18 @@ public class LearningController {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
+    /** Review a completed LearnUnit without changing its historical path state. */
+    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/review")
+    public Mono<LearnUnitResponse> reviewLearnUnit(
+            @PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        return Mono.fromCallable(() -> {
+                    progress.requireCompletedLearnUnit(journeyId, learnUnitCode);
+                    curriculum.ensureLearnUnitContent(journeyId, learnUnitCode);
+                    return learnUnit(journeyId, learnUnitCode);
+                })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
     /** 推进当前 LearnUnit 的一个教学阶段。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/phase/{phase}/advance")
     public Mono<LearnUnitResponse> advancePhase(

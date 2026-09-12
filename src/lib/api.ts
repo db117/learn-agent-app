@@ -394,6 +394,8 @@ export const api = {
     request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/start`, {method: "POST"}),
   continueLearnUnit: (journeyId: string, learnUnitCode: string) =>
     request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/continue`, {method: "POST"}),
+  reviewLearnUnit: (journeyId: string, learnUnitCode: string) =>
+    request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/review`, {method: "POST"}),
   learnUnitAssessment: (journeyId: string, learnUnitCode: string) =>
     request<AssessmentResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/assessment`, {method: "POST"}),
   practiceLearnUnit: (journeyId: string, learnUnitCode: string) =>
