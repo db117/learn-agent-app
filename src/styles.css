@@ -17,7 +17,6 @@
     --text-path: #b6c0d0;
     --text-meta: #9ba9bd;
     --text-code: #b8c9e8;
-    --text-code-input: #d9e4f7;
     --text-score: #9ebdff;
     --text-score-muted: #7f8ca1;
     --text-score-detail: #c3cede;
@@ -96,7 +95,6 @@
     --text-path: #4b5b70;
     --text-meta: #5d6d83;
     --text-code: #355071;
-    --text-code-input: #223a5a;
     --text-score: #2f65b5;
     --text-score-muted: #718096;
     --text-score-detail: #536277;
@@ -596,11 +594,11 @@ ul {
     line-height: 1.5;
 }
 
-.coding-answer textarea {
-    min-height: 220px;
-    color: var(--text-code-input);
-    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-    font-size: 13px;
+.coding-editor {
+    min-height: 320px;
+    overflow: hidden;
+    border: 1px solid var(--border-input);
+    border-radius: 7px;
 }
 .assessment-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; }
 

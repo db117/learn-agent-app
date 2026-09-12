@@ -731,6 +731,7 @@ export default function App() {
                       ?? currentQuestion.chapterCode
                       : learnUnitLabel(learnUnits, currentQuestion.learnUnitCode)
                   : ""}
+              theme={theme}
               busy={busy}
               onSelectedOptionIds={(selectedOptionIds) => {
                 if (!currentQuestion) return;

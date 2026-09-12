@@ -43,5 +43,5 @@ SQLite 默认路径为 `${user.home}/.learning-agent-java/agent.db`；可通过 
 
 ## 范围边界
 
-本仓库不包含认证、工作区沙箱、MCP、RAG、Monaco、多 Agent 路由、自动更新或随包提供的 JRE。
+本仓库不包含认证、工作区沙箱、MCP、RAG、多 Agent 路由、自动更新或随包提供的 JRE。
 设计说明见 [docs/architecture.md](docs/architecture.md)，项目规则见 [AGENTS.md](AGENTS.md)。

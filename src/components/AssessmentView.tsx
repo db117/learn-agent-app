@@ -1,9 +1,34 @@
-import type {ChangeEvent} from "react";
+import Editor from "@monaco-editor/react";
 import type {AssessmentResponse, Question} from "../lib/api";
 
 export type AnswerDraft = { selectedOptionIds: string[]; submittedCode: string };
 type QuestionOption = { id: string; text: string };
 type QuestionConfig = { options: QuestionOption[]; multiple: boolean };
+type Theme = "dark" | "light";
+
+const MONACO_LANGUAGE_ALIASES: Record<string, string> = {
+    "c#": "csharp",
+    "c++": "cpp",
+    csharp: "csharp",
+    cs: "csharp",
+    cpp: "cpp",
+    css: "css",
+    go: "go",
+    golang: "go",
+    html: "html",
+    html5: "html",
+    java: "java",
+    javascript: "javascript",
+    js: "javascript",
+    json: "json",
+    python: "python",
+    py: "python",
+    rust: "rust",
+    rs: "rust",
+    sql: "sql",
+    typescript: "typescript",
+    ts: "typescript",
+};
 
 export const emptyDraft: AnswerDraft = {selectedOptionIds: [], submittedCode: ""};
 
@@ -14,6 +39,7 @@ type AssessmentViewProps = {
     currentDraft: AnswerDraft;
     learnUnitName: string;
     questionLearnUnitName: string;
+    theme: Theme;
     busy: boolean;
     onSelectedOptionIds: (selectedOptionIds: string[]) => void;
     onCodeChange: (submittedCode: string) => void;
@@ -37,6 +63,11 @@ function parseQuestionConfig(raw: string | null): QuestionConfig {
     }
 }
 
+function monacoLanguage(language: string | null) {
+    const normalized = language?.trim().toLowerCase().replace(/[\s_-]+/g, "") ?? "";
+    return MONACO_LANGUAGE_ALIASES[normalized] ?? "plaintext";
+}
+
 export function AssessmentView({
                                    assessment,
                                    currentQuestion,
@@ -44,6 +75,7 @@ export function AssessmentView({
                                    currentDraft,
                                    learnUnitName,
                                    questionLearnUnitName,
+                                   theme,
                                    busy,
                                    onSelectedOptionIds,
                                    onCodeChange,
@@ -98,13 +130,23 @@ export function AssessmentView({
                 {currentQuestion.type === "CODING" && (
                     <div className="coding-answer">
                         {currentQuestion.starterCode && <pre>{currentQuestion.starterCode}</pre>}
-                        <textarea
-                            value={currentDraft.submittedCode}
-                            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onCodeChange(event.target.value)}
-                            rows={12}
-                            placeholder="在这里写下你的代码…"
-                            spellCheck={false}
-                        />
+                        <div className="coding-editor">
+                            <Editor
+                                height="320px"
+                                language={monacoLanguage(currentQuestion.language)}
+                                theme={theme === "dark" ? "vs-dark" : "light"}
+                                value={currentDraft.submittedCode}
+                                onChange={(value) => onCodeChange(value ?? "")}
+                                options={{
+                                    automaticLayout: true,
+                                    minimap: {enabled: false},
+                                    padding: {top: 12, bottom: 12},
+                                    scrollBeyondLastLine: false,
+                                    tabSize: 2,
+                                    wordWrap: "on",
+                                }}
+                            />
+                        </div>
                     </div>
                 )}
             </div>
