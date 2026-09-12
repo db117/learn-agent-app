@@ -21,6 +21,7 @@ import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.path.GuidedPracticeEntry;
 import com.example.agent.learning.workflow.WorkflowTransition;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,7 +42,7 @@ import java.util.UUID;
 @Repository
 public class LearningRepository {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private final JdbcClient jdbc;
 

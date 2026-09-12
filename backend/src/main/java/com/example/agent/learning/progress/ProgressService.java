@@ -208,14 +208,19 @@ public class ProgressService {
     /**
      * 记录 LearnUnit 评估结果，并通过工作流路由到 PASS 或 RETRY。
      *
-     * <p>通过时推进到下一个节点；未通过时保留当前节点并刷新 Journey 活动时间。</p>
+     * <p>当前 LearnUnit 通过时推进到下一个节点；已完成 LearnUnit 的 practice 只记录 Attempt，
+     * 不改变路径；未通过时保留当前节点并刷新 Journey 活动时间。</p>
      */
     @Transactional
     public LearningPathItem recordLearnUnitAssessment(
             String journeyId, String learnUnitCode, AssessmentScore score, boolean passed) {
-        activeJourney(journeyId);
+        LearningJourney journey = journey(journeyId);
         LearningPathItem previous = pathItem(journeyId, learnUnitCode);
         boolean practice = previous.status() == LearningPathItemStatus.COMPLETED;
+        if (journey.status() == JourneyStatus.ARCHIVED
+                || (!practice && journey.status() != JourneyStatus.ACTIVE)) {
+            throw new IllegalArgumentException("journey is not active: " + journeyId);
+        }
         if (!practice) requireCurrent(previous);
         return workflow.execute(
                 passed ? "PASS" : "RETRY",
@@ -238,10 +243,10 @@ public class ProgressService {
                         "pass", result -> {
                             transition(journeyId, previous.status().name(), "PASS", result.status().name(),
                                     Map.of("learnUnitCode", learnUnitCode, "score", score.totalScore()));
-                            advanceToNextLearnUnit(journeyId, learnUnitCode, result.status());
+                            if (!practice) advanceToNextLearnUnit(journeyId, learnUnitCode, result.status());
                         },
                         "retry", result -> {
-                            repository.updateJourney(journeyId, JourneyStatus.ACTIVE, Instant.now());
+                            if (!practice) repository.updateJourney(journeyId, JourneyStatus.ACTIVE, Instant.now());
                             transition(journeyId, previous.status().name(), "RETRY", result.status().name(),
                                     Map.of("learnUnitCode", learnUnitCode, "score", score.totalScore(),
                                             "needsReview", result.needsReview(),
@@ -463,7 +468,10 @@ public class ProgressService {
 
     /** 显式 practice 入口只允许访问已完成的 LearnUnit。 */
     public LearningPathItem requireCompletedLearnUnit(String journeyId, String learnUnitCode) {
-        activeJourney(journeyId);
+        LearningJourney journey = journey(journeyId);
+        if (journey.status() == JourneyStatus.ARCHIVED) {
+            throw new IllegalArgumentException("journey is not active: " + journeyId);
+        }
         LearningPathItem item = pathItem(journeyId, learnUnitCode);
         if (item.status() != LearningPathItemStatus.COMPLETED) {
             throw new IllegalArgumentException("LearnUnit is not completed: " + learnUnitCode);

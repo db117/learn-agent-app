@@ -104,14 +104,15 @@ export function DashboardView({
                     <div className="path-list">
                         {entry.path.map((item) => {
                             const actionable = item.status === "CURRENT";
-                            const reviewable = item.needsReview && item.status !== "PENDING";
+                            const selectable = item.status === "COMPLETED"
+                                || item.needsReview && item.status !== "PENDING";
                             const name = entry.learnUnits.find((unit) => unit.code === item.learnUnitCode)?.name
                                 ?? learnUnitLabel(learnUnits, item.learnUnitCode);
                             return <button className={`path-item ${item.status.toLowerCase()}`} key={item.learnUnitCode}
                                            onClick={() => actionable
                                                ? void onOpenLearnUnit(item.learnUnitCode)
-                                               : reviewable && void onOpenReviewLearnUnit(item.learnUnitCode)}
-                                           disabled={(!actionable && !reviewable) || busy}>
+                                               : selectable && void onOpenReviewLearnUnit(item.learnUnitCode)}
+                                           disabled={(!actionable && !selectable) || busy}>
                                 <span className="path-number">{item.sequence}</span>
                                 <span>
                                     <strong>{name}</strong>

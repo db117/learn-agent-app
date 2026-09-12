@@ -125,6 +125,9 @@ class ProgressServiceTest {
     @Test
     void failedPracticeKeepsACompletedLearnUnitCompleted() {
         Instant passedAt = Instant.parse("2026-09-11T00:00:00Z");
+        when(repository.findJourney("journey")).thenReturn(Optional.of(new LearningJourney(
+                "journey", "user", "typescript", "goal", JourneyStatus.COMPLETED,
+                Instant.EPOCH, Instant.EPOCH)));
         LearningPathItem completed = new LearningPathItem(
                 "learnUnit-a-item", "journey", "learnUnit-a", 1, LearningPathItemStatus.COMPLETED,
                 92, 92, 1, PassReason.LEARNING, Instant.EPOCH, passedAt, null,
@@ -140,6 +143,24 @@ class ProgressServiceTest {
         assertEquals(2, result.attemptCount());
         assertEquals(false, result.needsReview());
         verify(repository).updatePathItem(result);
+        verify(repository, never()).updateJourney(eq("journey"), any(), any(Instant.class));
+    }
+
+    @Test
+    void completedPracticeDoesNotAdvanceOrReopenACompletedJourney() {
+        when(repository.findJourney("journey")).thenReturn(Optional.of(new LearningJourney(
+                "journey", "user", "typescript", "goal", JourneyStatus.COMPLETED,
+                Instant.EPOCH, Instant.EPOCH)));
+        LearningPathItem completed = item("learnUnit-a", 1, LearningPathItemStatus.COMPLETED, 92, 92, 1);
+        when(repository.findPathItem("journey", "learnUnit-a")).thenReturn(Optional.of(completed));
+
+        LearningPathItem result = service.recordLearnUnitAssessment(
+                "journey", "learnUnit-a", new AssessmentScore(100, 100, 100, true, true), true);
+
+        assertEquals(LearningPathItemStatus.COMPLETED, result.status());
+        verify(repository).updatePathItem(result);
+        verify(repository, never()).resetCurrentPathItems("journey");
+        verify(repository, never()).updateJourney(eq("journey"), any(), any(Instant.class));
     }
 
     @Test

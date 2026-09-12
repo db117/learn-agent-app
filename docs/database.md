@@ -32,7 +32,7 @@ OneDrive、Google Drive 或其他同步目录。导出的单文件快照可以�
 Question 的题干、答案、分值、rubric 和历史引用不会被更新。退役写入
 `question_retirement`，历史 Assessment 仍可读取原题。
 
-便携数据库协议由 `schema_metadata` 中的产品级 `schema.marker`、精确的 `schema.version = 1`、
+便携数据库协议由 `schema_metadata` 中的产品级 `schema.marker`、精确的 `schema.version = 6`、
 `snapshot.created_at` 和 `source.application_id` 标识。`GET /api/database/export` 使用
 Xerial SQLite backup API 生成独立的 `learning-agent-java-<UTC 时间>.db` 文件；不会复制活动库的
 WAL/SHM 文件。已有 SQLite 文件如果缺少这些标识、必需表或版本不是当前版本，启动会明确报错，
