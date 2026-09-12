@@ -128,6 +128,7 @@ class LlmCurriculumGeneratorTest {
         assertEquals("learn_unit_content", options.getValue().getResponseFormat().getJsonSchema().getName());
         assertEquals(true, options.getValue().getResponseFormat().getJsonSchema().getStrict());
         assertTrue(options.getValue().getResponseFormat().getJsonSchema().getSchema().toString().contains("rubric"));
+        assertTrue(options.getValue().getResponseFormat().getJsonSchema().getSchema().toString().contains("maxItems"));
     }
 
     @Test

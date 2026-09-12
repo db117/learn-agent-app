@@ -113,6 +113,7 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                 LearnUnit 大纲：目标语言=%s, code=%s, name=%s, description=%s, objectives=%s, concepts=%s
                 ability 必须只有一个能力，estimatedMinutes 必须是 1 到 30 的整数。
                 lessonIntro 不超过 2000 字；examples 至少一个且不超过 5 个；guidedPracticePrompt 和 independentCheckPrompt 必须具体。
+                guidedPracticeHints 必须是 0 到 3 个提示，不能超过 3 个，每个不超过 300 字。
                 questions 必须包含 1 到 5 道固定的独立检查题，只能使用 MULTIPLE_CHOICE 或 CODING，且必须能验证这个 LearnUnit。
                 CODING 题必须使用目标语言，并且题目内容要能验证这个 LearnUnit 的能力。
                 不要生成诊断题、分数结论或多个能力。
@@ -162,7 +163,8 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                 "lessonIntro", Map.of("type", "string"),
                 "examples", arraySchema(Map.of("type", "string")),
                 "guidedPracticePrompt", Map.of("type", "string"),
-                "guidedPracticeHints", arraySchema(Map.of("type", "string")),
+                "guidedPracticeHints", Map.of(
+                        "type", "array", "items", Map.of("type", "string"), "maxItems", 3),
                 "independentCheckPrompt", Map.of("type", "string"),
                 "questions", arraySchema(questionSchema())));
     }
