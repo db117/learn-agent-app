@@ -127,6 +127,17 @@ class CurriculumServiceTest {
     }
 
     @Test
+    void returnsCachedContentWithoutCallingTheGenerator() {
+        LearningLanguage language = language("python");
+        LearnUnit content = detailed(outline(language).learnUnits().get(0));
+        when(repository.listLearnUnitsForJourney("journey-1")).thenReturn(List.of(content));
+
+        assertEquals(content, service.ensureLearnUnitContent("journey-1", content.code()));
+
+        verifyNoInteractions(generator);
+    }
+
+    @Test
     void rejectsInvalidGeneratedContentBeforeAnyWrite() {
         LearningLanguage language = language("python");
         LearnUnit outline = outline(language).learnUnits().get(0);

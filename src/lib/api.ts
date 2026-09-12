@@ -312,7 +312,20 @@ export type JourneyOutlinePreview = {
   }>;
 };
 
-export type GenerationEvent = {
+export type LearnUnitContentPreview = {
+  ability: string;
+  estimatedMinutes: number;
+  lessonIntro: string;
+  examples: string[];
+  guidedPracticePrompt: string;
+  guidedPracticeHints: string[];
+  independentCheckPrompt: string;
+  independentQuestionCount: number;
+};
+
+export type GenerationPreview = JourneyOutlinePreview | LearnUnitContentPreview;
+
+export type GenerationEvent<TPreview = GenerationPreview> = {
   sequence: number;
   runId: string;
   operation: string;
@@ -323,15 +336,16 @@ export type GenerationEvent = {
   content: string;
   status: "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
   elapsedMs: number;
-  preview: JourneyOutlinePreview | null;
+  preview: TPreview | null;
   resourceType: string | null;
   resourceId: string | null;
   timestamp: string;
 };
 
-export type JourneyDraftEvent = GenerationEvent;
+export type JourneyDraftEvent = GenerationEvent<JourneyOutlinePreview>;
 
 export type JourneyDraftStartResponse = {runId: string};
+export type LearnUnitEntryResponse = LearnUnitResponse | JourneyDraftStartResponse;
 export type JourneyDraftAck = {status: string};
 
 /** 完整数据库替换成功后的结果；是否重启 Tauri 由界面决定。 */
@@ -432,7 +446,11 @@ export const api = {
   confirmJourneyDraft: (runId: string) => request<JourneyDraftAck>(
     `/learning/journey-drafts/${encodeURIComponent(runId)}/confirm`, {method: "POST"}),
   cancelJourneyDraft: (runId: string) => request<JourneyDraftAck>(
-    `/learning/journey-drafts/${encodeURIComponent(runId)}/cancel`, {method: "POST"}),
+  `/learning/journey-drafts/${encodeURIComponent(runId)}/cancel`, {method: "POST"}),
+  generationRunEventsUrl: (runId: string) =>
+    `${API_BASE}/learning/generation-runs/${encodeURIComponent(runId)}/events`,
+  cancelGenerationRun: (runId: string) => request<JourneyDraftAck>(
+    `/learning/generation-runs/${encodeURIComponent(runId)}/cancel`, {method: "POST"}),
   assessment: (id: string) => request<AssessmentResponse>(`/learning/assessments/${id}`),
   startAssessment: (id: string) => request<AssessmentResponse>(`/learning/assessments/${id}/start`, {method: "POST"}),
   answer: (id: string, answer: { questionId: string; selectedOptionIds: string[]; submittedCode: string }) =>
@@ -442,11 +460,11 @@ export const api = {
     }),
   submit: (id: string) => request<AssessmentResultResponse>(`/learning/assessments/${id}/submit`, {method: "POST"}),
   startLearnUnit: (journeyId: string, learnUnitCode: string) =>
-    request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/start`, {method: "POST"}),
+    request<LearnUnitEntryResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/start`, {method: "POST"}),
   continueLearnUnit: (journeyId: string, learnUnitCode: string) =>
-    request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/continue`, {method: "POST"}),
+    request<LearnUnitEntryResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/continue`, {method: "POST"}),
   reviewLearnUnit: (journeyId: string, learnUnitCode: string) =>
-    request<LearnUnitResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/review`, {method: "POST"}),
+    request<LearnUnitEntryResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/review`, {method: "POST"}),
   learnUnitAssessment: (journeyId: string, learnUnitCode: string) =>
     request<AssessmentResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/assessment`, {method: "POST"}),
   practiceLearnUnit: (journeyId: string, learnUnitCode: string) =>

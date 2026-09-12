@@ -98,6 +98,13 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
 
     @Override
     public GeneratedLearnUnitContent generateContent(LearnUnit outline, String learningContext) {
+        return generateContent(outline, learningContext, ignored -> {
+        });
+    }
+
+    @Override
+    public GeneratedLearnUnitContent generateContent(
+            LearnUnit outline, String learningContext, Consumer<String> onText) {
         if (outline == null) throw new IllegalArgumentException("LearnUnit outline is required");
         if (outline.hasDetailedContent()) return new GeneratedLearnUnitContent(outline, List.of());
         String prompt = """
@@ -112,7 +119,7 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                 """.formatted(
                 learningContext == null ? "" : learningContext.trim(), outline.languageCode(),
                 outline.code(), outline.name(), outline.description(), outline.learningObjectives(), outline.keyConcepts());
-        String response = AgentScopeTextGenerator.generate(model, prompt, CONTENT_RESPONSE_FORMAT);
+        String response = AgentScopeTextGenerator.generate(model, prompt, CONTENT_RESPONSE_FORMAT, onText);
         JsonNode root;
         try {
             root = MAPPER.readTree(extractJson(response));

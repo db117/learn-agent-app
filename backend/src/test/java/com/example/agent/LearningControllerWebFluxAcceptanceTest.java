@@ -84,7 +84,17 @@ class LearningControllerWebFluxAcceptanceTest {
         JsonNode outline = get(base + "/learn-units/" + firstCode);
         assertTrue(outline.at("/learnUnit/lessonIntro").asText().isBlank());
 
-        JsonNode started = post(base + "/learn-units/" + firstCode + "/start");
+        JsonNode startResponse = post(base + "/learn-units/" + firstCode + "/start");
+        assertTrue(startResponse.has("runId"));
+        List<GenerationEvent> contentEvents = streamGenerationEvents(startResponse.at("/runId").asText(), "completed");
+        assertTrue(contentEvents.stream().anyMatch(event ->
+                event.eventType().equals("validation") && event.preview() != null));
+        assertTrue(contentEvents.stream().noneMatch(event ->
+                event.content().contains("correctOptionIds") || event.content().contains("rubric")));
+        List<GenerationEvent> replayed = streamGenerationEvents(
+                startResponse.at("/runId").asText(), "completed", contentEvents.get(0).sequence());
+        assertTrue(replayed.stream().allMatch(event -> event.sequence() > contentEvents.get(0).sequence()));
+        JsonNode started = get(base + "/learn-units/" + firstCode);
         assertFalse(started.at("/learnUnit/lessonIntro").asText().isBlank());
         assertEquals("EXPLANATION", started.at("/pathItem/learningPhase").asText());
         JsonNode example = post(base + "/learn-units/" + firstCode + "/phase/EXPLANATION/advance");
@@ -179,7 +189,10 @@ class LearningControllerWebFluxAcceptanceTest {
         String passReason = before.at("/pathItem/passReason").asText();
         int attemptCount = before.at("/pathItem/attemptCount").asInt();
 
-        JsonNode reviewed = post("/api/learning/journeys/" + journey.id() + "/learn-units/" + code + "/review");
+        JsonNode reviewStart = post("/api/learning/journeys/" + journey.id() + "/learn-units/" + code + "/review");
+        assertTrue(reviewStart.has("runId"));
+        streamGenerationEvents(reviewStart.at("/runId").asText(), "completed");
+        JsonNode reviewed = get("/api/learning/journeys/" + journey.id() + "/learn-units/" + code);
         assertEquals("COMPLETED", reviewed.at("/pathItem/status").asText());
         assertEquals(passedAt, reviewed.at("/pathItem/passedAt").asText());
         assertEquals(passReason, reviewed.at("/pathItem/passReason").asText());
@@ -208,6 +221,29 @@ class LearningControllerWebFluxAcceptanceTest {
     private List<GenerationEvent> streamDraftEvents(String runId, String terminalEventType) {
         return Objects.requireNonNull(client.get()
                 .uri("/api/learning/journey-drafts/{runId}/events", runId)
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .exchange()
+                .expectStatus().isOk()
+                .returnResult(new ParameterizedTypeReference<ServerSentEvent<GenerationEvent>>() {})
+                .getResponseBody()
+                .map(ServerSentEvent::data)
+                .filter(Objects::nonNull)
+                .takeUntil(event -> event.eventType().equals(terminalEventType))
+                .collectList()
+                .block(Duration.ofSeconds(5)));
+    }
+
+    private List<GenerationEvent> streamGenerationEvents(String runId, String terminalEventType) {
+        return streamGenerationEvents(runId, terminalEventType, null);
+    }
+
+    private List<GenerationEvent> streamGenerationEvents(
+            String runId, String terminalEventType, Long lastSequence) {
+        return Objects.requireNonNull(client.get()
+                .uri("/api/learning/generation-runs/{runId}/events", runId)
+                .headers(headers -> {
+                    if (lastSequence != null) headers.set("Last-Event-ID", Long.toString(lastSequence));
+                })
                 .accept(MediaType.TEXT_EVENT_STREAM)
                 .exchange()
                 .expectStatus().isOk()

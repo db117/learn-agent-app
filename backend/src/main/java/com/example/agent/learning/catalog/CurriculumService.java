@@ -85,20 +85,53 @@ public class CurriculumService {
     /** 第一次进入具体 LearnUnit 时才生成并保存教学正文。 */
     @Transactional
     public LearnUnit ensureLearnUnitContent(String journeyId, String learnUnitCode) {
-        LearnUnit outline = repository.listLearnUnitsForJourney(journeyId).stream()
-                .filter(unit -> unit.code().equals(learnUnitCode))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("LearnUnit not found: " + learnUnitCode));
+        LearnUnit outline = learnUnitOutline(journeyId, learnUnitCode);
         if (outline.hasDetailedContent()) return outline;
-        String context = repository.findJourney(journeyId)
-                .map(journey -> "Journey 目标：" + journey.goal())
-                .orElse("") + repository.findProfile(journeyId)
-                .map(profile -> "\n学习者背景：" + profile)
-                .orElse("");
+        String context = learnUnitContext(journeyId);
         CurriculumGenerator.GeneratedLearnUnitContent generated = generator.generateContent(outline, context);
         LearnUnitContentValidator.validate(outline, generated.learnUnit(), generated.independentQuestions());
         repository.persistLearnUnitContent(generated.learnUnit(), generated.independentQuestions());
         return repository.findLearnUnit(outline.code()).orElse(generated.learnUnit());
+    }
+
+    /** 读取大纲并确认目标存在；不会调用模型。 */
+    public LearnUnit learnUnitOutline(String journeyId, String learnUnitCode) {
+        return repository.listLearnUnitsForJourney(journeyId).stream()
+                .filter(unit -> unit.code().equals(learnUnitCode))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("LearnUnit not found: " + learnUnitCode));
+    }
+
+    /** 生成并校验 LearnUnit 内容；异步 Adapter 在随后独立事务中调用持久化。 */
+    public CurriculumGenerator.GeneratedLearnUnitContent generateLearnUnitContent(
+            String journeyId, String learnUnitCode, java.util.function.Consumer<String> onText) {
+        LearnUnit outline = learnUnitOutline(journeyId, learnUnitCode);
+        if (outline.hasDetailedContent()) {
+            return new CurriculumGenerator.GeneratedLearnUnitContent(outline, List.of());
+        }
+        CurriculumGenerator.GeneratedLearnUnitContent generated =
+                generator.generateContent(outline, learnUnitContext(journeyId), onText);
+        LearnUnitContentValidator.validate(outline, generated.learnUnit(), generated.independentQuestions());
+        return generated;
+    }
+
+    /** 在事务中原子保存教学正文及其 independent-check Questions。 */
+    @Transactional
+    public LearnUnit persistLearnUnitContent(
+            String journeyId, String learnUnitCode, CurriculumGenerator.GeneratedLearnUnitContent generated) {
+        LearnUnit outline = learnUnitOutline(journeyId, learnUnitCode);
+        if (outline.hasDetailedContent()) return outline;
+        LearnUnitContentValidator.validate(outline, generated.learnUnit(), generated.independentQuestions());
+        repository.persistLearnUnitContent(generated.learnUnit(), generated.independentQuestions());
+        return repository.findLearnUnit(outline.code()).orElse(generated.learnUnit());
+    }
+
+    private String learnUnitContext(String journeyId) {
+        return repository.findJourney(journeyId)
+                .map(journey -> "Journey 目标：" + journey.goal())
+                .orElse("") + repository.findProfile(journeyId)
+                .map(profile -> "\n学习者背景：" + profile)
+                .orElse("");
     }
 
     private CurriculumGenerator.GeneratedOutline scopeToJourney(

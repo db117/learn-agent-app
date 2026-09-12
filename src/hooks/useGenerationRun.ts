@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from "react";
-import type {GenerationEvent, JourneyOutlinePreview} from "../lib/api";
+import type {GenerationEvent} from "../lib/api";
 
 type UseGenerationRunOptions = {
   runId: string | null;
@@ -7,8 +7,8 @@ type UseGenerationRunOptions = {
   cancel: (runId: string) => Promise<unknown>;
 };
 
-export function useGenerationRun({runId, eventsUrl, cancel}: UseGenerationRunOptions) {
-  const [events, setEvents] = useState<GenerationEvent[]>([]);
+export function useGenerationRun<TPreview = unknown>({runId, eventsUrl, cancel}: UseGenerationRunOptions) {
+  const [events, setEvents] = useState<GenerationEvent<TPreview>[]>([]);
   const [connection, setConnection] = useState<"connected" | "reconnecting">("reconnecting");
   const [elapsedMs, setElapsedMs] = useState(0);
   const startedAt = useRef<number | null>(null);
@@ -31,7 +31,7 @@ export function useGenerationRun({runId, eventsUrl, cancel}: UseGenerationRunOpt
     source.onopen = () => setConnection("connected");
     source.onmessage = (message) => {
       try {
-        const next = JSON.parse(message.data) as GenerationEvent;
+        const next = JSON.parse(message.data) as GenerationEvent<TPreview>;
         startedAt.current ??= Date.parse(next.timestamp) || Date.now();
         setElapsedMs(Math.max(0, Date.now() - startedAt.current));
         setEvents((current) => current.some((event) => event.sequence === next.sequence)
@@ -61,7 +61,7 @@ export function useGenerationRun({runId, eventsUrl, cancel}: UseGenerationRunOpt
     events,
     status: latest?.status ?? "RUNNING",
     stage: latest?.stage ?? "PREPARING",
-    preview: preview as JourneyOutlinePreview | null,
+    preview: preview as TPreview | null,
     elapsedMs,
     connection,
     cancel: () => runId ? cancel(runId) : Promise.resolve(),

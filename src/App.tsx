@@ -17,7 +17,9 @@ import {
   type BackendHealth,
   type CreateJourneyInput,
   type JourneyDetail,
+  type JourneyOutlinePreview,
   type LearnUnit,
+  type LearnUnitContentPreview,
   type LearnUnitResponse,
   type LearningPhase,
 } from "./lib/api";
@@ -105,6 +107,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftRunId, setDraftRunId] = useState<string | null>(null);
+  const [learnUnitRunId, setLearnUnitRunId] = useState<string | null>(null);
+  const [learnUnitRunCode, setLearnUnitRunCode] = useState<string | null>(null);
   const [form, setForm] = useState<JourneyForm>({
     languageCode: "",
     goal: "Build a practical programming foundation",
@@ -114,7 +118,7 @@ export default function App() {
     learningGoal: "掌握所选语言，并能读写真实项目代码",
   });
   const journeyId = journey?.journey.id;
-  const generationRun = useGenerationRun({
+  const generationRun = useGenerationRun<JourneyOutlinePreview>({
     runId: draftRunId,
     eventsUrl: api.journeyDraftEventsUrl,
     cancel: api.cancelJourneyDraft,
@@ -125,8 +129,14 @@ export default function App() {
     : generationRun.status === "FAILED" ? "FAILED"
       : generationRun.status === "CANCELLED" ? "CANCELLED"
         : generationRun.stage === "WAITING_CONFIRMATION" ? "WAITING_CONFIRMATION"
-          : generationRun.stage === "PERSISTING" ? "CONFIRMING" : "GENERATING";
+        : generationRun.stage === "PERSISTING" ? "CONFIRMING" : "GENERATING";
+  const learnUnitGeneration = useGenerationRun<LearnUnitContentPreview>({
+    runId: learnUnitRunId,
+    eventsUrl: api.generationRunEventsUrl,
+    cancel: api.cancelGenerationRun,
+  });
   const handledDraftCompletion = useRef<string | null>(null);
+  const handledLearnUnitCompletion = useRef<string | null>(null);
   const {
     tutor,
     tutorInput,
@@ -142,8 +152,11 @@ export default function App() {
 
   function resetLearningState() {
     if (draftRunId) void api.cancelJourneyDraft(draftRunId).catch(() => undefined);
+    if (learnUnitRunId) void api.cancelGenerationRun(learnUnitRunId).catch(() => undefined);
     resetTutor();
     setDraftRunId(null);
+    setLearnUnitRunId(null);
+    setLearnUnitRunCode(null);
     setJourney(null);
     setLearnUnits([]);
     setLearnUnit(null);
@@ -276,6 +289,34 @@ export default function App() {
       }
     })();
   }, [draftEvents, draftRunId]);
+
+  useEffect(() => {
+    const next = learnUnitGeneration.events.at(-1);
+    if (!learnUnitRunId || !next) return;
+    if (next.status === "FAILED" || next.status === "CANCELLED") {
+      setBusy(false);
+      setError(next.content);
+      return;
+    }
+    if (next.status !== "COMPLETED" || handledLearnUnitCompletion.current === learnUnitRunId) return;
+    handledLearnUnitCompletion.current = learnUnitRunId;
+    const code = next.resourceId ?? learnUnitRunCode;
+    if (!journeyId || !code) return;
+    void (async () => {
+      try {
+        const detail = await api.journey(journeyId);
+        setJourney(detail);
+        setLearnUnit(await api.learnUnit(journeyId, code));
+        setLearnUnitRunId(null);
+        setLearnUnitRunCode(null);
+        setBusy(false);
+        setView("dashboard");
+      } catch (cause) {
+        setError(errorMessage(cause, "LearnUnit 已生成，但内容加载失败"));
+        setBusy(false);
+      }
+    })();
+  }, [journeyId, learnUnitGeneration.events, learnUnitRunCode, learnUnitRunId]);
 
   useEffect(() => {
     if (!journey?.journey.id) return;
@@ -453,6 +494,13 @@ export default function App() {
     setError(null);
     try {
       const opened = await api.continueLearnUnit(journeyId, code);
+      if ("runId" in opened) {
+        setLearnUnitRunCode(code);
+        setLearnUnitRunId(opened.runId);
+        closeTutor();
+        setView("dashboard");
+        return;
+      }
       setLearnUnit(opened);
       closeTutor();
       await refreshJourney(journeyId);
@@ -470,9 +518,17 @@ export default function App() {
     setError(null);
     try {
       const item = journey?.path.find((pathItem) => pathItem.learnUnitCode === code);
-      setLearnUnit(await (item?.status === "COMPLETED"
+      const opened = await (item?.status === "COMPLETED"
         ? api.reviewLearnUnit(journeyId, code)
-        : api.learnUnit(journeyId, code)));
+        : api.learnUnit(journeyId, code));
+      if ("runId" in opened) {
+        setLearnUnitRunCode(code);
+        setLearnUnitRunId(opened.runId);
+        closeTutor();
+        setView("dashboard");
+        return;
+      }
+      setLearnUnit(opened);
       closeTutor();
       setView("dashboard");
     } catch (cause) {
@@ -799,6 +855,18 @@ export default function App() {
               learnUnits={learnUnits}
               learnUnit={learnUnit}
               busy={busy}
+              generationActive={learnUnitRunId !== null && learnUnitGeneration.status === "RUNNING"}
+              generation={{
+                events: learnUnitGeneration.events,
+                status: learnUnitGeneration.status,
+                stage: learnUnitGeneration.stage,
+                elapsedMs: learnUnitGeneration.elapsedMs,
+                connection: learnUnitGeneration.connection,
+                preview: learnUnitGeneration.preview,
+                onCancel: async () => {
+                  await learnUnitGeneration.cancel();
+                },
+              }}
               currentLearnUnit={currentLearnUnit}
               hasOpenAttempt={hasOpenAttempt}
               canRetry={Boolean(canRetry)}

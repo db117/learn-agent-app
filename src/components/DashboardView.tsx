@@ -1,5 +1,13 @@
 import {useEffect, useState} from "react";
-import type {JourneyDetail, LearnUnit, LearnUnitResponse, LearningPhase} from "../lib/api";
+import type {
+    GenerationEvent,
+    JourneyDetail,
+    LearnUnit,
+    LearnUnitContentPreview,
+    LearnUnitResponse,
+    LearningPhase,
+} from "../lib/api";
+import {GenerationProgressPanel} from "./GenerationProgressPanel";
 import {TutorPanel, type TutorPanelProps} from "./TutorPanel";
 
 type DashboardViewProps = {
@@ -7,6 +15,16 @@ type DashboardViewProps = {
     learnUnits: LearnUnit[];
     learnUnit: LearnUnitResponse | null;
     busy: boolean;
+    generationActive: boolean;
+    generation: {
+        events: GenerationEvent[];
+        status: GenerationEvent["status"];
+        stage: string;
+        elapsedMs: number;
+        connection: "connected" | "reconnecting";
+        preview: LearnUnitContentPreview | null;
+        onCancel: () => void | Promise<void>;
+    };
     currentLearnUnit: boolean;
     hasOpenAttempt: boolean;
     canRetry: boolean;
@@ -51,6 +69,8 @@ export function DashboardView({
                                   learnUnits,
                                   learnUnit,
                                   busy,
+                                  generationActive,
+                                  generation,
                                   currentLearnUnit,
                                   hasOpenAttempt,
                                   canRetry,
@@ -112,7 +132,7 @@ export function DashboardView({
                                            onClick={() => actionable
                                                ? void onOpenLearnUnit(item.learnUnitCode)
                                                : selectable && void onOpenReviewLearnUnit(item.learnUnitCode)}
-                                           disabled={(!actionable && !selectable) || busy}>
+                                           disabled={(!actionable && !selectable) || busy || generationActive}>
                                 <span className="path-number">{item.sequence}</span>
                                 <span>
                                     <strong>{name}</strong>
@@ -125,7 +145,7 @@ export function DashboardView({
                         })}
                         {entry.synthesisAvailable && !entry.synthesisCompleted && <button className="secondary chapter-synthesis-button"
                                                                                          onClick={() => void onStartChapterSynthesis(entry.chapter.code)}
-                                                                                         disabled={busy}>
+                                                                                   disabled={busy || generationActive}>
                             开始 Chapter synthesis
                         </button>}
                         {entry.synthesisCompleted && <p className="success">Chapter synthesis 已通过</p>}
@@ -134,13 +154,28 @@ export function DashboardView({
                 {!chapters.length && <p className="empty">完成 Journey 大纲后生成 Chapter 路径。</p>}
             </aside>
             <section className="lesson panel">
+                {generation.events.length > 0 && <GenerationProgressPanel operation="LearnUnit 内容"
+                                                               events={generation.events} status={generation.status}
+                                                               stage={generation.stage} elapsedMs={generation.elapsedMs}
+                                                               connection={generation.connection}
+                                                               onCancel={generation.onCancel}/>}
+                {generation.preview && <div className="generation-content-preview" aria-live="polite">
+                    <div className="section-kicker">SAFE CONTENT PREVIEW</div>
+                    <h3>{generation.preview.ability}</h3>
+                    <p>{generation.preview.lessonIntro}</p>
+                    <div className="generation-preview-meta">
+                        <span>预计 {generation.preview.estimatedMinutes} 分钟</span>
+                        <span>示例 {generation.preview.examples.length} 个</span>
+                        <span>独立检查 {generation.preview.independentQuestionCount} 题</span>
+                    </div>
+                </div>}
                 {!current ? (
                     <div className="empty">
                         {journey?.journey.status === "COMPLETED" ? "恭喜，你已完成这条学习路径。" : availableSynthesis.length > 0 ? <>
                             <p>本章 LearnUnit 已 traversed。请完成 Chapter synthesis。</p>
                             {availableSynthesis.map((entry) => <button className="primary" key={entry.chapter.code}
                                                                         onClick={() => void onStartChapterSynthesis(entry.chapter.code)}
-                                                                        disabled={busy}>
+                                                                        disabled={busy || generationActive}>
                                 {entry.chapter.name} · 开始 synthesis
                             </button>)}
                         </> : "正在加载当前 LearnUnit…"}
@@ -191,7 +226,7 @@ export function DashboardView({
                                               onChange={(event) => setGuidedResponse(event.target.value)}
                                               rows={5} placeholder="写下你的练习…" aria-label="Guided practice response"/>
                                     <button className="secondary" onClick={() => void onGuidedPractice(guidedResponse)}
-                                            disabled={busy || !guidedResponse.trim()}>保存练习反馈</button>
+                                            disabled={busy || generationActive || !guidedResponse.trim()}>保存练习反馈</button>
                                     {current.pathItem?.guidedPracticeEntries.map((entry) =>
                                         <div className="feedback-block" key={entry.createdAt}>
                                             <p>{entry.response}</p><p className="muted">{entry.feedback}</p>
@@ -203,18 +238,18 @@ export function DashboardView({
                                     {current.pathItem?.skippedPhases.includes("INDEPENDENT_CHECK") &&
                                         <p className="warning" role="status">Independent check 尚未完成；跳过不会算作掌握。</p>}
                                     <button className="primary" onClick={() => void onStartLearnUnitAssessment()}
-                                            disabled={busy || !currentLearnUnit || hasOpenAttempt}>
+                                            disabled={busy || generationActive || !currentLearnUnit || hasOpenAttempt}>
                                         {hasOpenAttempt ? "继续独立检查" : "开始独立检查"}
                                     </button>
                                 </>}
                             </div>
                             <div className="phase-actions">
                                 <button className="primary" onClick={() => void onAdvancePhase(phase)}
-                                        disabled={busy || !currentLearnUnit || phase === "INDEPENDENT_CHECK"}>
+                                        disabled={busy || generationActive || !currentLearnUnit || phase === "INDEPENDENT_CHECK"}>
                                     进入下一阶段
                                 </button>
                                 <button className="secondary" onClick={() => void onSkipPhase(phase)}
-                                        disabled={busy || !currentLearnUnit || current.pathItem?.skippedPhases.includes(phase)}>
+                                        disabled={busy || generationActive || !currentLearnUnit || current.pathItem?.skippedPhases.includes(phase)}>
                                     跳过本阶段
                                 </button>
                             </div>
@@ -237,18 +272,18 @@ export function DashboardView({
                         <div className="button-row">
                             {current.pathItem?.status === "COMPLETED" && <button className="secondary"
                                                                                 onClick={() => void onPracticeCompletedLearnUnit(current.learnUnit.code)}
-                                                                                disabled={busy}>
+                                                                                disabled={busy || generationActive}>
                                 Practice this LearnUnit
                             </button>}
                             <button className="primary" onClick={() => void onOpenLearnUnit(current.learnUnit.code)}
-                                    disabled={busy || !currentLearnUnit} aria-busy={busy}>
+                                    disabled={busy || generationActive || !currentLearnUnit} aria-busy={busy || generationActive}>
                                 {busy ? "处理中…" : hasDetailedContent ? "继续学习" : "开始学习"}
                             </button>
                             <button className="secondary" onClick={() => void onRetryCurrentLearnUnit()}
-                                    disabled={busy || !canRetry}>Retry
+                                    disabled={busy || generationActive || !canRetry}>Retry
                             </button>
                             <button className="secondary" onClick={() => void onSkipCurrentLearnUnit()}
-                                    disabled={busy || !currentLearnUnit || hasOpenAttempt}>Skip
+                                    disabled={busy || generationActive || !currentLearnUnit || hasOpenAttempt}>Skip
                             </button>
                         </div>
                     </>

@@ -27,6 +27,12 @@ public interface CurriculumGenerator {
         throw new IllegalStateException("Curriculum generator does not support LearnUnit content generation");
     }
 
+    /** 异步生成时把模型文本活动通知给 GenerationRun；默认复用既有同步实现。 */
+    default GeneratedLearnUnitContent generateContent(
+            LearnUnit outline, String learningContext, Consumer<String> onText) {
+        return generateContent(outline, learningContext);
+    }
+
     /** Journey 确认前可持久化的结构化大纲。 */
     record GeneratedOutline(
             List<LearningLanguage> languages,

@@ -12,12 +12,14 @@ import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.CurriculumService;
+import com.example.agent.learning.catalog.LearnUnitContentRunService;
 import com.example.agent.learning.journey.LearnerProfile;
 import com.example.agent.learning.journey.JourneyDraftInput;
 import com.example.agent.learning.journey.JourneyDraftRunService;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
 import com.example.agent.learning.generation.GenerationEvent;
+import com.example.agent.learning.generation.GenerationRunService;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.persistence.LearningRepository;
@@ -63,6 +65,8 @@ public class LearningController {
     private final AssessmentService assessments;
     private final TutorSessionService tutorSessions;
     private final JourneyDraftRunService journeyDrafts;
+    private final LearnUnitContentRunService learnUnitContentRuns;
+    private final GenerationRunService generation;
     private final AppProperties properties;
 
     public LearningController(
@@ -73,6 +77,8 @@ public class LearningController {
             AssessmentService assessments,
             TutorSessionService tutorSessions,
             JourneyDraftRunService journeyDrafts,
+            LearnUnitContentRunService learnUnitContentRuns,
+            GenerationRunService generation,
             AppProperties properties) {
         this.learning = learning;
         this.curriculum = curriculum;
@@ -81,6 +87,8 @@ public class LearningController {
         this.assessments = assessments;
         this.tutorSessions = tutorSessions;
         this.journeyDrafts = journeyDrafts;
+        this.learnUnitContentRuns = learnUnitContentRuns;
+        this.generation = generation;
         this.properties = properties;
     }
 
@@ -116,6 +124,31 @@ public class LearningController {
         return journeyDrafts.events(runId, parseLastEventId(lastEventId))
                 .map(event -> org.springframework.http.codec.ServerSentEvent.<GenerationEvent>builder(event)
                         .id(Long.toString(event.sequence())).build());
+    }
+
+    /** 订阅任意学习生成运行的安全 Agent/模型事件。 */
+    @GetMapping(value = "/generation-runs/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<org.springframework.http.codec.ServerSentEvent<GenerationEvent>> generationEvents(
+            @PathVariable String runId,
+            @org.springframework.web.bind.annotation.RequestHeader(name = "Last-Event-ID", required = false)
+            String lastEventId) {
+        return generation.events(runId, parseLastEventId(lastEventId))
+                .map(event -> org.springframework.http.codec.ServerSentEvent.<GenerationEvent>builder(event)
+                        .id(Long.toString(event.sequence())).build());
+    }
+
+    /** 显式取消生成；SSE 断开不会触发取消。 */
+    @PostMapping("/generation-runs/{runId}/cancel")
+    public JourneyDraftAck cancelGenerationRun(@PathVariable String runId) {
+        GenerationRunService.Run run = generation.run(runId);
+        if ("JOURNEY_OUTLINE".equals(run.operation())) {
+            journeyDrafts.cancel(runId);
+        } else if ("LEARN_UNIT_CONTENT".equals(run.operation())) {
+            learnUnitContentRuns.cancel(runId);
+        } else {
+            run.cancel("本次生成已取消。");
+        }
+        return new JourneyDraftAck("cancelled");
     }
 
     private long parseLastEventId(String value) {
@@ -252,36 +285,53 @@ public class LearningController {
 
     /** 将当前 Path 节点置为学习中。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/start")
-    public Mono<LearnUnitResponse> startLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
-        return Mono.fromCallable(() -> {
-                    curriculum.ensureLearnUnitContent(journeyId, learnUnitCode);
-                    progress.startLearnUnit(journeyId, learnUnitCode);
-                    return learnUnit(journeyId, learnUnitCode);
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+    public Mono<Object> startLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        return openLearnUnit(journeyId, learnUnitCode, LearnUnitContentRunService.EntryAction.START);
     }
 
     /** Continue the server-selected current LearnUnit after a restart or result screen. */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/continue")
-    public Mono<LearnUnitResponse> continueLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
-        return Mono.fromCallable(() -> {
-                    curriculum.ensureLearnUnitContent(journeyId, learnUnitCode);
-                    progress.continueLearnUnit(journeyId, learnUnitCode);
-                    return learnUnit(journeyId, learnUnitCode);
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+    public Mono<Object> continueLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
+        return openLearnUnit(journeyId, learnUnitCode, LearnUnitContentRunService.EntryAction.CONTINUE);
     }
 
     /** Review a completed LearnUnit without changing its historical path state. */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/review")
-    public Mono<LearnUnitResponse> reviewLearnUnit(
+    public Mono<Object> reviewLearnUnit(
             @PathVariable String journeyId, @PathVariable String learnUnitCode) {
-        return Mono.fromCallable(() -> {
-                    progress.requireCompletedLearnUnit(journeyId, learnUnitCode);
-                    curriculum.ensureLearnUnitContent(journeyId, learnUnitCode);
-                    return learnUnit(journeyId, learnUnitCode);
+        return openLearnUnit(journeyId, learnUnitCode, LearnUnitContentRunService.EntryAction.REVIEW);
+    }
+
+    private Mono<Object> openLearnUnit(
+            String journeyId, String learnUnitCode, LearnUnitContentRunService.EntryAction action) {
+        return Mono.<Object>fromCallable(() -> {
+                    LearnUnit outline = curriculum.learnUnitOutline(journeyId, learnUnitCode);
+                    validateLearnUnitEntry(journeyId, learnUnitCode, action);
+                    if (outline.hasDetailedContent()) {
+                        return openCachedLearnUnit(journeyId, learnUnitCode, action);
+                    }
+                    return new JourneyDraftStartResponse(
+                            learnUnitContentRuns.start(journeyId, learnUnitCode, action).run().id());
                 })
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private void validateLearnUnitEntry(
+            String journeyId, String learnUnitCode, LearnUnitContentRunService.EntryAction action) {
+        if (action == LearnUnitContentRunService.EntryAction.REVIEW) {
+            progress.requireCompletedLearnUnit(journeyId, learnUnitCode);
+        } else {
+            progress.requireCurrentLearnUnit(journeyId, learnUnitCode);
+        }
+    }
+
+    private LearnUnitResponse openCachedLearnUnit(
+            String journeyId, String learnUnitCode, LearnUnitContentRunService.EntryAction action) {
+        curriculum.ensureLearnUnitContent(journeyId, learnUnitCode);
+        if (action != LearnUnitContentRunService.EntryAction.REVIEW) {
+            progress.startLearnUnit(journeyId, learnUnitCode);
+        }
+        return learnUnit(journeyId, learnUnitCode);
     }
 
     /** 推进当前 LearnUnit 的一个教学阶段。 */
