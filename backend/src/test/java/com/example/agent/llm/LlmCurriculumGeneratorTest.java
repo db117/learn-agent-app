@@ -7,6 +7,7 @@ import com.example.agent.llm.infrastructure.LlmCurriculumGenerator;
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionType;
+import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -16,12 +17,16 @@ import reactor.core.publisher.Flux;
 
 import java.util.List;
 
+import org.mockito.ArgumentCaptor;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class LlmCurriculumGeneratorTest {
@@ -102,6 +107,49 @@ class LlmCurriculumGeneratorTest {
         assertEquals(List.of("name = 'Ada'"), result.learnUnit().examples());
         assertEquals("[\"变量\"]", result.independentQuestions().get(0).referenceConceptsJson());
         assertEquals(QuestionType.MULTIPLE_CHOICE, result.independentQuestions().get(0).type());
+    }
+
+    @Test
+    void contentPromptDefinesCodingQuestionFields() {
+        LearnUnit outline = new LearnUnit(
+                "unit", "typescript", "typescript.arrays", "typescript-basics", "数组", "数组基础", 1, List.of(),
+                80, 70, true, List.of("掌握数组"), "", List.of("T[]"), List.of(), true);
+        Model model = model("""
+                {"ability":"声明数组","estimatedMinutes":10,"lessonIntro":"介绍数组",
+                 "examples":["const values: number[] = [1, 2];"],"guidedPracticePrompt":"声明数组",
+                 "guidedPracticeHints":[],"independentCheckPrompt":"完成数组题",
+                 "questions":[{"type":"MULTIPLE_CHOICE","difficulty":1,"prompt":"哪一个是数组？","points":20,
+                   "options":[{"id":"A","text":"number[]"},{"id":"B","text":"number"}],
+                   "correctOptionIds":["A"],"multiple":false,"referenceConcepts":["T[]"]}]}
+                """);
+
+        new LlmCurriculumGenerator(model).generateContent(outline, "context");
+
+        ArgumentCaptor<List<Msg>> messages = ArgumentCaptor.forClass(List.class);
+        verify(model).stream(messages.capture(), anyList(), any(GenerateOptions.class));
+        String prompt = messages.getValue().get(0).getTextContent();
+        assertTrue(prompt.contains("\"type\":\"CODING\""));
+        assertTrue(prompt.contains("\"language\":\"typescript\""));
+        assertTrue(prompt.contains("\"rubric\":{\"correctness\":60,\"languageUsage\":20,\"clarity\":20}"));
+    }
+
+    @Test
+    void reportsCodingValidationReasonInsteadOfCallingItInvalidJson() {
+        LearnUnit outline = new LearnUnit(
+                "unit", "typescript", "typescript.arrays", "typescript-basics", "数组", "数组基础", 1, List.of(),
+                80, 70, true, List.of("掌握数组"), "", List.of("T[]"), List.of(), true);
+        LlmCurriculumGenerator generator = new LlmCurriculumGenerator(model("""
+                {"ability":"声明数组","estimatedMinutes":10,"lessonIntro":"介绍数组",
+                 "examples":["const values: number[] = [1, 2];"],"guidedPracticePrompt":"声明数组",
+                 "guidedPracticeHints":[],"independentCheckPrompt":"完成数组题",
+                 "questions":[{"type":"CODING","difficulty":2,"prompt":"声明一个数组","points":100,
+                   "options":[],"correctOptionIds":[],"multiple":false,"referenceConcepts":["T[]"]}]}
+                """));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> generator.generateContent(outline, "context"));
+
+        assertTrue(error.getMessage().contains("Coding question rubric is required"), error.getMessage());
     }
 
     @Test

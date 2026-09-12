@@ -101,21 +101,34 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                   "guidedPracticePrompt":"...",
                   "guidedPracticeHints":["..."],
                   "independentCheckPrompt":"...",
-                  "questions":[{"type":"MULTIPLE_CHOICE","difficulty":1,"prompt":"...","points":20,
-                    "options":[{"id":"A","text":"..."},{"id":"B","text":"..."}],
-                    "correctOptionIds":["A"],"multiple":false,"referenceConcepts":["..."]}]
+                  "questions":[
+                    {"type":"MULTIPLE_CHOICE","difficulty":1,"prompt":"...","points":20,
+                      "options":[{"id":"A","text":"..."},{"id":"B","text":"..."}],
+                      "correctOptionIds":["A"],"multiple":false,"referenceConcepts":["..."]},
+                    {"type":"CODING","difficulty":2,"prompt":"...","points":80,
+                      "language":"%s","starterCode":"","rubric":{"correctness":60,"languageUsage":20,"clarity":20},
+                      "referenceConcepts":["..."]}
+                  ]
                 }
                 学习者背景：%s
-                LearnUnit 大纲：code=%s, name=%s, description=%s, objectives=%s, concepts=%s
+                LearnUnit 大纲：目标语言=%s, code=%s, name=%s, description=%s, objectives=%s, concepts=%s
                 ability 必须只有一个能力，estimatedMinutes 必须是 1 到 30 的整数。
                 lessonIntro 不超过 2000 字；examples 至少一个且不超过 5 个；guidedPracticePrompt 和 independentCheckPrompt 必须具体。
                 questions 必须包含 1 到 5 道固定的独立检查题，只能使用 MULTIPLE_CHOICE 或 CODING，且必须能验证这个 LearnUnit。
+                MULTIPLE_CHOICE 必须提供 options、correctOptionIds、multiple；CODING 必须提供 language、starterCode 和 rubric，不能使用选择题字段。
+                CODING 的 language 必须是目标语言；rubric 必须是 JSON 对象，键为 correctness、languageUsage、clarity，值为 0 到 100 的整数且总和为 100。
                 不要生成诊断题、分数结论或多个能力。
                 """.formatted(
-                learningContext == null ? "" : learningContext.trim(), outline.code(), outline.name(),
-                outline.description(), outline.learningObjectives(), outline.keyConcepts());
+                outline.languageCode(), learningContext == null ? "" : learningContext.trim(), outline.languageCode(),
+                outline.code(), outline.name(), outline.description(), outline.learningObjectives(), outline.keyConcepts());
+        String response = AgentScopeTextGenerator.generate(model, prompt);
+        JsonNode root;
         try {
-            JsonNode root = MAPPER.readTree(extractJson(AgentScopeTextGenerator.generate(model, prompt)));
+            root = MAPPER.readTree(extractJson(response));
+        } catch (Exception error) {
+            throw new IllegalArgumentException("LearnUnit content generator returned invalid JSON", error);
+        }
+        try {
             JsonNode abilities = root.get("abilities");
             if (abilities != null && (!abilities.isArray() || abilities.size() != 1)) {
                 throw new IllegalArgumentException("LearnUnit content must contain exactly one ability");
@@ -137,7 +150,10 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
             LearnUnitContentValidator.validate(outline, content, questions);
             return new GeneratedLearnUnitContent(content, questions);
         } catch (Exception error) {
-            throw new IllegalArgumentException("LearnUnit content generator returned invalid JSON", error);
+            String reason = error.getMessage();
+            throw new IllegalArgumentException(
+                    "LearnUnit content generator returned invalid content"
+                            + (reason == null || reason.isBlank() ? "" : ": " + reason), error);
         }
     }
 
