@@ -6,6 +6,7 @@ import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.journey.LearnerProfile;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * 诊断和 LearnUnit 评估选题策略接口，与 LLM 提供商解耦。
@@ -29,4 +30,14 @@ public interface DiagnosticQuestionPlanner {
             List<LearnUnit> learnUnits,
             List<Question> availableQuestions,
             LearnerProfile profile);
+
+    /** Optional model activity callback; the default keeps deterministic planners unchanged. */
+    default List<Question> plan(
+            LearningLanguage language,
+            List<LearnUnit> learnUnits,
+            List<Question> availableQuestions,
+            LearnerProfile profile,
+            Consumer<String> onText) {
+        return plan(language, learnUnits, availableQuestions, profile);
+    }
 }

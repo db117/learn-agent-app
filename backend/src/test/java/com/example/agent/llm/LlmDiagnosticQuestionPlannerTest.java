@@ -13,8 +13,11 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
@@ -41,5 +44,31 @@ class LlmDiagnosticQuestionPlannerTest {
                 new LearningLanguage("language", "python", "Python", "path", true),
                 List.of(learnUnit), List.<Question>of(),
                 new LearnerProfile("journey", "Java", 1, "", "learn Python")));
+    }
+
+    @Test
+    void reportsModelActivityThroughTheOptionalCallback() {
+        Model model = mock(Model.class);
+        String response = "{\"questions\":[{\"learnUnitCode\":\"python.basics\",\"type\":\"MULTIPLE_CHOICE\","
+                + "\"difficulty\":1,\"prompt\":\"哪个是变量？\",\"points\":20,"
+                + "\"options\":[{\"id\":\"A\",\"text\":\"name\"},{\"id\":\"B\",\"text\":\"123\"}],"
+                + "\"correctOptionIds\":[\"A\"],\"multiple\":false}]}";
+        when(model.stream(anyList(), anyList(), any(GenerateOptions.class))).thenReturn(
+                Flux.just(ChatResponse.builder()
+                        .content(List.of(TextBlock.builder().text(response).build()))
+                        .build()));
+        LearnUnit learnUnit = new LearnUnit(
+                "unit", "python", "python.basics", "python-basics", "基础", "基础", 1, List.of(), 80, null,
+                true, List.of("目标"), "介绍", List.of("概念"), List.of("示例"), true);
+        AtomicInteger callbacks = new AtomicInteger();
+
+        List<Question> questions = new LlmDiagnosticQuestionPlanner(model).plan(
+                new LearningLanguage("language", "python", "Python", "path", true),
+                List.of(learnUnit), List.of(),
+                new LearnerProfile("journey", "Java", 1, "", "learn Python"),
+                ignored -> callbacks.incrementAndGet());
+
+        assertEquals(1, questions.size());
+        assertTrue(callbacks.get() > 0);
     }
 }

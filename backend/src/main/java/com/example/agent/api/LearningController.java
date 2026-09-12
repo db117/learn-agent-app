@@ -13,6 +13,7 @@ import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.catalog.LearnUnitContentRunService;
+import com.example.agent.learning.diagnostic.DiagnosticQuestionRunService;
 import com.example.agent.learning.journey.LearnerProfile;
 import com.example.agent.learning.journey.JourneyDraftInput;
 import com.example.agent.learning.journey.JourneyDraftRunService;
@@ -66,6 +67,7 @@ public class LearningController {
     private final TutorSessionService tutorSessions;
     private final JourneyDraftRunService journeyDrafts;
     private final LearnUnitContentRunService learnUnitContentRuns;
+    private final DiagnosticQuestionRunService diagnosticQuestionRuns;
     private final GenerationRunService generation;
     private final AppProperties properties;
 
@@ -78,6 +80,7 @@ public class LearningController {
             TutorSessionService tutorSessions,
             JourneyDraftRunService journeyDrafts,
             LearnUnitContentRunService learnUnitContentRuns,
+            DiagnosticQuestionRunService diagnosticQuestionRuns,
             GenerationRunService generation,
             AppProperties properties) {
         this.learning = learning;
@@ -88,6 +91,7 @@ public class LearningController {
         this.tutorSessions = tutorSessions;
         this.journeyDrafts = journeyDrafts;
         this.learnUnitContentRuns = learnUnitContentRuns;
+        this.diagnosticQuestionRuns = diagnosticQuestionRuns;
         this.generation = generation;
         this.properties = properties;
     }
@@ -145,6 +149,8 @@ public class LearningController {
             journeyDrafts.cancel(runId);
         } else if ("LEARN_UNIT_CONTENT".equals(run.operation())) {
             learnUnitContentRuns.cancel(runId);
+        } else if ("DIAGNOSTIC_QUESTIONS".equals(run.operation())) {
+            diagnosticQuestionRuns.cancel(runId);
         } else {
             run.cancel("本次生成已取消。");
         }
@@ -224,7 +230,8 @@ public class LearningController {
                 })
                 .toList();
         return new JourneyDetailResponse(
-                journey, learning.findProfile(id).orElse(null), chapters, path);
+                journey, learning.findProfile(id).orElse(null), chapters, path,
+                learning.findDiagnosticAssessment(id).map(Assessment::id).orElse(null));
     }
 
     /** 查询 Journey 的完整学习路径，包括历史节点。 */
@@ -251,6 +258,18 @@ public class LearningController {
     @PostMapping("/journeys/{id}/archive")
     public LearningJourney archive(@PathVariable String id) {
         return journeys.archive(id);
+    }
+
+    /** 创建或恢复 Journey 的诊断题集；需要模型时立即返回 runId。 */
+    @PostMapping("/journeys/{journeyId}/diagnostic")
+    public Mono<DiagnosticStartResponse> diagnostic(@PathVariable String journeyId) {
+        return Mono.fromCallable(() -> {
+                    var started = diagnosticQuestionRuns.start(journeyId);
+                    return new DiagnosticStartResponse(
+                            started.runId(),
+                            started.assessment() == null ? null : AssessmentResponse.from(started.assessment()));
+                })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     /** 查询评估及其进行中/历史答案，用于页面恢复。 */
@@ -567,7 +586,8 @@ public class LearningController {
             LearningJourney journey,
             LearnerProfile profile,
             List<ChapterDetail> chapters,
-            List<LearningPathItem> path) {
+            List<LearningPathItem> path,
+            String diagnosticAssessmentId) {
     }
 
     /** Journey 详情中的一个 Chapter 进度块。 */
@@ -607,6 +627,10 @@ public class LearningController {
             LearningPathItem pathItem,
             List<AssessmentAttempt> attempts,
             List<QuestionAttempt> questionAttempts) {
+    }
+
+    /** Typed diagnostic start response; only one of runId or assessment is populated. */
+    public record DiagnosticStartResponse(String runId, AssessmentResponse assessment) {
     }
 
     /**

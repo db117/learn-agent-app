@@ -16,6 +16,7 @@ import {
   type AssessmentResultResponse,
   type BackendHealth,
   type CreateJourneyInput,
+  type DiagnosticQuestionPreview,
   type JourneyDetail,
   type JourneyOutlinePreview,
   type LearnUnit,
@@ -109,6 +110,7 @@ export default function App() {
   const [draftRunId, setDraftRunId] = useState<string | null>(null);
   const [learnUnitRunId, setLearnUnitRunId] = useState<string | null>(null);
   const [learnUnitRunCode, setLearnUnitRunCode] = useState<string | null>(null);
+  const [diagnosticRunId, setDiagnosticRunId] = useState<string | null>(null);
   const [form, setForm] = useState<JourneyForm>({
     languageCode: "",
     goal: "Build a practical programming foundation",
@@ -135,8 +137,14 @@ export default function App() {
     eventsUrl: api.generationRunEventsUrl,
     cancel: api.cancelGenerationRun,
   });
+  const diagnosticGeneration = useGenerationRun<DiagnosticQuestionPreview>({
+    runId: diagnosticRunId,
+    eventsUrl: api.generationRunEventsUrl,
+    cancel: api.cancelGenerationRun,
+  });
   const handledDraftCompletion = useRef<string | null>(null);
   const handledLearnUnitCompletion = useRef<string | null>(null);
+  const handledDiagnosticCompletion = useRef<string | null>(null);
   const {
     tutor,
     tutorInput,
@@ -153,10 +161,12 @@ export default function App() {
   function resetLearningState() {
     if (draftRunId) void api.cancelJourneyDraft(draftRunId).catch(() => undefined);
     if (learnUnitRunId) void api.cancelGenerationRun(learnUnitRunId).catch(() => undefined);
+    if (diagnosticRunId) void api.cancelGenerationRun(diagnosticRunId).catch(() => undefined);
     resetTutor();
     setDraftRunId(null);
     setLearnUnitRunId(null);
     setLearnUnitRunCode(null);
+    setDiagnosticRunId(null);
     setJourney(null);
     setLearnUnits([]);
     setLearnUnit(null);
@@ -317,6 +327,38 @@ export default function App() {
       }
     })();
   }, [journeyId, learnUnitGeneration.events, learnUnitRunCode, learnUnitRunId]);
+
+  useEffect(() => {
+    const next = diagnosticGeneration.events.at(-1);
+    if (!diagnosticRunId || !next) return;
+    if (next.status === "FAILED" || next.status === "CANCELLED") {
+      setBusy(false);
+      setError(next.content);
+      return;
+    }
+    if (next.status !== "COMPLETED" || handledDiagnosticCompletion.current === diagnosticRunId) return;
+    handledDiagnosticCompletion.current = diagnosticRunId;
+    const assessmentId = next.resourceId;
+    if (!assessmentId) {
+      setError("诊断题已生成，但 Assessment 编号缺失");
+      setBusy(false);
+      return;
+    }
+    void (async () => {
+      try {
+        const created = await api.assessment(assessmentId);
+        const started = created.openAttempt ? created : await api.startAssessment(assessmentId);
+        hydrateAssessment(started);
+        setQuestionIndex(firstUnanswered(started));
+        setDiagnosticRunId(null);
+        setBusy(false);
+        setView("diagnostic");
+      } catch (cause) {
+        setError(errorMessage(cause, "诊断题已保存，但 Assessment 加载失败"));
+        setBusy(false);
+      }
+    })();
+  }, [diagnosticGeneration.events, diagnosticRunId]);
 
   useEffect(() => {
     if (!journey?.journey.id) return;
@@ -701,6 +743,31 @@ export default function App() {
     saveTheme(nextTheme);
   }
 
+  async function startDiagnostic() {
+    if (!journeyId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const started = await api.startDiagnostic(journeyId);
+      if (started.runId) {
+        setDiagnosticRunId(started.runId);
+        setView("diagnostic");
+        return;
+      }
+      if (!started.assessment) throw new Error("诊断入口未返回 Assessment");
+      const assessmentToOpen = started.assessment.openAttempt
+        ? started.assessment
+        : await api.startAssessment(started.assessment.assessment.id);
+      hydrateAssessment(assessmentToOpen);
+      setQuestionIndex(firstUnanswered(assessmentToOpen));
+      setView("diagnostic");
+    } catch (cause) {
+      setError(errorMessage(cause, "无法开始诊断"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function openSettings() {
     if (draftRunId || activeTutorRunId) {
       setError("Agent 正在运行，请等待本次调用结束后再修改模型设置。");
@@ -810,6 +877,15 @@ export default function App() {
                   : ""}
               theme={theme}
               busy={busy}
+              generation={view === "diagnostic" ? {
+                events: diagnosticGeneration.events,
+                status: diagnosticGeneration.status,
+                stage: diagnosticGeneration.stage,
+                elapsedMs: diagnosticGeneration.elapsedMs,
+                connection: diagnosticGeneration.connection,
+                preview: diagnosticGeneration.preview,
+                onCancel: diagnosticGeneration.cancel,
+              } : undefined}
               onSelectedOptionIds={(selectedOptionIds) => {
                 if (!currentQuestion) return;
                 setAnswers((current) => ({
@@ -856,6 +932,7 @@ export default function App() {
               learnUnit={learnUnit}
               busy={busy}
               generationActive={learnUnitRunId !== null && learnUnitGeneration.status === "RUNNING"}
+              diagnosticGenerationActive={diagnosticRunId !== null && diagnosticGeneration.status === "RUNNING"}
               generation={{
                 events: learnUnitGeneration.events,
                 status: learnUnitGeneration.status,
@@ -875,6 +952,7 @@ export default function App() {
               onOpenReviewLearnUnit={openReviewLearnUnit}
               onPracticeCompletedLearnUnit={practiceCompletedLearnUnit}
               onStartChapterSynthesis={startChapterSynthesis}
+              onStartDiagnostic={startDiagnostic}
               onRetryCurrentLearnUnit={retryCurrentLearnUnit}
               onStartLearnUnitAssessment={startLearnUnitAssessment}
               onAdvancePhase={advancePhase}

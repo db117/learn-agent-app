@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * 使用 AgentScope Model 按需规划诊断或 LearnUnit 评估题集。
@@ -49,6 +50,17 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
             List<LearnUnit> learnUnits,
             List<Question> availableQuestions,
             LearnerProfile profile) {
+        return plan(language, learnUnits, availableQuestions, profile, ignored -> {
+        });
+    }
+
+    @Override
+    public List<Question> plan(
+            LearningLanguage language,
+            List<LearnUnit> learnUnits,
+            List<Question> availableQuestions,
+            LearnerProfile profile,
+            Consumer<String> onText) {
         Map<String, Question> existing = new HashMap<>();
         for (Question question : availableQuestions) existing.put(question.id(), question);
         Map<String, LearnUnit> learnUnitsByCode = new HashMap<>();
@@ -74,7 +86,7 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
                 """.formatted(language.code(), profile, learnUnits, availableQuestions);
         String text;
         try {
-            text = AgentScopeTextGenerator.generate(model, prompt);
+            text = AgentScopeTextGenerator.generate(model, prompt, onText);
         } catch (RuntimeException error) {
             throw new IllegalStateException("Assessment question planner is unavailable", error);
         }

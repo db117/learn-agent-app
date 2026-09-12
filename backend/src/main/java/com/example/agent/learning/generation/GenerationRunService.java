@@ -142,7 +142,7 @@ public final class GenerationRunService {
         public synchronized void modelActivity() {
             if (modelActivityPublished) return;
             modelActivityPublished = true;
-            emit("model_preview", "CALLING_MODEL", "大模型", "大模型已开始返回课程大纲，正在整理安全预览。", null);
+            emit("model_preview", "CALLING_MODEL", "大模型", "大模型已开始返回内容，正在整理安全预览。", null);
         }
 
         public synchronized void complete(String content, Object preview, String resourceType, String resourceId) {

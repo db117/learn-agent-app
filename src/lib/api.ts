@@ -265,6 +265,7 @@ export type JourneyDetail = {
   profile: LearnerProfile | null;
   chapters: JourneyChapter[];
   path: LearningPathItem[];
+  diagnosticAssessmentId: string | null;
 };
 
 export type JourneyChapter = {
@@ -323,7 +324,12 @@ export type LearnUnitContentPreview = {
   independentQuestionCount: number;
 };
 
-export type GenerationPreview = JourneyOutlinePreview | LearnUnitContentPreview;
+export type DiagnosticQuestionPreview = {
+  questionCount: number;
+  questions: Array<{learnUnitCode: string; type: string; stem: string}>;
+};
+
+export type GenerationPreview = JourneyOutlinePreview | LearnUnitContentPreview | DiagnosticQuestionPreview;
 
 export type GenerationEvent<TPreview = GenerationPreview> = {
   sequence: number;
@@ -347,6 +353,7 @@ export type JourneyDraftEvent = GenerationEvent<JourneyOutlinePreview>;
 export type JourneyDraftStartResponse = {runId: string};
 export type LearnUnitEntryResponse = LearnUnitResponse | JourneyDraftStartResponse;
 export type JourneyDraftAck = {status: string};
+export type DiagnosticStartResponse = {runId: string | null; assessment: AssessmentResponse | null};
 
 /** 完整数据库替换成功后的结果；是否重启 Tauri 由界面决定。 */
 export type DatabaseImportResponse = {
@@ -451,6 +458,8 @@ export const api = {
     `${API_BASE}/learning/generation-runs/${encodeURIComponent(runId)}/events`,
   cancelGenerationRun: (runId: string) => request<JourneyDraftAck>(
     `/learning/generation-runs/${encodeURIComponent(runId)}/cancel`, {method: "POST"}),
+  startDiagnostic: (journeyId: string) => request<DiagnosticStartResponse>(
+    `/learning/journeys/${encodeURIComponent(journeyId)}/diagnostic`, {method: "POST"}),
   assessment: (id: string) => request<AssessmentResponse>(`/learning/assessments/${id}`),
   startAssessment: (id: string) => request<AssessmentResponse>(`/learning/assessments/${id}/start`, {method: "POST"}),
   answer: (id: string, answer: { questionId: string; selectedOptionIds: string[]; submittedCode: string }) =>

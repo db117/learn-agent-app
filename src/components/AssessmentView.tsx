@@ -1,5 +1,6 @@
 import Editor from "@monaco-editor/react";
-import type {AssessmentResponse, Question} from "../lib/api";
+import type {AssessmentResponse, DiagnosticQuestionPreview, GenerationEvent, Question} from "../lib/api";
+import {GenerationProgressPanel} from "./GenerationProgressPanel";
 
 export type AnswerDraft = { selectedOptionIds: string[]; submittedCode: string };
 type QuestionOption = { id: string; text: string };
@@ -41,6 +42,15 @@ type AssessmentViewProps = {
     questionLearnUnitName: string;
     theme: Theme;
     busy: boolean;
+    generation?: {
+        events: GenerationEvent<DiagnosticQuestionPreview>[];
+        status: GenerationEvent["status"];
+        stage: string;
+        elapsedMs: number;
+        connection: "connected" | "reconnecting";
+        preview: DiagnosticQuestionPreview | null;
+        onCancel: () => void | Promise<unknown>;
+    };
     onSelectedOptionIds: (selectedOptionIds: string[]) => void;
     onCodeChange: (submittedCode: string) => void;
     onBack: () => void | Promise<void>;
@@ -77,12 +87,23 @@ export function AssessmentView({
                                    questionLearnUnitName,
                                    theme,
                                    busy,
+                                   generation,
                                    onSelectedOptionIds,
                                    onCodeChange,
                                    onBack,
                                    onNext,
                                }: AssessmentViewProps) {
-    if (!assessment || !currentQuestion) return <p className="empty">正在准备题目…</p>;
+    if (!assessment || !currentQuestion) return generation?.events.length ? <section className="assessment panel">
+        <GenerationProgressPanel operation="诊断题" events={generation.events} status={generation.status}
+                                 stage={generation.stage} elapsedMs={generation.elapsedMs}
+                                 connection={generation.connection} onCancel={generation.onCancel}/>
+        {generation.preview && <div className="generation-content-preview" aria-live="polite">
+            <div className="section-kicker">SAFE QUESTION PREVIEW</div>
+            <p>已生成 {generation.preview.questionCount} 道诊断题，正在完成校验和保存。</p>
+            <ul>{generation.preview.questions.map((question, index) =>
+                <li key={`${question.learnUnitCode}-${index}`}>{question.stem}</li>)}</ul>
+        </div>}
+    </section> : <p className="empty">正在准备题目…</p>;
     const diagnostic = assessment.assessment.type === "DIAGNOSTIC";
     const synthesis = assessment.assessment.type === "CHAPTER_SYNTHESIS";
     const questionConfig = parseQuestionConfig(currentQuestion.configJson);

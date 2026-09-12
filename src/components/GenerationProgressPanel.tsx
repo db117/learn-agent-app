@@ -7,7 +7,7 @@ type GenerationProgressPanelProps = {
   stage: string;
   elapsedMs: number;
   connection: "connected" | "reconnecting";
-  onCancel: () => void | Promise<void>;
+  onCancel: () => void | Promise<unknown>;
 };
 
 function statusLabel(status: GenerationEvent["status"]) {

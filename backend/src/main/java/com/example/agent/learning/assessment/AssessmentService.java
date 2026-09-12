@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * 评估编排服务。
@@ -69,26 +70,34 @@ public class AssessmentService {
      */
     @Transactional
     public AssessmentState createDiagnostic(String journeyId) {
+        return createDiagnostic(journeyId, null, ignored -> {
+        });
+    }
+
+    public boolean requiresDiagnosticGeneration(String journeyId) {
+        if (repository.findDiagnosticAssessment(journeyId).isPresent()) return false;
+        DiagnosticInput input = diagnosticInput(journeyId);
+        return !hasCoverage(input.available(), input.learnUnits(), MIN_DIAGNOSTIC_EVIDENCE);
+    }
+
+    /** Creates the fixed diagnostic set while reporting safe lifecycle milestones to its run adapter. */
+    @Transactional
+    public AssessmentState createDiagnostic(
+            String journeyId,
+            Consumer<String> onModelText,
+            Consumer<DiagnosticGenerationProgress> onProgress) {
         return repository.findDiagnosticAssessment(journeyId)
                 .map(this::state)
                 .orElseGet(() -> {
-                    var journey = requireJourney(journeyId);
-                    LearningLanguage language = repository.findLanguage(journey.languageCode()).orElseThrow();
-                    List<LearnUnit> learnUnits = repository.listLearnUnitsForJourney(journeyId).stream()
-                            .filter(LearnUnit::diagnosticEligible)
-                            .toList();
-                    if (learnUnits.isEmpty()) throw new IllegalStateException("No diagnostic LearnUnits are available");
-                    Set<String> eligibleCodes = learnUnits.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
-                    List<Question> available = repository.listDiagnosticQuestionsForJourney(journeyId).stream()
-                            .filter(question -> eligibleCodes.contains(question.learnUnitCode()))
-                            .toList();
-                    LearnerProfile profile = repository.findProfile(journeyId)
-                            .orElse(new LearnerProfile(journeyId, "", null, "", journey.goal()));
-                    List<Question> selected = hasCoverage(available, learnUnits, MIN_DIAGNOSTIC_EVIDENCE)
-                            ? normalize(available, learnUnits, available, MIN_DIAGNOSTIC_EVIDENCE)
-                            : planQuestions(language, learnUnits, available, profile, MIN_DIAGNOSTIC_EVIDENCE);
+                    DiagnosticInput input = diagnosticInput(journeyId);
+                    List<Question> selected = hasCoverage(input.available(), input.learnUnits(), MIN_DIAGNOSTIC_EVIDENCE)
+                            ? normalize(input.available(), input.learnUnits(), input.available(), MIN_DIAGNOSTIC_EVIDENCE)
+                            : planQuestions(input.language(), input.learnUnits(), input.available(), input.profile(),
+                            MIN_DIAGNOSTIC_EVIDENCE, onModelText);
                     if (selected.isEmpty()) throw new IllegalStateException("No diagnostic questions are available");
-                    insertNewQuestions(selected, available);
+                    onProgress.accept(new DiagnosticGenerationProgress("VALIDATING", selected));
+                    onProgress.accept(new DiagnosticGenerationProgress("PERSISTING", selected));
+                    insertNewQuestions(selected, input.available());
                     Instant now = Instant.now();
                     Assessment assessment = new Assessment(
                             UUID.randomUUID().toString(), journeyId, null, AssessmentType.DIAGNOSTIC,
@@ -368,10 +377,15 @@ public class AssessmentService {
             List<LearnUnit> learnUnits,
             List<Question> available,
             LearnerProfile profile,
-            int minimumEvidence) {
+            int minimumEvidence,
+            Consumer<String> onModelText) {
         try {
+            List<Question> planned = onModelText == null
+                    ? llmPlanner.plan(language, learnUnits, available, profile)
+                    : llmPlanner.plan(language, learnUnits, available, profile, onModelText);
             return normalize(
-                    llmPlanner.plan(language, learnUnits, available, profile), learnUnits, available, minimumEvidence);
+                    planned,
+                    learnUnits, available, minimumEvidence);
         } catch (RuntimeException error) {
             throw new IllegalStateException("Unable to generate assessment questions", error);
         }
@@ -622,6 +636,35 @@ public class AssessmentService {
     private com.example.agent.learning.journey.LearningJourney requireJourney(String id) {
         return repository.findJourney(id)
                 .orElseThrow(() -> new IllegalArgumentException("journey not found: " + id));
+    }
+
+    private DiagnosticInput diagnosticInput(String journeyId) {
+        var journey = requireJourney(journeyId);
+        LearningLanguage language = repository.findLanguage(journey.languageCode()).orElseThrow();
+        List<LearnUnit> learnUnits = repository.listLearnUnitsForJourney(journeyId).stream()
+                .filter(LearnUnit::diagnosticEligible)
+                .toList();
+        if (learnUnits.isEmpty()) throw new IllegalStateException("No diagnostic LearnUnits are available");
+        Set<String> eligibleCodes = learnUnits.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
+        List<Question> available = repository.listDiagnosticQuestionsForJourney(journeyId).stream()
+                .filter(question -> eligibleCodes.contains(question.learnUnitCode()))
+                .toList();
+        LearnerProfile profile = repository.findProfile(journeyId)
+                .orElse(new LearnerProfile(journeyId, "", null, "", journey.goal()));
+        return new DiagnosticInput(language, learnUnits, available, profile);
+    }
+
+    private record DiagnosticInput(
+            LearningLanguage language,
+            List<LearnUnit> learnUnits,
+            List<Question> available,
+            LearnerProfile profile) {
+    }
+
+    public record DiagnosticGenerationProgress(String stage, List<Question> questions) {
+        public DiagnosticGenerationProgress {
+            questions = List.copyOf(questions == null ? List.of() : questions);
+        }
     }
 
     /**

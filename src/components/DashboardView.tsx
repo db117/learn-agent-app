@@ -16,6 +16,7 @@ type DashboardViewProps = {
     learnUnit: LearnUnitResponse | null;
     busy: boolean;
     generationActive: boolean;
+    diagnosticGenerationActive: boolean;
     generation: {
         events: GenerationEvent[];
         status: GenerationEvent["status"];
@@ -33,6 +34,7 @@ type DashboardViewProps = {
     onOpenReviewLearnUnit: (code: string) => void | Promise<void>;
     onPracticeCompletedLearnUnit: (code: string) => void | Promise<void>;
     onStartChapterSynthesis: (chapterCode: string) => void | Promise<void>;
+    onStartDiagnostic: () => void | Promise<void>;
     onRetryCurrentLearnUnit: () => void | Promise<void>;
     onStartLearnUnitAssessment: () => void | Promise<void>;
     onAdvancePhase: (phase: LearningPhase) => void | Promise<void>;
@@ -70,6 +72,7 @@ export function DashboardView({
                                   learnUnit,
                                   busy,
                                   generationActive,
+                                  diagnosticGenerationActive,
                                   generation,
                                   currentLearnUnit,
                                   hasOpenAttempt,
@@ -79,6 +82,7 @@ export function DashboardView({
                                   onOpenReviewLearnUnit,
                                   onPracticeCompletedLearnUnit,
                                   onStartChapterSynthesis,
+                                  onStartDiagnostic,
                                   onRetryCurrentLearnUnit,
                                   onStartLearnUnitAssessment,
                                   onAdvancePhase,
@@ -112,6 +116,12 @@ export function DashboardView({
             <aside className="path panel">
                 <div className="panel-title"><span>Learning path</span><span
                     className="muted">{passed} passed · {skipped} skipped</span></div>
+                {journey && !journey.diagnosticAssessmentId && <div className="generation-status" role="status">
+                    <strong>开始诊断</strong>
+                    <p>先生成一组固定诊断题，Agent 会展示安全进度，不会展示答案或评分规则。</p>
+                    <button className="primary" onClick={() => void onStartDiagnostic()}
+                            disabled={busy || generationActive || diagnosticGenerationActive}>开始诊断</button>
+                </div>}
                 {reviewDebt && <p className="warning" role="status">
                     Review needed: {learnUnitLabel(learnUnits, reviewDebt.learnUnitCode)}
                 </p>}
