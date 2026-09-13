@@ -59,7 +59,7 @@ export function useGenerationRun<TPreview = unknown>({runId, eventsUrl, cancel}:
 
   return {
     events,
-    status: latest?.status ?? "RUNNING",
+      status: latest?.status ?? (runId ? "RUNNING" : "COMPLETED"),
     stage: latest?.stage ?? "PREPARING",
     preview: preview as TPreview | null,
     elapsedMs,

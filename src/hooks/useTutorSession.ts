@@ -1,6 +1,13 @@
 import type {SyntheticEvent} from "react";
 import {useEffect, useRef, useState} from "react";
-import {api, type LearnUnitResponse, type Message, type SessionDetail, type TutorEvent,} from "../lib/api";
+import {
+    api,
+    type LearnUnitResponse,
+    type Message,
+    type SessionDetail,
+    type TutorEvent,
+    type TutorQuestionContext,
+} from "../lib/api";
 
 type UseTutorSessionOptions = {
     journeyId: string | undefined;
@@ -70,7 +77,9 @@ export function useTutorSession({
         }
     }
 
-    async function sendTutorMessage(event: SyntheticEvent<HTMLFormElement>) {
+    async function sendTutorMessage(
+        event: SyntheticEvent<HTMLFormElement>, questionContext: TutorQuestionContext | null = null,
+    ) {
         event.preventDefault();
         const content = tutorInput.trim();
         if (!tutor || !content) return;
@@ -84,7 +93,7 @@ export function useTutorSession({
         };
         setTutor((current) => current && {...current, messages: [...current.messages, message]});
         try {
-            const sent = await api.sendMessage(tutor.id, content);
+            const sent = await api.sendMessage(tutor.id, content, questionContext);
             if (!terminalRuns.current.has(sent.runId)) setActiveTutorRunId(sent.runId);
         } catch (cause) {
             setError(errorMessage(cause, "Unable to send tutor message"));

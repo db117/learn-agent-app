@@ -2,12 +2,14 @@ import {useEffect, useState} from "react";
 import type {
     GenerationEvent,
     JourneyDetail,
+    LearningPhase,
     LearnUnit,
     LearnUnitContentPreview,
     LearnUnitResponse,
-    LearningPhase,
+    TutorQuestionContext,
 } from "../lib/api";
 import {GenerationProgressPanel} from "./GenerationProgressPanel";
+import {FormattedText} from "./FormattedText";
 import {TutorPanel, type TutorPanelProps} from "./TutorPanel";
 
 type DashboardViewProps = {
@@ -41,7 +43,7 @@ type DashboardViewProps = {
     onSkipPhase: (phase: LearningPhase) => void | Promise<void>;
     onGuidedPractice: (response: string) => void | Promise<void>;
     onSkipCurrentLearnUnit: () => void | Promise<void>;
-    tutor: TutorPanelProps;
+    tutor: Omit<TutorPanelProps, "questionContext">;
 };
 
 function pathStatusLabel(status: string) {
@@ -64,6 +66,28 @@ function phaseLabel(phase: LearningPhase) {
         case "GUIDED_PRACTICE": return "Guided practice";
         case "INDEPENDENT_CHECK": return "Independent check";
     }
+}
+
+function tutorQuestionContext(
+    current: LearnUnitResponse | null,
+    phase: LearningPhase,
+    guidedResponse: string,
+): TutorQuestionContext | null {
+    if (!current) return null;
+    const prompt = phase === "EXPLANATION"
+        ? current.learnUnit.lessonIntro
+        : phase === "EXAMPLE"
+            ? current.learnUnit.examples.join("\n\n")
+            : phase === "GUIDED_PRACTICE"
+                ? current.learnUnit.guidedPracticePrompt
+                : current.learnUnit.independentCheckPrompt;
+    return {
+        phase,
+        prompt,
+        options: [],
+        starterCode: null,
+        answerDraft: phase === "GUIDED_PRACTICE" ? guidedResponse : ""
+    };
 }
 
 export function DashboardView({
@@ -172,7 +196,7 @@ export function DashboardView({
                 {generation.preview && <div className="generation-content-preview" aria-live="polite">
                     <div className="section-kicker">SAFE CONTENT PREVIEW</div>
                     <h3>{generation.preview.ability}</h3>
-                    <p>{generation.preview.lessonIntro}</p>
+                    <FormattedText text={generation.preview.lessonIntro}/>
                     <div className="generation-preview-meta">
                         <span>预计 {generation.preview.estimatedMinutes} 分钟</span>
                         <span>示例 {generation.preview.examples.length} 个</span>
@@ -220,15 +244,15 @@ export function DashboardView({
                             <div className="phase-content">
                                 {phase === "EXPLANATION" && <>
                                     <h3>Explanation</h3>
-                                    <p>{current.learnUnit.lessonIntro}</p>
+                                    <FormattedText text={current.learnUnit.lessonIntro}/>
                                 </>}
                                 {phase === "EXAMPLE" && <>
                                     <h3>Example</h3>
-                                    {current.learnUnit.examples.map((item) => <p key={item}>{item}</p>)}
+                                    {current.learnUnit.examples.map((item) => <FormattedText key={item} text={item}/>)}
                                 </>}
                                 {phase === "GUIDED_PRACTICE" && <>
                                     <h3>Guided practice</h3>
-                                    <p>{current.learnUnit.guidedPracticePrompt}</p>
+                                    <FormattedText text={current.learnUnit.guidedPracticePrompt}/>
                                     {current.learnUnit.guidedPracticeHints.length > 0 && <ul>
                                         {current.learnUnit.guidedPracticeHints.map((item) => <li key={item}>{item}</li>)}
                                     </ul>}
@@ -244,7 +268,7 @@ export function DashboardView({
                                 </>}
                                 {phase === "INDEPENDENT_CHECK" && <>
                                     <h3>Independent check</h3>
-                                    <p>{current.learnUnit.independentCheckPrompt}</p>
+                                    <FormattedText text={current.learnUnit.independentCheckPrompt}/>
                                     {current.pathItem?.skippedPhases.includes("INDEPENDENT_CHECK") &&
                                         <p className="warning" role="status">Independent check 尚未完成；跳过不会算作掌握。</p>}
                                     <button className="primary" onClick={() => void onStartLearnUnitAssessment()}
@@ -299,7 +323,8 @@ export function DashboardView({
                     </>
                 )}
             </section>
-            <TutorPanel {...tutor} learnUnit={hasDetailedContent ? tutor.learnUnit : null} />
+            <TutorPanel {...tutor} learnUnit={hasDetailedContent ? tutor.learnUnit : null}
+                        questionContext={hasDetailedContent ? tutorQuestionContext(current, phase, guidedResponse) : null}/>
         </section>
     );
 }

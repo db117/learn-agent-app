@@ -1,22 +1,11 @@
 package com.example.agent.agent;
 
 import com.example.agent.config.DatabaseTransferCoordinator;
-import com.example.agent.persistence.AgentStatePersistenceException;
-import com.example.agent.persistence.MessageRecord;
-import com.example.agent.persistence.RunRecord;
-import com.example.agent.persistence.SessionRecord;
-import com.example.agent.persistence.SqliteRepository;
-import com.example.agent.persistence.TutorEvent;
+import com.example.agent.persistence.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ThinkingBlockStartEvent;
-import io.agentscope.core.event.ToolCallDeltaEvent;
-import io.agentscope.core.event.ToolCallStartEvent;
-import io.agentscope.core.event.ToolResultEndEvent;
-import io.agentscope.core.event.ToolResultTextDeltaEvent;
+import io.agentscope.core.event.*;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentState;
@@ -93,11 +82,17 @@ public class TutorAgentService {
    * lease，而不是取消提供商流。</p>
    */
     public RunReceipt start(SessionRecord session, String content) {
+        return start(session, content, content);
+    }
+
+    /** 启动一次调用；agentContent 可携带本次页面题面，但不会写入用户消息记录。 */
+    public RunReceipt start(SessionRecord session, String content, String agentContent) {
         if (shuttingDown) throw new IllegalStateException("agent_unavailable");
+        String input = agentContent == null || agentContent.isBlank() ? content : agentContent;
       DatabaseTransferCoordinator.Lease agentLease = transferCoordinator.beginAgentRun();
       try {
         ensureSession(session);
-        return startWithLease(session, content, agentLease);
+          return startWithLease(session, content, input, agentLease);
       } catch (RuntimeException error) {
         agentLease.close();
         throw error;
@@ -105,7 +100,7 @@ public class TutorAgentService {
     }
 
   private RunReceipt startWithLease(
-          SessionRecord session, String content, DatabaseTransferCoordinator.Lease agentLease) {
+          SessionRecord session, String content, String agentContent, DatabaseTransferCoordinator.Lease agentLease) {
         String messageId = UUID.randomUUID().toString();
         String runId = UUID.randomUUID().toString();
         Instant now = Instant.now();
@@ -123,7 +118,7 @@ public class TutorAgentService {
       activeRuns.put(runId, run);
       handedOff = true;
       try {
-        executor.submit(() -> execute(session, run, content));
+          executor.submit(() -> execute(session, run, agentContent));
       } catch (RejectedExecutionException error) {
         finishFailed(run, error);
       }

@@ -492,6 +492,57 @@ ul {
     margin: 1rem 0;
 }
 
+.formatted-text {
+    min-width: 0;
+    color: inherit;
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+}
+
+.formatted-text > * {
+    margin: 0;
+}
+
+.formatted-text > * + * {
+    margin-top: .8rem;
+}
+
+.formatted-text ul, .formatted-text ol {
+    margin: 0;
+    padding-left: 1.35rem;
+}
+
+.formatted-text li + li {
+    margin-top: .35rem;
+}
+
+.formatted-text code {
+    border-radius: 4px;
+    padding: 1px 4px;
+    color: var(--text-code);
+    background: var(--surface-code);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: .92em;
+}
+
+.formatted-code {
+    max-width: 100%;
+    margin: 0;
+    overflow: auto;
+    border: 1px solid var(--border-card);
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: var(--text-code);
+    background: var(--surface-code);
+    font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+    white-space: pre;
+}
+
+.formatted-code code {
+    padding: 0;
+    background: transparent;
+}
+
 .phase-content textarea {
     width: 100%;
     resize: vertical;
@@ -699,12 +750,11 @@ ul {
     font-weight: 700;
 }
 
-.message p {
+.message .formatted-text {
     margin: 5px 0 0;
     color: var(--text-content);
     font-size: 13px;
     line-height: 1.5;
-    white-space: pre-wrap;
 }
 
 .composer {

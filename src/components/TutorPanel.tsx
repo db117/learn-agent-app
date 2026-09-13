@@ -1,5 +1,6 @@
 import type {SyntheticEvent} from "react";
-import type {LearnUnitResponse, SessionDetail, TutorEvent} from "../lib/api";
+import type {LearnUnitResponse, SessionDetail, TutorEvent, TutorQuestionContext} from "../lib/api";
+import {FormattedText} from "./FormattedText";
 
 export type TutorPanelProps = {
     learnUnit: LearnUnitResponse | null;
@@ -8,9 +9,10 @@ export type TutorPanelProps = {
     events: TutorEvent[];
     activeTutorRunId: string | null;
     busy: boolean;
+    questionContext: TutorQuestionContext | null;
     onOpenTutor: () => void | Promise<void>;
     onTutorInputChange: (value: string) => void;
-    onSendTutorMessage: (event: SyntheticEvent<HTMLFormElement>) => void | Promise<void>;
+    onSendTutorMessage: (event: SyntheticEvent<HTMLFormElement>, questionContext: TutorQuestionContext | null) => void | Promise<void>;
     onCancelTutorRun: () => void | Promise<void>;
 };
 
@@ -55,6 +57,7 @@ export function TutorPanel({
                                events,
                                activeTutorRunId,
                                busy,
+                               questionContext,
                                onOpenTutor,
                                onTutorInputChange,
                                onSendTutorMessage,
@@ -79,11 +82,11 @@ export function TutorPanel({
                         {tutor.messages.map((message) => <article className={`message ${message.role}`}
                                                                   key={message.id}>
                             <span className="message-role">{message.role === "user" ? "你" : "Tutor"}</span>
-                            <p>{message.content}</p>
+                            <FormattedText text={message.content}/>
                         </article>)}
                         {!tutor.messages.length && <p className="empty">问一个关于当前 LearnUnit 的问题。</p>}
                     </div>
-                    <form className="composer" onSubmit={(event) => void onSendTutorMessage(event)}>
+                    <form className="composer" onSubmit={(event) => void onSendTutorMessage(event, questionContext)}>
                         <textarea value={tutorInput} onChange={(event) => onTutorInputChange(event.target.value)}
                                   placeholder="例如：如何理解这个概念？" rows={3}/>
                         <button className="primary" type="submit" disabled={!tutorInput.trim()}>发送</button>

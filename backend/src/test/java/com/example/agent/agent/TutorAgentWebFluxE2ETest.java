@@ -5,12 +5,7 @@ import com.example.agent.api.SessionResponse;
 import com.example.agent.persistence.TutorEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import io.agentscope.core.message.ContentBlock;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ThinkingBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.*;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -40,10 +35,7 @@ import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT,
@@ -122,6 +114,36 @@ class TutorAgentWebFluxE2ETest {
                 .reduce("", String::concat));
         assertEquals(sent.runId(), events.get(0).runId());
         assertEquals(1, events.stream().filter(TutorAgentWebFluxE2ETest::isTerminal).count());
+    }
+
+    @Test
+    void sendsTheVisibleQuestionToTutorWithoutSavingItAsTheUserMessage() {
+        DeterministicModel deterministic = (DeterministicModel) model;
+        SessionResponse session = createSession("Current question context");
+
+        client.post()
+                .uri("/api/sessions/{id}/messages", session.id())
+                .bodyValue(Map.of(
+                        "content", "How should I answer?",
+                        "questionContext", Map.of(
+                                "phase", "GUIDED_PRACTICE",
+                                "prompt", "function repeat(text: string, times: number)",
+                                "options", List.of(Map.of("id", "A", "text", "Explain the type error")),
+                                "starterCode", "const result = repeat(\"hi\", \"2\");",
+                                "answerDraft", "tsc reports a type error")))
+                .exchange()
+                .expectStatus().isOk();
+
+        streamUntilTerminal(session.id());
+
+        assertTrue(deterministic.lastRequest.contains("function repeat(text: string, times: number)"));
+        assertTrue(deterministic.lastRequest.contains("tsc reports a type error"));
+        client.get()
+                .uri("/api/sessions/{id}", session.id())
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.messages[0].content").isEqualTo("How should I answer?");
     }
 
     @Test
@@ -392,6 +414,7 @@ class TutorAgentWebFluxE2ETest {
     private static final class DeterministicModel implements Model {
 
         private final String skillId;
+        private volatile String lastRequest = "";
         private volatile CountDownLatch started = new CountDownLatch(0);
         private volatile CountDownLatch cancelled = new CountDownLatch(0);
 
@@ -409,6 +432,7 @@ class TutorAgentWebFluxE2ETest {
                     .map(Msg::getTextContent)
                     .reduce((first, second) -> second)
                     .orElse("");
+            lastRequest = request;
             if (request.equals("Load echo skill") || request.equals("Load missing skill")) {
                 boolean resultProvided = messages.stream()
                         .anyMatch(message -> !message.getContentBlocks(ToolResultBlock.class).isEmpty());

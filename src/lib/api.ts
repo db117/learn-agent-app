@@ -72,6 +72,14 @@ export type SessionDetail = SessionSummary & {
   messages: Message[];
 };
 
+export type TutorQuestionContext = {
+    phase: LearningPhase;
+    prompt: string;
+    options: Array<{ id: string; text: string }>;
+    starterCode: string | null;
+    answerDraft: string;
+};
+
 export type JourneyStatus = "ACTIVE" | "COMPLETED" | "ARCHIVED";
 export type LearningPathItemStatus = "PENDING" | "CURRENT" | "COMPLETED" | "SKIPPED";
 export type LearningPhase = "EXPLANATION" | "EXAMPLE" | "GUIDED_PRACTICE" | "INDEPENDENT_CHECK";
@@ -508,10 +516,10 @@ export const api = {
   tutor: (journeyId: string, learnUnitCode: string) =>
     request<TutorSessionResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/tutor`, {method: "POST"}),
   session: (id: string) => request<SessionDetail>(`/sessions/${id}`),
-  sendMessage: (id: string, content: string) =>
+    sendMessage: (id: string, content: string, questionContext: TutorQuestionContext | null = null) =>
     request<{ runId: string; messageId: string }>(`/sessions/${id}/messages`, {
       method: "POST",
-      body: JSON.stringify({content}),
+        body: JSON.stringify({content, questionContext}),
     }),
   cancelRun: (sessionId: string, runId: string) =>
     request<{status: string}>(`/sessions/${sessionId}/runs/${runId}/cancel`, {method: "POST"}),

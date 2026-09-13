@@ -4,11 +4,7 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.assessment.QuestionType;
-import com.example.agent.learning.catalog.Chapter;
-import com.example.agent.learning.catalog.CurriculumGenerator;
-import com.example.agent.learning.catalog.LearnUnit;
-import com.example.agent.learning.catalog.LearnUnitContentValidator;
-import com.example.agent.learning.catalog.LearningLanguage;
+import com.example.agent.learning.catalog.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -17,13 +13,7 @@ import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.model.Model;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Consumer;
 
 /**
@@ -108,11 +98,14 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         if (outline == null) throw new IllegalArgumentException("LearnUnit outline is required");
         if (outline.hasDetailedContent()) return new GeneratedLearnUnitContent(outline, List.of());
         String prompt = """
-                你是一个学习系统的教学内容作者。请为下面这个已经确认的 LearnUnit 生成一个短小、结构化的教学循环，返回符合 response schema 的 JSON，不要返回 Markdown。
+                你是一个学习系统的教学内容作者。请为下面这个已经确认的 LearnUnit 生成一个短小、结构化的教学循环，返回符合 response schema 的 JSON，不要在 JSON 外返回 Markdown 或解释文字。
                 学习者背景：%s
                 LearnUnit 大纲：目标语言=%s, code=%s, name=%s, description=%s, objectives=%s, concepts=%s
                 ability 必须只有一个能力，estimatedMinutes 必须是 1 到 30 的整数。
-                lessonIntro 不超过 2000 字；examples 至少一个且不超过 5 个；guidedPracticePrompt 和 independentCheckPrompt 必须具体。
+                lessonIntro 不超过 2000 字；examples 至少一个且不超过 5 个；guidedPracticePrompt 和 independentCheckPrompt 必须具体、自洽、仅凭页面内容即可回答。
+                guidedPracticePrompt 必须能在文本输入框中完成：题面内给出所有必要的代码、输入和数据，并明确要求输出或解释；不得要求创建或修改文件、运行终端命令、安装包、访问网络、使用 IDE，或依赖未说明的版本、配置和运行环境。
+                independentCheckPrompt 和每道 question.prompt 也必须提供足够上下文，不得依赖题面外的文件、命令、配置、网络或未说明的版本；CODING 题必须能在页面编辑器中完成。
+                教学文本需要分段时使用换行；展示代码时将代码放在单独的 fenced code block 中，代码围栏内注明语言。
                 guidedPracticeHints 必须是 0 到 3 个提示，不能超过 3 个，每个不超过 300 字。
                 questions 必须包含 1 到 5 道固定的独立检查题，只能使用 MULTIPLE_CHOICE 或 CODING，且必须能验证这个 LearnUnit。
                 CODING 题必须使用目标语言，并且题目内容要能验证这个 LearnUnit 的能力。
