@@ -18,9 +18,12 @@ import com.example.agent.learning.generation.GenerationEvent;
 import com.example.agent.learning.generation.GenerationRunService;
 import com.example.agent.learning.journey.JourneyDraftInput;
 import com.example.agent.learning.journey.JourneyDraftRunService;
+import com.example.agent.learning.journey.LearnUnitSnapshot;
 import com.example.agent.learning.journey.LearnerProfile;
 import com.example.agent.learning.journey.LearningJourney;
+import com.example.agent.learning.journey.LearningJourneyQueryService;
 import com.example.agent.learning.journey.LearningJourneyService;
+import com.example.agent.learning.journey.LearningJourneySnapshot;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.persistence.LearningRepository;
@@ -62,6 +65,7 @@ public class LearningController {
     private final LearningRepository learning;
     private final CurriculumService curriculum;
     private final LearningJourneyService journeys;
+    private final LearningJourneyQueryService journeyQueries;
     private final ProgressService progress;
     private final AssessmentService assessments;
     private final TutorSessionService tutorSessions;
@@ -76,6 +80,7 @@ public class LearningController {
             LearningRepository learning,
             CurriculumService curriculum,
             LearningJourneyService journeys,
+            LearningJourneyQueryService journeyQueries,
             ProgressService progress,
             AssessmentService assessments,
             TutorSessionService tutorSessions,
@@ -88,6 +93,7 @@ public class LearningController {
         this.learning = learning;
         this.curriculum = curriculum;
         this.journeys = journeys;
+        this.journeyQueries = journeyQueries;
         this.progress = progress;
         this.assessments = assessments;
         this.tutorSessions = tutorSessions;
@@ -189,37 +195,15 @@ public class LearningController {
     /** 查询 Journey、画像、完整 Path 和 LearnUnit 状态。 */
     @GetMapping("/journeys/{id}")
     public JourneyDetailResponse journey(@PathVariable String id) {
-        LearningJourney journey = journeys.get(id);
-        List<LearningPathItem> path = learning.listPath(id);
-        List<LearnUnit> learnUnits = learning.listLearnUnitsForJourney(id);
-        List<ChapterDetail> chapters = learning.listChaptersForJourney(id).stream()
-                .map(chapter -> {
-                    List<LearnUnit> chapterUnits = learnUnits.stream()
-                            .filter(unit -> unit.chapterCode().equals(chapter.code()))
-                            .toList();
-                    List<LearningPathItem> chapterPath = path.stream()
-                            .filter(item -> chapterUnits.stream()
-                                    .anyMatch(unit -> unit.code().equals(item.learnUnitCode())))
-                            .toList();
-                    int unresolvedCount = (int) chapterPath.stream()
-                            .filter(item -> item.status() != com.example.agent.learning.path.LearningPathItemStatus.COMPLETED
-                                    || item.needsReview())
-                            .count();
-                    var synthesis = learning.findLatestChapterSynthesisAssessment(id, chapter.code());
-                    return new ChapterDetail(
-                            chapter, chapterUnits, chapterPath,
-                            (int) chapterPath.stream().filter(item -> item.status()
-                                    == com.example.agent.learning.path.LearningPathItemStatus.COMPLETED).count(),
-                            (int) chapterPath.stream().filter(item -> item.status()
-                                    == com.example.agent.learning.path.LearningPathItemStatus.SKIPPED).count(),
-                            unresolvedCount, progress.isChapterSynthesisEligible(id, chapter.code()),
-                            learning.hasPassedChapterSynthesis(id, chapter.code()),
-                            synthesis.map(Assessment::id).orElse(null));
-                })
+        LearningJourneySnapshot snapshot = journeyQueries.journey(id);
+        List<ChapterDetail> chapters = snapshot.chapters().stream()
+                .map(chapter -> new ChapterDetail(
+                        chapter.chapter(), chapter.learnUnits(), chapter.path(), chapter.completedCount(),
+                        chapter.skippedCount(), chapter.unresolvedCount(), chapter.synthesisAvailable(),
+                        chapter.synthesisCompleted(), chapter.synthesisAssessmentId()))
                 .toList();
         return new JourneyDetailResponse(
-                journey, learning.findProfile(id).orElse(null), chapters, path,
-                learning.findDiagnosticAssessment(id).map(Assessment::id).orElse(null));
+                snapshot.journey(), snapshot.profile(), chapters, snapshot.path(), snapshot.diagnosticAssessmentId());
     }
 
     /** 创建或恢复 Journey 的诊断题集；需要模型时立即返回 runId。 */
@@ -434,15 +418,10 @@ public class LearningController {
     @GetMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}")
     public LearnUnitResponse learnUnit(
             @PathVariable String journeyId, @PathVariable String learnUnitCode) {
-        LearningJourney journey = journeys.get(journeyId);
-        LearnUnit learnUnit = learning.listLearnUnitsForJourney(journeyId).stream()
-                .filter(value -> value.code().equals(learnUnitCode))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("LearnUnit not found: " + learnUnitCode));
+        LearnUnitSnapshot snapshot = journeyQueries.learnUnit(journeyId, learnUnitCode);
         return new LearnUnitResponse(
-                journeyId, learnUnit, learning.findPathItem(journeyId, learnUnitCode).orElse(null),
-                learning.listAttemptsForLearnUnit(journeyId, learnUnitCode),
-                learning.listQuestionAttemptsForLearnUnit(journeyId, learnUnitCode).stream()
+                snapshot.journeyId(), snapshot.learnUnit(), snapshot.pathItem(), snapshot.attempts(),
+                snapshot.questionAttempts().stream()
                         .map(attempt -> publicQuestionAttempt(attempt, false)).toList());
     }
 

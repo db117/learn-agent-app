@@ -379,6 +379,11 @@ public class ProgressService {
         }
     }
 
+    /** Journey 详情使用的无副作用 synthesis 通过查询。 */
+    public boolean hasPassedChapterSynthesis(String journeyId, String chapterCode) {
+        return repository.hasPassedChapterSynthesis(journeyId, chapterCode);
+    }
+
     /** 记录 Chapter synthesis 结果；失败只增加相关 review debt，不创建新的路径节点。 */
     @Transactional
     public ChapterSynthesisOutcome recordChapterSynthesis(
