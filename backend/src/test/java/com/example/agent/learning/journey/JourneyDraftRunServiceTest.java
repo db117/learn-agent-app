@@ -48,14 +48,14 @@ class JourneyDraftRunServiceTest {
             JourneyDraftRunService service = new JourneyDraftRunService(curriculum, journeys, generation);
 
             String runId = service.start("local", input);
-            service.events(runId)
+            generation.events(runId)
                     .filter(event -> event.eventType().equals("draft_ready"))
                     .next()
                     .block(Duration.ofSeconds(2));
 
             verify(journeys, never()).confirmOutline(anyString(), anyString(), any(), any());
 
-            var nextOutline = service.events(runId)
+            var nextOutline = generation.events(runId)
                     .filter(event -> event.eventType().equals("draft_ready"))
                     .skip(1)
                     .next();
@@ -67,7 +67,7 @@ class JourneyDraftRunServiceTest {
             assertTrue(contexts.getAllValues().get(1).contains("增加泛型和 API 错误处理"));
 
             service.confirm(runId);
-            assertTrue(service.events(runId)
+            assertTrue(generation.events(runId)
                     .filter(event -> event.eventType().equals("completed"))
                     .next()
                     .block(Duration.ofSeconds(2)) != null);
@@ -98,7 +98,7 @@ class JourneyDraftRunServiceTest {
             JourneyDraftRunService service = new JourneyDraftRunService(curriculum, journeys, generation);
 
             String runId = service.start("local", input);
-            List<GenerationEvent> events = service.events(runId)
+            List<GenerationEvent> events = generation.events(runId)
                     .takeUntil(event -> event.eventType().equals("draft_ready"))
                     .collectList()
                     .block(Duration.ofSeconds(2));

@@ -324,11 +324,16 @@ export type DiagnosticQuestionPreview = {
 };
 
 export type GenerationPreview = JourneyOutlinePreview | LearnUnitContentPreview | DiagnosticQuestionPreview;
+export type GenerationOperation =
+    | "JOURNEY_OUTLINE"
+    | "LEARN_UNIT_CONTENT"
+    | "DIAGNOSTIC_QUESTIONS"
+    | "CODING_EVALUATION";
 
 export type GenerationEvent<TPreview = GenerationPreview> = {
   sequence: number;
   runId: string;
-  operation: string;
+  operation: GenerationOperation;
   stage: string;
   author: string;
     eventType: "run_started" | "user_message" | "agent_message" | "model_delta" | "stage_changed"
@@ -444,8 +449,6 @@ export const api = {
     }),
   confirmJourneyDraft: (runId: string) => request<JourneyDraftAck>(
     `/learning/journey-drafts/${encodeURIComponent(runId)}/confirm`, {method: "POST"}),
-  cancelJourneyDraft: (runId: string) => request<JourneyDraftAck>(
-  `/learning/journey-drafts/${encodeURIComponent(runId)}/cancel`, {method: "POST"}),
   generationRunEventsUrl: (runId: string) =>
     `${API_BASE}/learning/generation-runs/${encodeURIComponent(runId)}/events`,
   cancelGenerationRun: (runId: string) => request<JourneyDraftAck>(
@@ -505,5 +508,4 @@ export const api = {
   cancelRun: (sessionId: string, runId: string) =>
     request<{status: string}>(`/sessions/${sessionId}/runs/${runId}/cancel`, {method: "POST"}),
   eventsUrl: (id: string) => `${API_BASE}/sessions/${id}/events`,
-  journeyDraftEventsUrl: (runId: string) => `${API_BASE}/learning/journey-drafts/${encodeURIComponent(runId)}/events`,
 };

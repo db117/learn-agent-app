@@ -122,7 +122,7 @@ public class LearningController {
             @PathVariable String runId,
             @org.springframework.web.bind.annotation.RequestHeader(name = "Last-Event-ID", required = false)
             String lastEventId) {
-        return journeyDrafts.events(runId, parseLastEventId(lastEventId))
+        return generation.events(runId, parseLastEventId(lastEventId))
                 .map(event -> org.springframework.http.codec.ServerSentEvent.<GenerationEvent>builder(event)
                         .id(Long.toString(event.sequence())).build());
     }
@@ -141,18 +141,7 @@ public class LearningController {
     /** 显式取消生成；SSE 断开不会触发取消。 */
     @PostMapping("/generation-runs/{runId}/cancel")
     public JourneyDraftAck cancelGenerationRun(@PathVariable String runId) {
-        GenerationRunService.Run run = generation.run(runId);
-        if ("JOURNEY_OUTLINE".equals(run.operation())) {
-            journeyDrafts.cancel(runId);
-        } else if ("LEARN_UNIT_CONTENT".equals(run.operation())) {
-            learnUnitContentRuns.cancel(runId);
-        } else if ("DIAGNOSTIC_QUESTIONS".equals(run.operation())) {
-            diagnosticQuestionRuns.cancel(runId);
-        } else if ("CODING_EVALUATION".equals(run.operation())) {
-            codingEvaluationRuns.cancel(runId);
-        } else {
-            run.cancel("本次生成已取消。");
-        }
+        generation.cancel(runId);
         return new JourneyDraftAck("cancelled");
     }
 
@@ -187,7 +176,7 @@ public class LearningController {
     /** 取消未确认的大纲生成，不写入学习数据。 */
     @PostMapping("/journey-drafts/{runId}/cancel")
     public JourneyDraftAck cancelJourneyDraft(@PathVariable String runId) {
-        journeyDrafts.cancel(runId);
+        generation.cancel(runId);
         return new JourneyDraftAck("cancelled");
     }
 
@@ -310,7 +299,7 @@ public class LearningController {
                         return openCachedLearnUnit(journeyId, learnUnitCode, action);
                     }
                     return new JourneyDraftStartResponse(
-                            learnUnitContentRuns.start(journeyId, learnUnitCode, action).run().id());
+                            learnUnitContentRuns.start(journeyId, learnUnitCode, action).runId());
                 })
                 .subscribeOn(Schedulers.boundedElastic());
     }

@@ -19,10 +19,10 @@ import {
   type DiagnosticQuestionPreview,
   type JourneyDetail,
   type JourneyOutlinePreview,
+  type LearningPhase,
   type LearnUnit,
   type LearnUnitContentPreview,
   type LearnUnitResponse,
-  type LearningPhase,
 } from "./lib/api";
 
 type View = "welcome" | "journey-draft" | "diagnostic" | "result" | "dashboard" | "assessment" | "settings";
@@ -123,8 +123,8 @@ export default function App() {
   const journeyId = journey?.journey.id;
   const generationRun = useGenerationRun<JourneyOutlinePreview>({
     runId: draftRunId,
-    eventsUrl: api.journeyDraftEventsUrl,
-    cancel: api.cancelJourneyDraft,
+    eventsUrl: api.generationRunEventsUrl,
+    cancel: api.cancelGenerationRun,
   });
   const draftEvents = generationRun.events;
   const draftOutline = generationRun.preview;
@@ -167,7 +167,7 @@ export default function App() {
   } = useTutorSession({journeyId, learnUnit, setBusy, setError, errorMessage});
 
   function resetLearningState() {
-    if (draftRunId) void api.cancelJourneyDraft(draftRunId).catch(() => undefined);
+    if (draftRunId) void api.cancelGenerationRun(draftRunId).catch(() => undefined);
     if (learnUnitRunId) void api.cancelGenerationRun(learnUnitRunId).catch(() => undefined);
     if (diagnosticRunId) void api.cancelGenerationRun(diagnosticRunId).catch(() => undefined);
     if (codingRunId) void api.cancelGenerationRun(codingRunId).catch(() => undefined);
@@ -511,7 +511,7 @@ export default function App() {
   async function cancelDraft() {
     if (draftRunId) {
       try {
-        await api.cancelJourneyDraft(draftRunId);
+        await api.cancelGenerationRun(draftRunId);
       } catch (cause) {
         setError(errorMessage(cause, "无法取消 Journey 草稿"));
         return;
@@ -777,7 +777,7 @@ export default function App() {
   }
 
   function newJourney() {
-    if (draftRunId) void api.cancelJourneyDraft(draftRunId).catch(() => undefined);
+    if (draftRunId) void api.cancelGenerationRun(draftRunId).catch(() => undefined);
     setDraftRunId(null);
     setJourney(null);
     setLearnUnit(null);

@@ -85,7 +85,7 @@ class CodingEvaluationRunServiceTest {
         assertTrue(entered.await(1, TimeUnit.SECONDS));
         CodingEvaluationRunService.Start duplicate = service.start("assessment");
         assertSame(first.runId(), duplicate.runId());
-        service.cancel(first.runId());
+        generation.cancel(first.runId());
         List<GenerationEvent> events = generation.events(first.runId())
                 .collectList().block(Duration.ofSeconds(1));
 

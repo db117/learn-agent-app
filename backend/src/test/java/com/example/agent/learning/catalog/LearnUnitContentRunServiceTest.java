@@ -54,7 +54,7 @@ class LearnUnitContentRunServiceTest {
 
         GenerationRunService.StartResult started = service.start(
                 "journey-1", outline.code(), LearnUnitContentRunService.EntryAction.CONTINUE);
-        List<GenerationEvent> events = service.events(started.run().id(), -1)
+        List<GenerationEvent> events = generation.events(started.runId(), -1)
                 .collectList().block();
 
         assertTrue(events.stream().anyMatch(event -> event.eventType().equals("validation")));
@@ -92,7 +92,7 @@ class LearnUnitContentRunServiceTest {
                 "journey-1", outline.code(), LearnUnitContentRunService.EntryAction.CONTINUE);
 
         assertTrue(!duplicate.created());
-        assertEquals(first.run().id(), duplicate.run().id());
+        assertEquals(first.runId(), duplicate.runId());
     }
 
     private LearnUnit outline() {

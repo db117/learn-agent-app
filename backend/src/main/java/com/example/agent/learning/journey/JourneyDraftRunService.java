@@ -3,10 +3,9 @@ package com.example.agent.learning.journey;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.catalog.LearnUnit;
-import com.example.agent.learning.generation.GenerationEvent;
+import com.example.agent.learning.generation.GenerationOperation;
 import com.example.agent.learning.generation.GenerationRunService;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,61 +38,44 @@ public final class JourneyDraftRunService {
         synchronized (drafts) {
             Draft draft = new Draft(userId, input);
             GenerationRunService.StartResult started = generation.start(
-                    "JOURNEY_OUTLINE", targetKey, run -> {
-                        draft.run = run;
+                    GenerationOperation.JOURNEY_OUTLINE, targetKey, run -> {
                         generate(draft, run);
                     });
             if (started.created()) {
-                draft.run = started.run();
-                drafts.put(started.run().id(), draft);
+                drafts.put(started.runId(), draft);
             }
-            return started.run().id();
+            return started.runId();
         }
-    }
-
-    public Flux<GenerationEvent> events(String runId, long lastSequence) {
-        return generation.events(runId, lastSequence);
-    }
-
-    public Flux<GenerationEvent> events(String runId) {
-        return events(runId, -1);
     }
 
     public void guide(String runId, String content) {
         Draft draft = draft(runId);
         if (content == null || content.isBlank()) throw new IllegalArgumentException("guidance must not be blank");
         synchronized (draft) {
-            if (draft.run.terminal() || "PERSISTING".equals(draft.run.stage())) {
-                throw new IllegalStateException("journey draft is no longer accepting guidance");
-            }
-            draft.guidance.add(content.trim());
-            draft.run.emit("user_message", draft.run.stage(), "用户", content.trim(), preview(draft.outline));
-            if ("WAITING_CONFIRMATION".equals(draft.run.stage())) {
-                draft.run.scheduleNext(run -> generate(draft, run));
-            }
+            generation.withRun(runId, run -> {
+                if (run.terminal() || "PERSISTING".equals(run.stage())) {
+                    throw new IllegalStateException("journey draft is no longer accepting guidance");
+                }
+                draft.guidance.add(content.trim());
+                run.emit("user_message", run.stage(), "用户", content.trim(), preview(draft.outline));
+                if ("WAITING_CONFIRMATION".equals(run.stage())) {
+                    run.scheduleNext(next -> generate(draft, next));
+                }
+            });
         }
     }
 
     public void confirm(String runId) {
         Draft draft = draft(runId);
         synchronized (draft) {
-            if (!"WAITING_CONFIRMATION".equals(draft.run.stage()) || draft.outline == null) {
-                throw new IllegalStateException("journey draft is not ready for confirmation");
-            }
-            draft.run.stage("PERSISTING");
-            draft.run.emit("persistence", "PERSISTING", "Agent", "大纲已确认，正在保存 Journey。", preview(draft.outline));
-            draft.run.scheduleNext(run -> commit(draft, run));
-        }
-    }
-
-    public void cancel(String runId) {
-        Draft draft = draft(runId);
-        synchronized (draft) {
-            if (draft.run.terminal()) return;
-            if ("PERSISTING".equals(draft.run.stage())) {
-                throw new IllegalStateException("journey draft is being saved");
-            }
-            draft.run.cancel("本次 Journey 创建已取消。");
+            generation.withRun(runId, run -> {
+                if (run.terminal() || !"WAITING_CONFIRMATION".equals(run.stage()) || draft.outline == null) {
+                    throw new IllegalStateException("journey draft is not ready for confirmation");
+                }
+                run.stage("PERSISTING");
+                run.emit("persistence", "PERSISTING", "Agent", "大纲已确认，正在保存 Journey。", preview(draft.outline));
+                run.scheduleNext(next -> commit(draft, next));
+            });
         }
     }
 
@@ -106,37 +88,29 @@ public final class JourneyDraftRunService {
             guidance = List.copyOf(draft.guidance);
             previousOutline = draft.outline;
         }
-        try {
-            run.emit("agent_message", "PREPARING", "Agent", "正在整理学习目标和已有调整要求。", preview(previousOutline));
-            String context = journeys.learningContext(draft.input)
-                    + outlineContext(previousOutline) + guidanceContext(guidance);
-            run.emit("stage_changed", "CALLING_MODEL", "Agent", "正在调用大模型生成 Journey 大纲。", null);
-            CurriculumGenerator.GeneratedOutline generated = curriculum.generateOutlineForJourney(
-                    run.id(), draft.input.languageCode(), context, run::modelText);
-            synchronized (draft) {
-                if (run.terminal()) return;
-                run.stage("VALIDATING");
-                generated = preserveConfirmedRules(previousOutline, generated);
-                draft.outline = generated;
-                run.emit("validation", "VALIDATING", "Agent", "大纲结构校验通过，正在准备安全预览。", preview(generated));
-                run.stage("WAITING_CONFIRMATION");
-                run.emit("draft_ready", "WAITING_CONFIRMATION", "大模型", "大纲已生成，请确认知识点和学习路径。", preview(generated));
-                if (draft.guidance.size() > guidanceCount) {
-                    run.scheduleNext(next -> generate(draft, next));
-                }
+        run.emit("agent_message", "PREPARING", "Agent", "正在整理学习目标和已有调整要求。", preview(previousOutline));
+        String context = journeys.learningContext(draft.input)
+                + outlineContext(previousOutline) + guidanceContext(guidance);
+        run.emit("stage_changed", "CALLING_MODEL", "Agent", "正在调用大模型生成 Journey 大纲。", null);
+        CurriculumGenerator.GeneratedOutline generated = curriculum.generateOutlineForJourney(
+                run.id(), draft.input.languageCode(), context, run::modelText);
+        synchronized (draft) {
+            if (run.terminal()) return;
+            run.stage("VALIDATING");
+            generated = preserveConfirmedRules(previousOutline, generated);
+            draft.outline = generated;
+            run.emit("validation", "VALIDATING", "Agent", "大纲结构校验通过，正在准备安全预览。", preview(generated));
+            run.stage("WAITING_CONFIRMATION");
+            run.emit("draft_ready", "WAITING_CONFIRMATION", "大模型", "大纲已生成，请确认知识点和学习路径。", preview(generated));
+            if (draft.guidance.size() > guidanceCount) {
+                run.scheduleNext(next -> generate(draft, next));
             }
-        } catch (RuntimeException error) {
-            if (!run.terminal()) run.fail("大纲生成失败，请检查目标或模型配置后重试。");
         }
     }
 
     private void commit(Draft draft, GenerationRunService.Run run) {
-        try {
-            journeys.confirmOutline(draft.userId, run.id(), draft.input, draft.outline);
-            run.complete("Journey 已保存，可以开始学习第一个单元。", preview(draft.outline), "JOURNEY", run.id());
-        } catch (RuntimeException error) {
-            if (!run.terminal()) run.fail("Journey 保存失败，请稍后重试。");
-        }
+        journeys.confirmOutline(draft.userId, run.id(), draft.input, draft.outline);
+        run.complete("Journey 已保存，可以开始学习第一个单元。", preview(draft.outline), "JOURNEY", run.id());
     }
 
     private Draft draft(String runId) {
@@ -194,7 +168,6 @@ public final class JourneyDraftRunService {
     private final class Draft {
         private final String userId;
         private final JourneyDraftInput input;
-        private GenerationRunService.Run run;
         private final List<String> guidance = new ArrayList<>();
         private CurriculumGenerator.GeneratedOutline outline;
 
