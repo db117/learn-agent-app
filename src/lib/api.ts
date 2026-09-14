@@ -87,14 +87,6 @@ export type QuestionType = "MULTIPLE_CHOICE" | "CODING";
 export type AssessmentType = "DIAGNOSTIC" | "LEARN_UNIT" | "CHAPTER_SYNTHESIS";
 export type AssessmentStatus = "CREATED" | "IN_PROGRESS" | "COMPLETED";
 
-export type LearningLanguage = {
-  id: string;
-  code: string;
-  name: string;
-  description: string;
-  enabled: boolean;
-};
-
 export type Chapter = {
   id: string;
   code: string;
@@ -303,12 +295,6 @@ export type CreateJourneyInput = {
   learningGoal: string;
 };
 
-export type JourneyDraftOutline = {
-  languages: LearningLanguage[];
-  chapters: Chapter[];
-  learnUnits: LearnUnit[];
-};
-
 export type JourneyOutlinePreview = {
   chapterCount: number;
   learnUnitCount: number;
@@ -355,8 +341,6 @@ export type GenerationEvent<TPreview = GenerationPreview> = {
   resourceId: string | null;
   timestamp: string;
 };
-
-export type JourneyDraftEvent = GenerationEvent<JourneyOutlinePreview>;
 
 export type JourneyDraftStartResponse = {runId: string};
 export type AssessmentSubmitResponse = AssessmentResultResponse | JourneyDraftStartResponse;
@@ -446,7 +430,6 @@ export const api = {
     method: "POST",
     body: JSON.stringify(input),
   }),
-  languages: () => request<LearningLanguage[]>("/learning/languages"),
   journeyLearnUnits: (journeyId: string) => request<LearnUnit[]>(`/learning/journeys/${encodeURIComponent(journeyId)}/learn-units`),
   journeys: () => request<LearningJourney[]>("/learning/journeys"),
   journey: (id: string) => request<JourneyDetail>(`/learning/journeys/${id}`),
@@ -479,8 +462,6 @@ export const api = {
   submit: (id: string) => request<AssessmentSubmitResponse>(`/learning/assessments/${id}/submit`, {method: "POST"}),
   assessmentResult: (id: string) =>
     request<AssessmentResultResponse>(`/learning/assessments/${id}/result`),
-  startLearnUnit: (journeyId: string, learnUnitCode: string) =>
-    request<LearnUnitEntryResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/start`, {method: "POST"}),
   continueLearnUnit: (journeyId: string, learnUnitCode: string) =>
     request<LearnUnitEntryResponse>(`/learning/journeys/${journeyId}/learn-units/${encodeURIComponent(learnUnitCode)}/continue`, {method: "POST"}),
   reviewLearnUnit: (journeyId: string, learnUnitCode: string) =>

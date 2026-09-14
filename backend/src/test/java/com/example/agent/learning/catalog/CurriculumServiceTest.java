@@ -26,15 +26,6 @@ class CurriculumServiceTest {
     private final CurriculumService service = new CurriculumService(repository, generator);
 
     @Test
-    void listingLanguagesDoesNotGenerateAnUnrequestedCatalog() {
-        when(repository.listLanguages()).thenReturn(List.of());
-
-        assertEquals(List.of(), service.listLanguages());
-
-        verifyNoInteractions(generator);
-    }
-
-    @Test
     void scopesIndependentChapterCurriculumForEachJourney() {
         LearningLanguage language = language("python");
         CurriculumGenerator.GeneratedOutline outline = outline(language);

@@ -70,7 +70,7 @@ public final class LearnUnitContentRunService {
 
     private void applyPathAction(String journeyId, String learnUnitCode, EntryAction action) {
         switch (action) {
-            case START, CONTINUE -> progress.startLearnUnit(journeyId, learnUnitCode);
+            case CONTINUE -> progress.startLearnUnit(journeyId, learnUnitCode);
             case REVIEW -> {
                 // Review does not change the completed LearningPathItem.
             }
@@ -78,7 +78,6 @@ public final class LearnUnitContentRunService {
     }
 
     public enum EntryAction {
-        START,
         CONTINUE,
         REVIEW
     }

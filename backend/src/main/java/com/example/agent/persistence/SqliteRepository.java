@@ -51,22 +51,6 @@ public class SqliteRepository {
             .update();
   }
 
-  /** 按最近更新时间倒序查询会话摘要。 */
-  public List<SessionRecord> listSessions() {
-    return jdbc.sql("""
-                    SELECT id, user_id, title, created_at, updated_at
-                    FROM "session" ORDER BY updated_at DESC
-                    """)
-            .query((rs, rowNum) ->
-                    new SessionRecord(
-                            rs.getString("id"),
-                            rs.getString("user_id"),
-                            rs.getString("title"),
-                            Instant.parse(rs.getString("created_at")),
-                            Instant.parse(rs.getString("updated_at"))))
-            .list();
-  }
-
   /** 按会话标识查询单个会话。 */
   public Optional<SessionRecord> findSession(String id) {
     return jdbc.sql("""

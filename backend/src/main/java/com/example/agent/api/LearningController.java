@@ -13,7 +13,6 @@ import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearnUnitContentRunService;
-import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.diagnostic.DiagnosticQuestionRunService;
 import com.example.agent.learning.generation.GenerationEvent;
 import com.example.agent.learning.generation.GenerationRunService;
@@ -98,12 +97,6 @@ public class LearningController {
         this.codingEvaluationRuns = codingEvaluationRuns;
         this.generation = generation;
         this.properties = properties;
-    }
-
-    /** 查询已经写入 SQLite 的学习语言，不会为读取接口自动生成新语言。 */
-    @GetMapping("/languages")
-    public List<LearningLanguage> languages() {
-        return curriculum.listLanguages();
     }
 
     /** 查询当前 Journey 专属的 LearnUnit 目录。 */
@@ -240,32 +233,6 @@ public class LearningController {
                 learning.findDiagnosticAssessment(id).map(Assessment::id).orElse(null));
     }
 
-    /** 查询 Journey 的完整学习路径，包括历史节点。 */
-    @GetMapping("/journeys/{id}/path")
-    public List<LearningPathItem> path(@PathVariable String id) {
-        journeys.get(id);
-        return learning.listPath(id);
-    }
-
-    /** 查询当前唯一可操作的 LearnUnit 节点。 */
-    @GetMapping("/journeys/{id}/current")
-    public LearnUnitResponse current(@PathVariable String id) {
-        journeys.get(id);
-        String learnUnitCode = learning.listPath(id).stream()
-                .filter(item -> item.status() == com.example.agent.learning.path.LearningPathItemStatus.CURRENT)
-                .map(LearningPathItem::learnUnitCode)
-                .findFirst()
-                .orElse(null);
-        if (learnUnitCode == null) throw new IllegalStateException("journey has no current LearnUnit");
-        return learnUnit(id, learnUnitCode);
-    }
-
-    /** 归档 Journey，使其不再作为进行中的学习旅程。 */
-    @PostMapping("/journeys/{id}/archive")
-    public LearningJourney archive(@PathVariable String id) {
-        return journeys.archive(id);
-    }
-
     /** 创建或恢复 Journey 的诊断题集；需要模型时立即返回 runId。 */
     @PostMapping("/journeys/{journeyId}/diagnostic")
     public Mono<DiagnosticStartResponse> diagnostic(@PathVariable String journeyId) {
@@ -319,12 +286,6 @@ public class LearningController {
                             : new JourneyDraftStartResponse(started.runId());
                 })
                 .subscribeOn(Schedulers.boundedElastic());
-    }
-
-    /** 将当前 Path 节点置为学习中。 */
-    @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/start")
-    public Mono<Object> startLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
-        return openLearnUnit(journeyId, learnUnitCode, LearnUnitContentRunService.EntryAction.START);
     }
 
     /** Continue the server-selected current LearnUnit after a restart or result screen. */
@@ -494,13 +455,6 @@ public class LearningController {
                 learning.listAttemptsForLearnUnit(journeyId, learnUnitCode),
                 learning.listQuestionAttemptsForLearnUnit(journeyId, learnUnitCode).stream()
                         .map(attempt -> publicQuestionAttempt(attempt, false)).toList());
-    }
-
-    /** 查询指定 LearnUnit 的全部评估尝试。 */
-    @GetMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/attempts")
-    public List<AssessmentAttempt> attempts(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
-        journeys.get(journeyId);
-        return learning.listAttemptsForLearnUnit(journeyId, learnUnitCode);
     }
 
     /** 为 Journey LearnUnit 创建或复用 Tutor Session。 */

@@ -8,17 +8,17 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionType;
-import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.journey.JourneyStatus;
 import com.example.agent.learning.journey.LearnerProfile;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.PassReason;
+import com.example.agent.learning.path.GuidedPracticeEntry;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.path.LearningPhase;
-import com.example.agent.learning.path.GuidedPracticeEntry;
 import com.example.agent.learning.workflow.WorkflowTransition;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -28,7 +28,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -146,15 +145,6 @@ public class LearningRepository {
                         """)
                 .param("journeyId", journeyId)
                 .query((rs, rowNum) -> mapChapter(rs))
-                .list();
-    }
-
-    /** 查询所有启用的学习语言。 */
-    public List<LearningLanguage> listLanguages() {
-        return jdbc.sql("SELECT id, code, name, description, enabled FROM learning_language WHERE enabled = 1 ORDER BY name")
-                .query((rs, rowNum) -> new LearningLanguage(
-                        rs.getString("id"), rs.getString("code"), rs.getString("name"),
-                        rs.getString("description"), rs.getInt("enabled") != 0))
                 .list();
     }
 

@@ -87,7 +87,7 @@ class LearnUnitContentRunServiceTest {
                 .thenReturn(outline);
 
         GenerationRunService.StartResult first = service.start(
-                "journey-1", outline.code(), LearnUnitContentRunService.EntryAction.START);
+                "journey-1", outline.code(), LearnUnitContentRunService.EntryAction.CONTINUE);
         GenerationRunService.StartResult duplicate = service.start(
                 "journey-1", outline.code(), LearnUnitContentRunService.EntryAction.CONTINUE);
 

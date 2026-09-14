@@ -33,11 +33,6 @@ public class CurriculumService {
         this.generator = generator;
     }
 
-    /** 查询已经持久化的语言目录；不会因为读取接口自动调用 LLM。 */
-    public List<LearningLanguage> listLanguages() {
-        return repository.listLanguages();
-    }
-
     /** 为首次确认流程生成只包含知识点和路径信息的草稿。 */
     public CurriculumGenerator.GeneratedOutline generateOutlineForJourney(
             String journeyId, String requestedLanguage, String learningContext) {

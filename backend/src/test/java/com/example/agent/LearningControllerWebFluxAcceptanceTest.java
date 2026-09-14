@@ -1,8 +1,8 @@
 package com.example.agent;
 
+import com.example.agent.learning.generation.GenerationEvent;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
-import com.example.agent.learning.generation.GenerationEvent;
 import com.example.agent.learning.progress.ProgressService;
 import com.example.agent.learning.scoring.AssessmentScore;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -11,8 +11,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.test.annotation.DirtiesContext;
@@ -84,15 +84,15 @@ class LearningControllerWebFluxAcceptanceTest {
         JsonNode outline = get(base + "/learn-units/" + firstCode);
         assertTrue(outline.at("/learnUnit/lessonIntro").asText().isBlank());
 
-        JsonNode startResponse = post(base + "/learn-units/" + firstCode + "/start");
-        assertTrue(startResponse.has("runId"));
-        List<GenerationEvent> contentEvents = streamGenerationEvents(startResponse.at("/runId").asText(), "completed");
+        JsonNode continueResponse = post(base + "/learn-units/" + firstCode + "/continue");
+        assertTrue(continueResponse.has("runId"));
+        List<GenerationEvent> contentEvents = streamGenerationEvents(continueResponse.at("/runId").asText(), "completed");
         assertTrue(contentEvents.stream().anyMatch(event ->
                 event.eventType().equals("validation") && event.preview() != null));
         assertTrue(contentEvents.stream().noneMatch(event ->
                 event.content().contains("correctOptionIds") || event.content().contains("rubric")));
         List<GenerationEvent> replayed = streamGenerationEvents(
-                startResponse.at("/runId").asText(), "completed", contentEvents.get(0).sequence());
+                continueResponse.at("/runId").asText(), "completed", contentEvents.get(0).sequence());
         assertTrue(replayed.stream().allMatch(event -> event.sequence() > contentEvents.get(0).sequence()));
         JsonNode started = get(base + "/learn-units/" + firstCode);
         assertFalse(started.at("/learnUnit/lessonIntro").asText().isBlank());

@@ -124,13 +124,6 @@ public class LearningJourneyService {
         return repository.listJourneys(userId);
     }
 
-    public LearningJourney archive(String id) {
-        LearningJourney journey = get(id);
-        Instant now = Instant.now();
-        repository.updateJourney(id, JourneyStatus.ARCHIVED, now);
-        return get(id);
-    }
-
     private void requireText(String value, String name) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
     }

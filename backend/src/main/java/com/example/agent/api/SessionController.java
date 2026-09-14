@@ -12,7 +12,14 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -54,12 +61,6 @@ public class SessionController {
         repository.insertSession(session);
         tutor.ensureSession(session);
         return SessionResponse.from(session);
-    }
-
-    /** 查询所有已持久化的 Tutor 会话。 */
-    @GetMapping
-    public List<SessionResponse> list() {
-        return repository.listSessions().stream().map(SessionResponse::from).toList();
     }
 
     /** 查询会话详情及历史消息。 */
