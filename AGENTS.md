@@ -2,17 +2,15 @@
 
 ## 运行时边界
 
-- 旧实现使用 Spring AI Alibaba Graph Core 和 `ReactAgent`；当前迁移目标使用 Spring Boot WebFlux 承载应用边界、AgentScope
-  `HarnessAgent` 承载 Agent runtime，应用只保留一个 `TutorAgent`。
-- 旧实现的 Spring AI `ChatModel` 只负责 provider seam；当前目标由 AgentScope OpenAI provider 承担模型接入，Agent
-  编排、工具执行和事件流留在 Agent runtime 中。
-- HTTP、SSE、SQLite 持久化和前端 DTO 使用框架无关的数据结构；不要把 AgentScope 或 SAA 内部消息类型泄漏到这些边界。
+- Spring Boot WebFlux 承载应用边界，AgentScope `HarnessAgent` 承载 Agent runtime；应用只保留一个 `TutorAgent`。
+- AgentScope OpenAI provider 负责模型接入；Agent 编排、工具执行和事件流留在 Agent runtime 中。
+- HTTP、SSE、SQLite 持久化和前端 DTO 使用框架无关的数据结构；不要把 AgentScope 内部消息类型泄漏到这些边界。
 - `Skill` 表示 Agent capability，统一放在 `agent-skills` 并由 AgentScope Skill registry 加载；教学知识、课程内容和学习状态属于
   `LearnUnit` 与 Learning Engine。
 - 工具注册给 AgentScope Agent，由 Agent runtime 执行；TutorAgent 不能直接修改学习分数、通过状态或学习路径。
-- SQLite 是 MVP 唯一持久化数据库；当前目标继续使用 Spring JDBC/JdbcClient 和 Xerial JDBC，阻塞数据库操作不能占用 WebFlux
+- SQLite 是当前唯一持久化数据库；使用 Spring JDBC/JdbcClient 和 Xerial JDBC，阻塞数据库操作不能占用 WebFlux
   event loop；不引入 R2DBC、JPA 或 Hibernate。
-- Native Image 暂不属于当前迁移阶段的正式构建要求；当前正式目标是 macOS arm64 上的 Spring Boot WebFlux JVM，Native、其他平台和
+- Native Image 暂不属于正式构建要求；当前正式目标是 macOS arm64 上的 Spring Boot WebFlux JVM，Native、其他平台和
   Native runtime hints 后置。
 - Rust 只负责 Tauri 桌面壳和后端进程生命周期；Agent 和 Learning Engine 逻辑保留在 Java 中。
 
@@ -27,9 +25,35 @@
 ## 变更边界
 
 - 保留固定后端地址 `127.0.0.1:18080`。
-- MVP 目标包含一个 TutorAgent、AgentScope Harness、OpenAI provider、HTTP/SSE、SQLite 和 Tauri/React 壳。
-- MVP 不包含 MCP、RAG、Monaco 实现或自动更新系统。
-- 影响前端、Tauri 或后端完整构建的变更后运行 `pnpm check`；Native 检查不属于当前迁移验收，只有未来明确进入 Native 范围时才运行。
+- 当前范围包含一个 TutorAgent、AgentScope Harness、OpenAI provider、HTTP/SSE、SQLite 和 Tauri/React 壳。
+- 当前范围不包含 MCP、RAG、Monaco 实现或自动更新系统。
+- 影响前端、Tauri 或后端完整构建的变更后运行 `pnpm check`；Native 检查不属于当前验收，只有未来明确进入 Native 范围时才运行。
+- CI 使用 Fake/Deterministic Model；macOS arm64 端到端验收使用真实 OpenAI。LLM 生成失败直接报错，不回退到旧题库或其他生成路径。
+- 发现旧 SQLite schema 时明确报错并要求重新初始化；不保留运行时回退，也不要求旧数据兼容。
+
+## 注释规则
+
+- 代码注释使用中文；代码标识符、库名和协议名保留原文。
+- 注释解释业务约束、设计原因、公共 API/字段契约和非显然逻辑，并保持靠近被解释的代码；行为变化时同步更新注释。
+- 直观代码保持简洁，注释提供代码本身读不出的信息。
+- 很长的链式调用分行书写，并在链前说明整体意图；中间步骤语义不明显时解释关键转换；出现复杂分支、副作用或错误处理时拆成有意义的局部变量或方法。
+
+```java
+// 生成已完成 LearnUnit 的唯一名称列表；整条链只读，不修改学习状态。
+var masteredNames = path.stream()
+                .filter(item -> item.status() == LearningPathItemStatus.COMPLETED)
+                .map(item -> unitsByCode.get(item.learnUnitCode()))
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparingInt(LearnUnit::sequence))
+                .map(LearnUnit::name)
+                .filter(name -> name != null && !name.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+```
+
+解释：这条链依次筛选已完成项目、查找对应
+LearnUnit、过滤缺失值、按课程顺序排序、提取名称、过滤空名称、去除首尾空白、去重并收集结果。每一步都保持单一且无副作用；某一步需要复杂条件或产生副作用时，应拆开表达。
 
 ## Agent skills
 
@@ -45,13 +69,3 @@
 ### Domain docs
 
 本仓库采用单一上下文布局，使用根目录 `CONTEXT.md` 和 `docs/adr/`。详见 `docs/agents/domain.md`。
-
-### 当前 AgentScope 迁移范围补充
-
-- 本轮迁移以 macOS arm64 上的 AgentScope + Spring Boot WebFlux JVM 新链路为正式目标；Native Image、Windows、Linux、其他
-  macOS 架构和 Native Skill 资源适配全部后置，不属于当前 Definition of Done。
-- Spring Boot WebFlux 负责 HTTP、SSE、SQLite、Learning Engine 和 Tauri 进程边界；AgentScope 是唯一 Agent runtime。SSE 使用
-  WebFlux 原生流，SQLite/JDBC 等阻塞操作必须隔离到工作线程。
-- CI 使用 Fake/Deterministic Model；macOS arm64 端到端验收使用真实 OpenAI。LLM 生成失败直接报错，不回退到旧题库或其他生成路径。
-- 新链路完整跑通后删除旧 Spring AI/Spring AI Alibaba/ADK Agent Runtime 和 Adapter；不保留运行时回退，也不要求旧 SQLite 数据或
-  schema 兼容。发现旧 schema 时明确报错并要求重新初始化。
