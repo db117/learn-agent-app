@@ -67,7 +67,7 @@ public final class JourneyDraftRunService {
                 throw new IllegalStateException("journey draft is no longer accepting guidance");
             }
             draft.guidance.add(content.trim());
-            draft.run.emit("user_message", "WAITING_CONFIRMATION", "用户", content.trim(), preview(draft.outline));
+            draft.run.emit("user_message", draft.run.stage(), "用户", content.trim(), preview(draft.outline));
             if ("WAITING_CONFIRMATION".equals(draft.run.stage())) {
                 draft.run.scheduleNext(run -> generate(draft, run));
             }
@@ -112,7 +112,7 @@ public final class JourneyDraftRunService {
                     + outlineContext(previousOutline) + guidanceContext(guidance);
             run.emit("stage_changed", "CALLING_MODEL", "Agent", "正在调用大模型生成 Journey 大纲。", null);
             CurriculumGenerator.GeneratedOutline generated = curriculum.generateOutlineForJourney(
-                    run.id(), draft.input.languageCode(), context, ignored -> run.modelActivity());
+                    run.id(), draft.input.languageCode(), context, run::modelText);
             synchronized (draft) {
                 if (run.terminal()) return;
                 run.stage("VALIDATING");

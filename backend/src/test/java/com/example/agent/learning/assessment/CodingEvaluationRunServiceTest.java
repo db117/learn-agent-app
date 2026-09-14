@@ -41,11 +41,11 @@ class CodingEvaluationRunServiceTest {
         AssessmentService assessments = mock(AssessmentService.class);
         when(assessments.requiresCodingEvaluation("assessment")).thenReturn(true);
         doAnswer(invocation -> {
-            invocation.<java.util.function.Consumer<String>>getArgument(1).accept("MODEL_ACTIVITY");
+            invocation.<java.util.function.Consumer<String>>getArgument(2).accept("模型评分片段");
             invocation.<java.util.function.Consumer<String>>getArgument(1).accept("VALIDATING");
             invocation.<java.util.function.Consumer<String>>getArgument(1).accept("PERSISTING");
             return null;
-        }).when(assessments).submit(eq("assessment"), any());
+        }).when(assessments).submit(eq("assessment"), any(), any());
 
         CodingEvaluationRunService service = new CodingEvaluationRunService(assessments, generation);
         CodingEvaluationRunService.Start started = service.start("assessment");
@@ -58,9 +58,11 @@ class CodingEvaluationRunServiceTest {
         assertTrue(events.stream().anyMatch(event -> event.eventType().equals("persistence")));
         assertEquals("COMPLETED", events.get(events.size() - 1).status());
         assertEquals("assessment", events.get(events.size() - 1).resourceId());
+        assertTrue(events.stream().anyMatch(event -> event.eventType().equals("model_delta")
+                && event.content().equals("模型评分片段")));
         assertTrue(events.stream().noneMatch(event -> event.content().contains("rubric")
                 || event.content().contains("Prompt") || event.content().contains("raw")));
-        verify(assessments, times(1)).submit(eq("assessment"), any());
+        verify(assessments, times(1)).submit(eq("assessment"), any(), any());
     }
 
     @Test
@@ -76,7 +78,7 @@ class CodingEvaluationRunServiceTest {
                 Thread.currentThread().interrupt();
             }
             return null;
-        }).when(assessments).submit(eq("assessment"), any());
+        }).when(assessments).submit(eq("assessment"), any(), any());
 
         CodingEvaluationRunService service = new CodingEvaluationRunService(assessments, generation);
         CodingEvaluationRunService.Start first = service.start("assessment");
@@ -89,6 +91,6 @@ class CodingEvaluationRunServiceTest {
 
         assertEquals("CANCELLED", events.get(events.size() - 1).status());
         assertEquals(1, events.stream().filter(event -> event.eventType().equals("cancelled")).count());
-        verify(assessments, times(1)).submit(eq("assessment"), any());
+        verify(assessments, times(1)).submit(eq("assessment"), any(), any());
     }
 }

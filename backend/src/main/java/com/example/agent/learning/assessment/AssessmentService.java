@@ -1,8 +1,8 @@
 package com.example.agent.learning.assessment;
 
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
-import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.diagnostic.DiagnosticQuestionPlanner;
 import com.example.agent.learning.journey.LearnerProfile;
 import com.example.agent.learning.persistence.LearningRepository;
@@ -10,8 +10,8 @@ import com.example.agent.learning.progress.ProgressService;
 import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.learning.scoring.AssessmentScoreEngine;
 import com.example.agent.learning.scoring.LearnUnitPassPolicy;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -306,11 +306,19 @@ public class AssessmentService {
     @Transactional(noRollbackFor = AssessmentEvaluationException.class)
     public AssessmentSubmission submit(String assessmentId) {
         return submit(assessmentId, ignored -> {
+        }, ignored -> {
         });
     }
 
     @Transactional(noRollbackFor = AssessmentEvaluationException.class)
     public AssessmentSubmission submit(String assessmentId, Consumer<String> onProgress) {
+        return submit(assessmentId, onProgress, ignored -> {
+        });
+    }
+
+    @Transactional(noRollbackFor = AssessmentEvaluationException.class)
+    public AssessmentSubmission submit(
+            String assessmentId, Consumer<String> onProgress, Consumer<String> onModelText) {
         Assessment assessment = requireAssessment(assessmentId);
         if (assessment.status() != AssessmentStatus.IN_PROGRESS) throw new IllegalArgumentException("assessment is not in progress");
         AssessmentAttempt attempt = openAttempt(assessmentId);
@@ -327,7 +335,7 @@ public class AssessmentService {
                     && (current.score() == null || current.evaluationJson() == null || current.evaluationJson().isBlank())) {
                 try {
                     onProgress.accept("ANALYZING");
-                    current = evaluateCoding(question, current, onProgress);
+                    current = evaluateCoding(question, current, onProgress, onModelText);
                 } catch (AssessmentEvaluationException error) {
                     if (assessment.type() == AssessmentType.LEARN_UNIT) {
                         progress.markAssessmentFailed(assessment.journeyId(), assessment.learnUnitCode());
@@ -646,11 +654,12 @@ public class AssessmentService {
     }
 
     private QuestionAttempt evaluateCoding(
-            Question question, QuestionAttempt current, Consumer<String> onProgress) {
+            Question question, QuestionAttempt current, Consumer<String> onProgress,
+            Consumer<String> onModelText) {
         try {
             CodingEvaluationResult evaluation = codingEvaluator.evaluate(
                     CodingQuestion.from(question), current.submittedCode(),
-                    ignored -> onProgress.accept("MODEL_ACTIVITY"));
+                    onModelText);
             onProgress.accept("VALIDATING");
             int score = (int) Math.round(evaluation.totalScore() * question.points() / 100.0);
             onProgress.accept("PERSISTING");

@@ -50,7 +50,7 @@ public final class LearnUnitContentRunService {
             run.emit("agent_message", "PREPARING", "Agent", "正在整理 LearnUnit 大纲和学习者背景。", null);
             run.emit("stage_changed", "CALLING_MODEL", "Agent", "正在调用大模型生成教学内容。", null);
             CurriculumGenerator.GeneratedLearnUnitContent generated =
-                    curriculum.generateLearnUnitContent(journeyId, learnUnitCode, ignored -> run.modelActivity());
+                    curriculum.generateLearnUnitContent(journeyId, learnUnitCode, run::modelText);
             if (run.terminal()) return;
 
             LearnUnitContentPreview preview = LearnUnitContentPreview.from(

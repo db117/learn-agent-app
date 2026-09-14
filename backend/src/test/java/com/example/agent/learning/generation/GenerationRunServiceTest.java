@@ -93,4 +93,57 @@ class GenerationRunServiceTest {
             timeoutService.close();
         }
     }
+
+    @Test
+    void doesNotTimeoutWhileWaitingForUserConfirmation() throws Exception {
+        GenerationRunService waitingService = new GenerationRunService(
+                executor, Duration.ofMillis(50), Duration.ofMillis(10));
+        CountDownLatch waiting = new CountDownLatch(1);
+        try {
+            GenerationRunService.Run run = waitingService.start("JOURNEY_OUTLINE", "waiting-target", current -> {
+                current.stage("WAITING_CONFIRMATION");
+                waiting.countDown();
+                try {
+                    new CountDownLatch(1).await();
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                }
+            }).run();
+            assertTrue(waiting.await(1, TimeUnit.SECONDS));
+            Thread.sleep(120);
+            assertFalse(run.terminal());
+        } finally {
+            waitingService.close();
+        }
+    }
+
+    @Test
+    void keepsAnActiveModelStreamAliveBeyondTheIdleTimeout() throws Exception {
+        GenerationRunService streamService = new GenerationRunService(
+                executor, Duration.ofMillis(50), Duration.ofSeconds(1));
+        try {
+            GenerationRunService.Run run = streamService.start("JOURNEY_OUTLINE", "stream-target", current -> {
+                current.stage("CALLING_MODEL");
+                for (int index = 0; index < 4; index++) {
+                    current.modelText("chunk-" + index);
+                    try {
+                        Thread.sleep(30);
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+                current.complete("完成。", null, "JOURNEY", current.id());
+            }).run();
+
+            List<GenerationEvent> events = streamService.events(run.id())
+                    .collectList()
+                    .block(Duration.ofSeconds(1));
+
+            assertEquals("COMPLETED", events.get(events.size() - 1).status());
+            assertEquals(4, events.stream().filter(event -> event.eventType().equals("model_delta")).count());
+        } finally {
+            streamService.close();
+        }
+    }
 }

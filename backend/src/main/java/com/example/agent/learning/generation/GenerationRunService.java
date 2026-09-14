@@ -12,10 +12,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 /** Current-JVM lifecycle, deduplication and replay seam for model-assisted work. */
@@ -54,7 +54,6 @@ public final class GenerationRunService {
             activeByTarget.put(targetKey, run);
             run.publish("run_started", "PREPARING", "Agent", "已收到请求，正在准备生成。", null, null, null);
             run.schedule(work);
-            run.timeoutTask = scheduler.schedule(() -> run.timeout(), timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
             run.heartbeatTask = scheduler.scheduleAtFixedRate(run::heartbeat,
                     heartbeat.toMillis(), heartbeat.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
             return new StartResult(run, true);
@@ -94,7 +93,6 @@ public final class GenerationRunService {
         private String stage = "PREPARING";
         private String status = "RUNNING";
         private boolean terminal;
-        private boolean modelActivityPublished;
         private Future<?> activeTask;
         private ScheduledFuture<?> timeoutTask;
         private ScheduledFuture<?> heartbeatTask;
@@ -128,7 +126,7 @@ public final class GenerationRunService {
         public synchronized void stage(String nextStage) {
             if (terminal || nextStage == null || nextStage.isBlank() || nextStage.equals(stage)) return;
             stage = nextStage;
-            if ("CALLING_MODEL".equals(stage)) modelActivityPublished = false;
+            refreshTimeout();
             publish("stage_changed", stage, "系统", stageMessage(stage), null, null, null);
         }
 
@@ -136,13 +134,14 @@ public final class GenerationRunService {
                 String eventType, String nextStage, String author, String content, Object preview) {
             if (terminal) return;
             if (nextStage != null && !nextStage.isBlank()) stage = nextStage;
+            refreshTimeout();
             publish(eventType, stage, author, content, preview, null, null);
         }
 
-        public synchronized void modelActivity() {
-            if (modelActivityPublished) return;
-            modelActivityPublished = true;
-            emit("model_preview", "CALLING_MODEL", "大模型", "大模型已开始返回内容，正在整理安全预览。", null);
+        /** 将模型的每个文本块作为实时事件发送，不能退化成一次性“模型已开始”状态。 */
+        public synchronized void modelText(String content) {
+            if (terminal || content == null || content.isBlank()) return;
+            emit("model_delta", "CALLING_MODEL", "大模型", content, null);
         }
 
         public synchronized void complete(String content, Object preview, String resourceType, String resourceId) {
@@ -162,6 +161,7 @@ public final class GenerationRunService {
         private synchronized void schedule(Consumer<Run> work) {
             if (terminal) return;
             if (activeTask != null && !activeTask.isDone()) return;
+            refreshTimeout();
             activeTask = executor.submit(() -> {
                 try {
                     work.accept(this);
@@ -177,16 +177,29 @@ public final class GenerationRunService {
 
         private void heartbeat() {
             synchronized (this) {
-                if (!terminal) publish("heartbeat", stage, "系统", "仍在处理中。", null, null, null);
+                if (!terminal && !"WAITING_CONFIRMATION".equals(stage) && !"PERSISTING".equals(stage)) {
+                    publish("heartbeat", stage, "系统", "仍在处理中。", null, null, null);
+                }
             }
         }
 
         private void timeout() {
             synchronized (this) {
-                if (terminal || "PERSISTING".equals(stage)) return;
-                finish("failed", "FAILED", stage, "系统", "生成超时（180 秒），请重试。", null, null, null);
+                if (terminal || "PERSISTING".equals(stage) || "WAITING_CONFIRMATION".equals(stage)) return;
+                finish("failed", "FAILED", stage, "系统",
+                        "生成超时（超过 %d 秒没有新信息），请重试。".formatted(Math.max(1, timeout.toSeconds())),
+                        null, null, null);
                 cancelActiveTask();
             }
+        }
+
+        private void refreshTimeout() {
+            if (terminal || "PERSISTING".equals(stage) || "WAITING_CONFIRMATION".equals(stage)) {
+                if (timeoutTask != null) timeoutTask.cancel(false);
+                return;
+            }
+            if (timeoutTask != null) timeoutTask.cancel(false);
+            timeoutTask = scheduler.schedule(this::timeout, timeout.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
         }
 
         private synchronized void finish(

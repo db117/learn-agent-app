@@ -48,7 +48,7 @@ public final class DiagnosticQuestionRunService {
             run.emit("stage_changed", "CALLING_MODEL", "Agent", "正在调用大模型规划诊断题集。", null);
             AssessmentService.AssessmentState state = assessments.createDiagnostic(
                     journeyId,
-                    ignored -> run.modelActivity(),
+                    run::modelText,
                     progress -> {
                         if (run.terminal()) throw new IllegalStateException("diagnostic generation was cancelled");
                         DiagnosticQuestionPreview preview = DiagnosticQuestionPreview.from(progress.questions());

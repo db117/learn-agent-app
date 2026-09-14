@@ -345,7 +345,7 @@ export type GenerationEvent<TPreview = GenerationPreview> = {
   operation: string;
   stage: string;
   author: string;
-  eventType: "run_started" | "user_message" | "agent_message" | "model_preview" | "stage_changed"
+    eventType: "run_started" | "user_message" | "agent_message" | "model_delta" | "stage_changed"
     | "validation" | "persistence" | "draft_ready" | "heartbeat" | "completed" | "failed" | "cancelled";
   content: string;
   status: "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";

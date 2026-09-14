@@ -1,6 +1,7 @@
 import {useState} from "react";
 import type {GenerationEvent, JourneyOutlinePreview} from "../lib/api";
 import {GenerationProgressPanel} from "./GenerationProgressPanel";
+import {mergeModelDeltas} from "../lib/journeyDraftEvents";
 
 type JourneyDraftViewProps = {
     events: GenerationEvent[];
@@ -16,7 +17,7 @@ type JourneyDraftViewProps = {
 };
 
 function eventLabel(event: GenerationEvent) {
-    if (event.eventType === "model_preview") return "大模型";
+    if (event.eventType === "model_delta") return "大模型";
     if (event.eventType === "user_message") return "你";
     return event.author;
 }
@@ -74,7 +75,7 @@ export function JourneyDraftView({
     const [guidance, setGuidance] = useState("");
     const canConfirm = status === "WAITING_CONFIRMATION" && outline !== null;
     const terminal = status === "FAILED" || status === "CANCELLED" || status === "CONFIRMED";
-    const displayEvents = events;
+    const displayEvents = mergeModelDeltas(events.filter((event) => event.eventType !== "heartbeat"));
 
     async function sendGuidance() {
         const content = guidance.trim();

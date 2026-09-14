@@ -48,8 +48,7 @@ public final class CodingEvaluationRunService {
             AssessmentService.AssessmentSubmission result = assessments.submit(assessmentId, stage -> {
                 if (run.terminal()) throw new IllegalStateException("coding evaluation was cancelled");
                 switch (stage) {
-                    case "ANALYZING", "MODEL_ACTIVITY" ->
-                            run.modelActivity();
+                    case "ANALYZING" -> run.stage("CALLING_MODEL");
                     case "VALIDATING" ->
                             run.emit("validation", "VALIDATING", "Agent", "正在校验评分维度和反馈结构。", null);
                     case "PERSISTING" ->
@@ -57,7 +56,7 @@ public final class CodingEvaluationRunService {
                     default -> {
                     }
                 }
-            });
+            }, run::modelText);
             if (run.terminal()) return;
             run.complete("Coding 评估已完成，可以查看结果。", null, "ASSESSMENT_RESULT", assessmentId);
         } catch (RuntimeException error) {

@@ -1,10 +1,11 @@
 package com.example.agent.learning.journey;
 
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.CurriculumService;
-import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
+import com.example.agent.learning.generation.GenerationEvent;
 import com.example.agent.learning.generation.GenerationRunService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -71,6 +72,41 @@ class JourneyDraftRunServiceTest {
                     .next()
                     .block(Duration.ofSeconds(2)) != null);
             verify(journeys).confirmOutline(eq("local"), eq(runId), eq(input), eq(outline));
+            generation.close();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void forwardsModelTextChunksToTheLiveConversationStream() {
+        CurriculumService curriculum = mock(CurriculumService.class);
+        LearningJourneyService journeys = mock(LearningJourneyService.class);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            JourneyDraftInput input = new JourneyDraftInput(
+                    "python", "Learn APIs", "中文", 2, "会写后端", "掌握 Python Web 开发");
+            CurriculumGenerator.GeneratedOutline outline = outline();
+            when(journeys.learningContext(input)).thenReturn("context");
+            when(curriculum.generateOutlineForJourney(anyString(), eq("python"), anyString(), any()))
+                    .thenAnswer(invocation -> {
+                        invocation.<java.util.function.Consumer<String>>getArgument(3).accept("第一段");
+                        invocation.<java.util.function.Consumer<String>>getArgument(3).accept("第二段");
+                        return outline;
+                    });
+            GenerationRunService generation = new GenerationRunService(executor);
+            JourneyDraftRunService service = new JourneyDraftRunService(curriculum, journeys, generation);
+
+            String runId = service.start("local", input);
+            List<GenerationEvent> events = service.events(runId)
+                    .takeUntil(event -> event.eventType().equals("draft_ready"))
+                    .collectList()
+                    .block(Duration.ofSeconds(2));
+
+            assertTrue(events.stream().filter(event -> event.eventType().equals("model_delta"))
+                    .map(GenerationEvent::content)
+                    .toList()
+                    .containsAll(List.of("第一段", "第二段")));
             generation.close();
         } finally {
             executor.shutdownNow();

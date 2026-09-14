@@ -38,7 +38,7 @@ export function GenerationProgressPanel({
   connection,
   onCancel,
 }: GenerationProgressPanelProps) {
-  const latest = events.at(-1);
+    const latest = [...events].reverse().find((event) => event.eventType !== "heartbeat");
   const terminal = status !== "RUNNING";
   return (
     <section className="generation-progress" aria-live="polite" aria-label={`${operation}生成进度`}>
