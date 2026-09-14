@@ -22,18 +22,8 @@ final class AgentScopeTextGenerator {
     private AgentScopeTextGenerator() {
     }
 
-    static String generate(Model model, String prompt) {
-        return generate(model, prompt, JSON_OBJECT, ignored -> {
-        });
-    }
-
     static String generate(Model model, String prompt, Consumer<String> onText) {
         return generate(model, prompt, JSON_OBJECT, onText);
-    }
-
-    static String generate(Model model, String prompt, ResponseFormat responseFormat) {
-        return generate(model, prompt, responseFormat, ignored -> {
-        });
     }
 
     static String generate(Model model, String prompt, ResponseFormat responseFormat, Consumer<String> onText) {

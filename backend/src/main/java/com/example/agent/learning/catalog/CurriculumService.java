@@ -225,13 +225,6 @@ public class CurriculumService {
         validateAcyclic(learnUnits);
     }
 
-    private void validateDetailedContent(LearnUnit outline, LearnUnit generated) {
-        if (generated == null || !generated.hasDetailedContent()
-                || !generated.id().equals(outline.id()) || !generated.code().equals(outline.code())) {
-            throw new IllegalStateException("Generated LearnUnit content does not match the outline");
-        }
-    }
-
     private void requireJourneyId(String value) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException("journeyId must not be blank");
     }

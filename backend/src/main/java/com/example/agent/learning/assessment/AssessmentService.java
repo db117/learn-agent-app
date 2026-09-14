@@ -812,18 +812,6 @@ public class AssessmentService {
             String reviewLearnUnitCode,
             boolean chapterCompleted) {
 
-        public AssessmentSubmission(
-                Assessment assessment,
-                AssessmentAttempt attempt,
-                AssessmentScore score,
-                boolean passed,
-                List<DiagnosticLearnUnitResult> learnUnitResults,
-                List<QuestionAttempt> questionAttempts,
-                int passScore,
-                Integer codingPassScore) {
-            this(assessment, attempt, score, passed, learnUnitResults, questionAttempts, passScore,
-                    codingPassScore, null, false);
-        }
     }
 
     /**

@@ -9,19 +9,19 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAnswer;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionType;
-import com.example.agent.learning.catalog.LearningLanguage;
-import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.CurriculumService;
+import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearnUnitContentRunService;
+import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.diagnostic.DiagnosticQuestionRunService;
-import com.example.agent.learning.journey.LearnerProfile;
-import com.example.agent.learning.journey.JourneyDraftInput;
-import com.example.agent.learning.journey.JourneyDraftRunService;
-import com.example.agent.learning.journey.LearningJourney;
-import com.example.agent.learning.journey.LearningJourneyService;
 import com.example.agent.learning.generation.GenerationEvent;
 import com.example.agent.learning.generation.GenerationRunService;
+import com.example.agent.learning.journey.JourneyDraftInput;
+import com.example.agent.learning.journey.JourneyDraftRunService;
+import com.example.agent.learning.journey.LearnerProfile;
+import com.example.agent.learning.journey.LearningJourney;
+import com.example.agent.learning.journey.LearningJourneyService;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.persistence.LearningRepository;
@@ -40,8 +40,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import reactor.core.publisher.Mono;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
@@ -621,14 +621,6 @@ public class LearningController {
             boolean synthesisCompleted,
             String synthesisAssessmentId) {
 
-        public ChapterDetail(
-                Chapter chapter,
-                List<LearnUnit> learnUnits,
-                List<LearningPathItem> path,
-                int completedCount,
-                int skippedCount) {
-            this(chapter, learnUnits, path, completedCount, skippedCount, 0, false, false, null);
-        }
     }
 
     /**

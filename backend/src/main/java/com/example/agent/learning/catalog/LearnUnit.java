@@ -92,16 +92,6 @@ public record LearnUnit(
                 && independentCheckPrompt != null && !independentCheckPrompt.isBlank();
     }
 
-    /** 保留稳定的目录身份，只替换模型按需生成的教学正文。 */
-    public LearnUnit withDetailedContent(
-            List<String> objectives, String intro, List<String> concepts, List<String> generatedExamples) {
-        return new LearnUnit(
-                id, languageCode, code, chapterCode, name, description, sequence, prerequisiteLearnUnitCodes,
-                passScore, minCodingScore, enabled, objectives, intro, concepts, generatedExamples,
-                diagnosticEligible, ability, estimatedMinutes, guidedPracticePrompt, guidedPracticeHints,
-                independentCheckPrompt);
-    }
-
     /** 只替换首次进入时生成的教学内容，不改变目录身份和评分规则。 */
     public LearnUnit withStructuredContent(
             String generatedAbility,

@@ -6,10 +6,10 @@ import com.example.agent.learning.journey.JourneyStatus;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.PassReason;
 import com.example.agent.learning.path.DeterministicLearningPathPlanner;
+import com.example.agent.learning.path.GuidedPracticeEntry;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.path.LearningPhase;
-import com.example.agent.learning.path.GuidedPracticeEntry;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.learning.workflow.LearningWorkflowGraph;
@@ -96,12 +96,6 @@ public class ProgressService {
                     return new LearningWorkflowGraph.Action<>("complete", started);
                 },
                 Map.of("complete", ignored -> {}));
-    }
-
-    /** 继续当前 LearnUnit，是服务端进入当前学习单元的入口。 */
-    @Transactional
-    public LearningPathItem continueLearnUnit(String journeyId, String learnUnitCode) {
-        return startLearnUnit(journeyId, learnUnitCode);
     }
 
     /** 只允许推进当前阶段；独立检查由 Assessment 在后续流程中收尾。 */
@@ -439,23 +433,6 @@ public class ProgressService {
     }
 
     public record ChapterSynthesisOutcome(boolean chapterCompleted, String firstWeakLearnUnitCode) {
-    }
-
-    /** 仅在调用方已经关闭当前节点后推进学习路径。 */
-    @Transactional
-    public void moveToNextLearnUnit(String journeyId) {
-        workflow.execute(
-                "NEXT",
-                () -> {
-                    activeJourney(journeyId);
-                    List<LearningPathItem> path = repository.listPath(journeyId);
-                    if (path.stream().anyMatch(item -> item.status() == LearningPathItemStatus.CURRENT)) {
-                        throw new IllegalArgumentException("current LearnUnit must be closed before moving next");
-                    }
-                    return new LearningWorkflowGraph.Action<>(
-                            "complete", advanceToNextLearnUnit(journeyId, null, LearningPathItemStatus.COMPLETED));
-                },
-                Map.of("complete", ignored -> {}));
     }
 
     /** 在创建评估重试前检查服务端持有的当前节点状态。 */

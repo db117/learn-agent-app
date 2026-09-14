@@ -23,10 +23,6 @@ public class LearnUnitPassPolicy {
                 && (!score.hasCodingQuestions() || minCodingScore == null || score.codingScore() >= minCodingScore);
     }
 
-    public boolean diagnosticPassed(AssessmentScore score) {
-        return diagnosticPassed(score, 2);
-    }
-
     public boolean diagnosticPassed(AssessmentScore score, int evidenceCount) {
         return evidenceCount >= 2 && score.totalScore() >= DIAGNOSTIC_PASS_SCORE;
     }

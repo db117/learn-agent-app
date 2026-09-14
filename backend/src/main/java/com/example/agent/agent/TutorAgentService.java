@@ -1,11 +1,22 @@
 package com.example.agent.agent;
 
 import com.example.agent.config.DatabaseTransferCoordinator;
-import com.example.agent.persistence.*;
+import com.example.agent.persistence.AgentStatePersistenceException;
+import com.example.agent.persistence.MessageRecord;
+import com.example.agent.persistence.RunRecord;
+import com.example.agent.persistence.SessionRecord;
+import com.example.agent.persistence.SqliteRepository;
+import com.example.agent.persistence.TutorEvent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.event.*;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
+import io.agentscope.core.event.ThinkingBlockStartEvent;
+import io.agentscope.core.event.ToolCallDeltaEvent;
+import io.agentscope.core.event.ToolCallStartEvent;
+import io.agentscope.core.event.ToolResultEndEvent;
+import io.agentscope.core.event.ToolResultTextDeltaEvent;
 import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentState;
@@ -131,11 +142,6 @@ public class TutorAgentService {
     public boolean active(String sessionId) {
         return activeRuns.values().stream().anyMatch(run -> run.sessionId.equals(sessionId));
     }
-
-  /** 数据库替换必须等待所有 TutorAgent 调用进入终态。 */
-  public boolean hasActiveRuns() {
-    return !activeRuns.isEmpty();
-  }
 
   /** 取消用户请求的运行；释放订阅会继续传递到 AgentScope 和提供商订阅。 */
     public boolean cancel(String sessionId, String runId, String reason) {

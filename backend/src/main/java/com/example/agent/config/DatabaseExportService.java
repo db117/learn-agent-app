@@ -94,11 +94,6 @@ public class DatabaseExportService {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    /** 导入数据库，但不绕过过期快照确认保护。 */
-    public Mono<ImportResult> importDatabase(Flux<DataBuffer> body) {
-        return importDatabase(body, false);
-    }
-
     /** 在活动数据库旁创建上传文件，使替换始终发生在同一文件系统。 */
     private Mono<Path> createImportFile() {
         return Mono.fromCallable(() -> {
