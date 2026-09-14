@@ -1,6 +1,6 @@
 package com.example.agent.api;
 
-import com.example.agent.agent.EventHub;
+import com.example.agent.agent.TutorEventStream;
 import com.example.agent.config.DatabaseAgentBusyException;
 import com.example.agent.config.DatabaseExportService;
 import com.example.agent.config.DatabaseImportException;
@@ -29,16 +29,16 @@ import reactor.core.scheduler.Schedulers;
 public class DatabaseController {
 
     private final DatabaseExportService exports;
-    private final EventHub eventHub;
+    private final TutorEventStream eventStream;
 
     public DatabaseController(DatabaseExportService exports) {
         this(exports, null);
     }
 
     @Autowired
-    public DatabaseController(DatabaseExportService exports, EventHub eventHub) {
+    public DatabaseController(DatabaseExportService exports, TutorEventStream eventStream) {
         this.exports = exports;
-        this.eventHub = eventHub;
+        this.eventStream = eventStream;
     }
 
     /** 下载一致的 SQLite 快照，不向 HTTP 边界暴露 JDBC 或 AgentScope 类型。 */
@@ -60,7 +60,7 @@ public class DatabaseController {
             @RequestParam(defaultValue = "false") boolean confirm,
             @RequestBody Flux<DataBuffer> body) {
         return exports.importDatabase(body, confirm).map(result -> {
-            if (eventHub != null) eventHub.reset();
+            if (eventStream != null) eventStream.reset();
             return ResponseEntity.ok(new ImportResponse(
                     result.schemaVersion(), result.importedAt(), result.restartRequired()));
         });

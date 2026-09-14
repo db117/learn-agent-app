@@ -1,7 +1,7 @@
 package com.example.agent.api;
 
-import com.example.agent.agent.EventHub;
 import com.example.agent.agent.TutorAgentService;
+import com.example.agent.agent.TutorEventStream;
 import com.example.agent.config.AppProperties;
 import com.example.agent.config.DatabaseTransferBusyException;
 import com.example.agent.persistence.AgentStatePersistenceException;
@@ -38,14 +38,15 @@ public class SessionController {
 
     private final SqliteRepository repository;
     private final TutorAgentService tutor;
-    private final EventHub eventHub;
+    private final TutorEventStream eventStream;
     private final AppProperties properties;
 
     public SessionController(
-            SqliteRepository repository, TutorAgentService tutor, EventHub eventHub, AppProperties properties) {
+            SqliteRepository repository, TutorAgentService tutor, TutorEventStream eventStream,
+            AppProperties properties) {
         this.repository = repository;
         this.tutor = tutor;
-        this.eventHub = eventHub;
+        this.eventStream = eventStream;
         this.properties = properties;
     }
 
@@ -161,10 +162,7 @@ public class SessionController {
         long lastSequence = parseLastEventId(lastEventId);
         return Mono.fromCallable(() -> find(sessionId))
                 .subscribeOn(Schedulers.boundedElastic())
-                .thenMany(eventHub.open(
-                        sessionId,
-                        lastSequence,
-                        () -> repository.listEvents(sessionId),
+                .thenMany(eventStream.open(sessionId, lastSequence,
                         () -> tutor.cancelForClientDisconnect(sessionId)))
                 .map(event -> ServerSentEvent.<TutorEvent>builder(event)
                         .id(Long.toString(event.sequence()))

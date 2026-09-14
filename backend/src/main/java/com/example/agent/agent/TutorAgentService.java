@@ -7,17 +7,8 @@ import com.example.agent.persistence.RunRecord;
 import com.example.agent.persistence.SessionRecord;
 import com.example.agent.persistence.SqliteRepository;
 import com.example.agent.persistence.TutorEvent;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
-import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.event.ThinkingBlockStartEvent;
-import io.agentscope.core.event.ToolCallDeltaEvent;
-import io.agentscope.core.event.ToolCallStartEvent;
-import io.agentscope.core.event.ToolResultEndEvent;
-import io.agentscope.core.event.ToolResultTextDeltaEvent;
-import io.agentscope.core.message.ToolResultState;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentState;
 import io.agentscope.core.state.AgentStateStore;
@@ -40,19 +31,14 @@ import java.util.concurrent.RejectedExecutionException;
 @Service
 public class TutorAgentService {
 
-    private static final String SKILL_LOAD_TOOL = "load_skill_through_path";
-    private static final ObjectMapper JSON = new ObjectMapper();
-
     private final HarnessAgent tutorAgent;
     private final SqliteRepository repository;
-    private final EventHub eventHub;
+    private final TutorEventStream eventStream;
+    private final TutorEventProjector eventProjector;
     private final ExecutorService executor;
     private final AgentStateStore stateStore;
-  private final DatabaseTransferCoordinator transferCoordinator;
+    private final DatabaseTransferCoordinator transferCoordinator;
     private final ConcurrentHashMap<String, ActiveRun> activeRuns = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, StringBuilder> responseText = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, String> skillNames = new ConcurrentHashMap<>();
-    private final Object eventOrderLock = new Object();
     private volatile boolean shuttingDown;
 
     public TutorAgentService(
@@ -61,23 +47,25 @@ public class TutorAgentService {
             EventHub eventHub,
             ExecutorService executor,
             AgentStateStore stateStore) {
-      this(tutorAgent, repository, eventHub, executor, stateStore, new DatabaseTransferCoordinator());
+        this(tutorAgent, repository, new TutorEventStream(repository, eventHub), executor, stateStore,
+                new DatabaseTransferCoordinator());
     }
 
   @Autowired
   public TutorAgentService(
           HarnessAgent tutorAgent,
           SqliteRepository repository,
-          EventHub eventHub,
+          TutorEventStream eventStream,
           ExecutorService executor,
           AgentStateStore stateStore,
           DatabaseTransferCoordinator transferCoordinator) {
         this.tutorAgent = tutorAgent;
         this.repository = repository;
-        this.eventHub = eventHub;
+      this.eventStream = eventStream;
+      this.eventProjector = new TutorEventProjector();
         this.executor = executor;
         this.stateStore = stateStore;
-    this.transferCoordinator = transferCoordinator;
+      this.transferCoordinator = transferCoordinator;
     }
 
   /** 启动 TutorAgent 调用前，确认会话已经持久化存在。 */
@@ -229,82 +217,15 @@ public class TutorAgentService {
     private void persistEvent(SessionRecord session, ActiveRun run, AgentEvent event) {
         synchronized (run) {
             if (run.cancelRequested || run.terminal) return;
-            String runId = run.runId;
-            Instant timestamp = Instant.now();
-            if (event instanceof ThinkingBlockStartEvent) {
-                publish(TutorEvent.reasoningSummary(session.id(), runId, timestamp));
-                return;
-            }
-            if (event instanceof TextBlockDeltaEvent textDelta) {
-                String text = textDelta.getDelta() == null ? "" : textDelta.getDelta();
-                if (!text.isEmpty()) responseText.computeIfAbsent(runId, ignored -> new StringBuilder()).append(text);
-                publish(TutorEvent.textDelta(session.id(), runId, "tutor_agent", text, timestamp));
-                return;
-            }
-            if (event instanceof ToolCallStartEvent toolCall) {
-                if (isSkillLoad(toolCall.getToolCallName())) {
-                    publish(TutorEvent.skillLoadStart(session.id(), runId, timestamp));
-                    return;
-                }
-                publish(TutorEvent.toolCall(session.id(), runId, "tutor_agent", toolCall.getToolCallName(), timestamp));
-                return;
-            }
-            if (event instanceof ToolCallDeltaEvent toolCall && isSkillLoad(toolCall.getToolCallName())) {
-                String skillName = safeSkillName(toolCall.getDelta());
-                if (skillName != null) skillNames.put(skillKey(runId, toolCall.getToolCallId()), skillName);
-                return;
-            }
-            if (event instanceof ToolResultEndEvent toolResult && isSkillLoad(toolResult.getToolCallName())) {
-                String skillName = skillNames.remove(skillKey(runId, toolResult.getToolCallId()));
-                if (toolResult.getState() != ToolResultState.SUCCESS) {
-                    throw new IllegalStateException("AgentScope Skill load failed");
-                }
-                publish(TutorEvent.skillLoadComplete(session.id(), runId, skillName, timestamp));
-                return;
-            }
-            if (event instanceof ToolResultTextDeltaEvent toolResult) {
-                if (isSkillLoad(toolResult.getToolCallName())) return;
-                publish(TutorEvent.toolResult(session.id(), runId, "tool", toolResult.getToolCallName(), timestamp));
-            }
-        }
-    }
-
-    private static boolean isSkillLoad(String toolName) {
-        return SKILL_LOAD_TOOL.equals(toolName);
-    }
-
-    private static String skillKey(String runId, String toolCallId) {
-        return runId + ":" + toolCallId;
-    }
-
-    private static String safeSkillName(String delta) {
-        if (delta == null || delta.isBlank()) return null;
-        try {
-            JsonNode payload = JSON.readTree(delta);
-            JsonNode value = payload.get("skillId");
-            if (value == null) value = payload.get("skill_id");
-            if (value != null && value.isTextual() && value.textValue().matches("[A-Za-z0-9._-]{1,120}")) {
-                return value.textValue();
-            }
-        } catch (Exception ignored) {
-        }
-        return null;
-    }
-
-    private void publish(TutorEvent event) {
-        synchronized (eventOrderLock) {
-            eventHub.publish(repository.insertEvent(event));
+            eventProjector.project(session.id(), run.runId, event).ifPresent(eventStream::publish);
         }
     }
 
     private void recordPreStartFailure(
             SessionRecord session, String runId, Instant startedAt, Throwable error) {
         repository.insertRun(new RunRecord(runId, session.id(), "RUNNING", null, startedAt, null));
-        synchronized (eventOrderLock) {
-            TutorEvent persisted = repository.insertEvent(TutorEvent.error(session.id(), runId, error));
-            eventHub.publish(persisted);
-            repository.finishRun(runId, "FAILED", persisted.content(), Instant.now());
-        }
+        TutorEvent persisted = eventStream.publish(TutorEvent.error(session.id(), runId, error));
+        repository.finishRun(runId, "FAILED", persisted.content(), Instant.now());
     }
 
     private void finishCompleted(ActiveRun run) {
@@ -315,22 +236,17 @@ public class TutorAgentService {
                 return;
             }
             try {
-                StringBuilder accumulated = responseText.get(run.runId);
-                String finalText = accumulated == null ? "" : accumulated.toString();
+                String finalText = eventProjector.takeResponse(run.runId);
                 if (!finalText.isBlank()) {
                     repository.insertMessage(new MessageRecord(
                             UUID.randomUUID().toString(), run.sessionId, "assistant", finalText, Instant.now()));
                 }
-                synchronized (eventOrderLock) {
-                  try {
-                    TutorEvent complete = repository.insertEvent(
-                            TutorEvent.complete(run.sessionId, run.runId, Instant.now()));
+                try {
+                    eventStream.publish(TutorEvent.complete(run.sessionId, run.runId, Instant.now()));
                     markTerminal(run);
-                    eventHub.publish(complete);
                     repository.finishRun(run.runId, "COMPLETED", null, Instant.now());
-                  } finally {
+                } finally {
                     run.agentLease.close();
-                  }
                 }
             } catch (Throwable error) {
                 if (!run.terminal) finishFailedLocked(run, error);
@@ -351,16 +267,12 @@ public class TutorAgentService {
     }
 
     private void finishFailedLocked(ActiveRun run, Throwable error) {
-        synchronized (eventOrderLock) {
-          try {
-            TutorEvent persisted = repository.insertEvent(
-                    TutorEvent.error(run.sessionId, run.runId, error));
+        try {
+            TutorEvent persisted = eventStream.publish(TutorEvent.error(run.sessionId, run.runId, error));
             markTerminal(run);
-            eventHub.publish(persisted);
             repository.finishRun(run.runId, "FAILED", persisted.content(), Instant.now());
-          } finally {
+        } finally {
             run.agentLease.close();
-          }
         }
     }
 
@@ -372,40 +284,36 @@ public class TutorAgentService {
     }
 
     private void finishCancelledLocked(ActiveRun run) {
-        synchronized (eventOrderLock) {
-          try {
-            TutorEvent persisted = repository.insertEvent(
+        try {
+            TutorEvent persisted = eventStream.publish(
                     TutorEvent.cancelled(run.sessionId, run.runId, run.cancellationReason, Instant.now()));
             markTerminal(run);
-            eventHub.publish(persisted);
             repository.finishRun(run.runId, "CANCELLED", run.cancellationReason, Instant.now());
-          } finally {
+        } finally {
             run.agentLease.close();
-          }
         }
     }
 
     private void markTerminal(ActiveRun run) {
         run.terminal = true;
         activeRuns.remove(run.runId, run);
-        responseText.remove(run.runId);
-        skillNames.keySet().removeIf(key -> key.startsWith(run.runId + ":"));
+        eventProjector.clear(run.runId);
     }
 
     private static final class ActiveRun {
 
         private final String runId;
         private final String sessionId;
-      private final DatabaseTransferCoordinator.Lease agentLease;
+        private final DatabaseTransferCoordinator.Lease agentLease;
         private Disposable subscription;
         private boolean cancelRequested;
         private String cancellationReason = "cancelled";
         private boolean terminal;
 
-      private ActiveRun(String runId, String sessionId, DatabaseTransferCoordinator.Lease agentLease) {
+        private ActiveRun(String runId, String sessionId, DatabaseTransferCoordinator.Lease agentLease) {
             this.runId = runId;
             this.sessionId = sessionId;
-        this.agentLease = agentLease;
+            this.agentLease = agentLease;
         }
 
         private synchronized boolean requestCancellation(String reason) {
