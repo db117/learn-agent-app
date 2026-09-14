@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
-/** Collects text from one AgentScope model call for synchronous learning operations. */
+/** 收集一次 AgentScope 模型调用的文本，供同步学习操作使用。 */
 final class AgentScopeTextGenerator {
 
     private static final ResponseFormat JSON_OBJECT = ResponseFormat.jsonObject();

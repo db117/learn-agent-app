@@ -524,7 +524,7 @@ public class LearningRepository {
                 .optional();
     }
 
-    /** 查询 Journey 最近的一份诊断，确保重启和 Retry 使用固定题集。 */
+    /** 查询 Journey 最近的一份诊断，确保重启和重试使用固定题集。 */
     public Optional<Assessment> findDiagnosticAssessment(String journeyId) {
         return jdbc.sql("""
                         SELECT id, journey_id, learn_unit_code, chapter_code, type, status, created_at, completed_at
@@ -537,7 +537,7 @@ public class LearningRepository {
                 .optional();
     }
 
-    /** 查询某 LearnUnit 最近的一份评估，Retry 沿用该 Assessment 的题集。 */
+    /** 查询某 LearnUnit 最近的一份评估，重试沿用该 Assessment 的题集。 */
     public Optional<Assessment> findLatestLearnUnitAssessment(String journeyId, String learnUnitCode) {
         return jdbc.sql("""
                         SELECT id, journey_id, learn_unit_code, chapter_code, type, status, created_at, completed_at
@@ -551,7 +551,7 @@ public class LearningRepository {
                 .optional();
     }
 
-    /** 查询某 Journey Chapter 最近的一份 synthesis，Retry 沿用其固定题集。 */
+    /** 查询某 Journey Chapter 最近的一份 synthesis，重试沿用其固定题集。 */
     public Optional<Assessment> findLatestChapterSynthesisAssessment(String journeyId, String chapterCode) {
         return jdbc.sql("""
                         SELECT id, journey_id, learn_unit_code, chapter_code, type, status, created_at, completed_at
@@ -691,7 +691,7 @@ public class LearningRepository {
                 .optional();
     }
 
-    /** 根据历史最大序号生成下一次 Retry 序号。 */
+    /** 根据历史最大序号生成下一次重试序号。 */
     public int nextAttemptNumber(String assessmentId) {
         Number value = jdbc.sql("SELECT COALESCE(MAX(attempt_number), 0) + 1 FROM assessment_attempt WHERE assessment_id = :assessmentId")
                 .param("assessmentId", assessmentId)

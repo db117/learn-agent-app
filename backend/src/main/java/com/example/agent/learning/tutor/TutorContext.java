@@ -6,7 +6,7 @@ import com.example.agent.learning.path.LearningPhase;
 
 import java.util.List;
 
-/** Immutable, framework-neutral facts supplied to one TutorAgent call. */
+/** 提供给一次 TutorAgent 调用的不可变、框架无关事实。 */
 public record TutorContext(
         String journeyId,
         String targetLanguage,
@@ -33,7 +33,7 @@ public record TutorContext(
                 "Ask the learner what they want to practice.");
     }
 
-    /** Convert the facts to the system-prompt fragment; no mutating tool is exposed. */
+    /** 将事实转换为 system prompt 片段；不向 TutorAgent 暴露修改状态的工具。 */
     public String systemPrompt() {
         String background = learnerProfile == null
                 ? "not provided"

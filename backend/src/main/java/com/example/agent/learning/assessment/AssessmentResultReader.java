@@ -14,7 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Read-only Assessment state and completed-result assembly. */
+/** 只读 Assessment 状态和已完成结果组装服务。 */
 final class AssessmentResultReader {
 
     private final AssessmentWorkflowSupport support;

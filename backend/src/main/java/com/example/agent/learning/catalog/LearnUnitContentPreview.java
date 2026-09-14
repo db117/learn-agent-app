@@ -2,7 +2,7 @@ package com.example.agent.learning.catalog;
 
 import java.util.List;
 
-/** Safe teaching-content projection for the generation progress stream. */
+/** 面向生成进度流的安全教学内容投影。 */
 public record LearnUnitContentPreview(
         String ability,
         int estimatedMinutes,

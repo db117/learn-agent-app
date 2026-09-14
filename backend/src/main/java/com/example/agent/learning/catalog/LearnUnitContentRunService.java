@@ -5,7 +5,7 @@ import com.example.agent.learning.generation.GenerationRunService;
 import com.example.agent.learning.progress.ProgressService;
 import org.springframework.stereotype.Service;
 
-/** LearnUnit content adapter on top of the shared GenerationRun lifecycle. */
+/** 基于共享 GenerationRun 生命周期的 LearnUnit 内容适配器。 */
 @Service
 public final class LearnUnitContentRunService {
 
@@ -52,7 +52,7 @@ public final class LearnUnitContentRunService {
         switch (action) {
             case CONTINUE -> progress.startLearnUnit(journeyId, learnUnitCode);
             case REVIEW -> {
-                // Review does not change the completed LearningPathItem.
+                // 复习模式不改变已完成的 LearningPathItem。
             }
         }
     }

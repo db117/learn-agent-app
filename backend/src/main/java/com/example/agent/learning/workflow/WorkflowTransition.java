@@ -2,7 +2,7 @@ package com.example.agent.learning.workflow;
 
 import java.time.Instant;
 
-/** A durable, deterministic learning workflow state change. */
+/** 一次可持久化、确定性的学习工作流状态变更。 */
 public record WorkflowTransition(
         String id,
         String journeyId,

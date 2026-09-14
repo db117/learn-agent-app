@@ -13,8 +13,10 @@ const BACKEND_JAR: &str = "agent-backend.jar";
 const BACKEND_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const BACKEND_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
+// 仅保存本进程启动的 JVM；外部已运行的后端不纳入退出时的清理范围。
 struct BackendState(Mutex<Option<Child>>);
 
+// status 字段区分本桌面进程管理的后端与已占用固定地址的外部后端。
 #[derive(Debug, Serialize)]
 struct BackendStatus {
     status: String,
@@ -30,6 +32,7 @@ fn backend_reachable() -> bool {
 }
 
 fn wait_for_backend(child: &mut Child) -> Result<(), String> {
+    // 进程创建成功不等于服务已可用，因此轮询固定回环地址直到监听或超时。
     let deadline = Instant::now() + BACKEND_STARTUP_TIMEOUT;
     loop {
         if backend_reachable() {
@@ -105,6 +108,7 @@ fn status(state: &BackendState) -> BackendStatus {
 }
 
 fn backend_jar_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    // 打包运行优先读取 Tauri 资源，开发运行回退到 backend/target 下的产物。
     let mut candidates = Vec::new();
     if let Ok(resource_dir) = app.path().resource_dir() {
         candidates.push(resource_dir.join(BACKEND_JAR));
@@ -128,7 +132,7 @@ fn backend_jar_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 fn normalize_jar_path(path: PathBuf) -> PathBuf {
     #[cfg(windows)]
     {
-        // Tauri may return a verbatim Windows path, which java.exe does not accept for -jar.
+        // Tauri 可能返回 java.exe 的 -jar 不接受的 Windows verbatim 路径。
         let value = path.to_string_lossy();
         return match value.strip_prefix(r"\\?\") {
             Some(stripped) => PathBuf::from(stripped),
@@ -149,6 +153,7 @@ fn start_backend(
     app: tauri::AppHandle,
     state: State<'_, BackendState>,
 ) -> Result<BackendStatus, String> {
+    // 固定端口已有服务时不重复启动，避免接管其他进程管理的后端。
     if backend_reachable() {
         return Ok(status(&state));
     }
@@ -180,6 +185,7 @@ fn start_backend(
 
 #[tauri::command]
 fn stop_backend(state: State<'_, BackendState>) -> Result<BackendStatus, String> {
+    // 只终止本进程登记的 Child，不触碰 status 为 external 的后端。
     if let Some(child) = state
         .0
         .lock()
@@ -210,6 +216,7 @@ pub fn run() {
             stop_backend
         ])
         .setup(|app| {
+            // 启动桌面壳时自动拉起后端；失败通过事件交给前端处理，不阻断 Tauri 初始化。
             if !backend_reachable() {
                 let state = app.state::<BackendState>();
                 if let Err(error) = start_backend(app.handle().clone(), state) {
@@ -221,6 +228,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Tauri application")
         .run(|app, event| {
+            // 退出时仅清理本进程管理的 JVM；外部后端由其拥有者负责生命周期。
             if matches!(
                 event,
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit

@@ -1,16 +1,16 @@
 package com.example.agent.persistence;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 
-/** Framework-neutral event projected for SQLite replay and the Tutor SSE stream. */
+/** 面向 SQLite 回放和 Tutor SSE 流的框架无关事件投影。 */
 public record TutorEvent(
         long sequence,
         String id,

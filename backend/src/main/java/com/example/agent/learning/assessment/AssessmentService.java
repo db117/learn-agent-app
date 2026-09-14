@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.function.Consumer;
 
-/** HTTP-facing Assessment seam; type-specific work lives in the three workflow modules. */
+/** 面向 HTTP 的 Assessment 门面；各题型的业务处理位于三个工作流模块。 */
 @Service
 public class AssessmentService {
 
@@ -123,13 +123,13 @@ public class AssessmentService {
         };
     }
 
-    /** Read-only result path; it never calls ProgressService or changes Attempt state. */
+    /** 只读结果路径；不会调用 ProgressService，也不会改变 Attempt 状态。 */
     @Transactional(readOnly = true)
     public AssessmentSubmission completedResult(String assessmentId) {
         return results.completedResult(assessmentId);
     }
 
-    /** Reassembles the fixed question set, current Attempt and Attempt history. */
+    /** 重新组装固定题集、当前 Attempt 和历史 Attempt。 */
     public AssessmentState state(Assessment assessment) {
         return results.state(assessment);
     }

@@ -1,8 +1,8 @@
 package com.example.agent.learning.diagnostic;
 
 import com.example.agent.learning.assessment.Question;
-import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.journey.LearnerProfile;
 
 import java.util.List;
@@ -31,7 +31,7 @@ public interface DiagnosticQuestionPlanner {
             List<Question> availableQuestions,
             LearnerProfile profile);
 
-    /** Optional model activity callback; the default keeps deterministic planners unchanged. */
+    /** 可选的模型活动回调；默认实现保持确定性规划器的行为不变。 */
     default List<Question> plan(
             LearningLanguage language,
             List<LearnUnit> learnUnits,

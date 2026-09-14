@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
-/** Common fixed-set, Attempt and answer mechanics for Assessment workflows. */
+/** Assessment 工作流共用的固定题集、Attempt 和答案处理机制。 */
 final class AssessmentWorkflowSupport {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();

@@ -16,7 +16,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
-/** Reads and validates the app-wide model configuration. */
+/** 读取并校验应用级模型配置。 */
 @Component
 public final class ModelProviderConfigurationService {
 
@@ -44,7 +44,7 @@ public final class ModelProviderConfigurationService {
         this.defaultModel = defaultModel;
     }
 
-    /** Returns the effective configuration; explicit environment variables win over saved settings. */
+    /** 返回生效配置；显式环境变量优先于已保存设置。 */
     public ModelProviderConfiguration current() {
         String provider = stored(PROVIDER_KEY).filter(value -> !value.isBlank())
                 .orElse(ModelProviderConfiguration.OPENAI_COMPATIBLE);
@@ -54,7 +54,7 @@ public final class ModelProviderConfigurationService {
         return normalize(new ModelProviderConfiguration(provider, baseUrl, apiKey, model), true);
     }
 
-    /** Saves the app configuration while preserving a saved API key when the request omits it. */
+    /** 保存应用配置；请求未提供 API Key 时保留已保存的密钥。 */
     public ModelProviderConfiguration save(ModelProviderConfiguration requested) {
         if (requested == null) throw new IllegalArgumentException("model configuration is required");
         String apiKey = requested.apiKey() == null
@@ -69,7 +69,7 @@ public final class ModelProviderConfigurationService {
         return current();
     }
 
-    /** Verifies a candidate configuration with one short model request without persisting it. */
+    /** 通过一次短模型请求验证候选配置，但不持久化该配置。 */
     public void test(ModelProviderConfiguration requested) {
         if (requested == null) throw new IllegalArgumentException("model configuration is required");
         ModelProviderConfiguration current = current();
@@ -93,7 +93,7 @@ public final class ModelProviderConfigurationService {
         }
     }
 
-    /** Identifies whether the effective values come from environment, App settings, or defaults. */
+    /** 标识生效值来自环境变量、App 设置还是默认值。 */
     public String source() {
         if (environmentProperty("OPENAI_BASE_URL").isPresent()
                 || environmentProperty("OPENAI_API_KEY").isPresent()
@@ -107,7 +107,7 @@ public final class ModelProviderConfigurationService {
         return "default";
     }
 
-    /** Builds the single supported OpenAI-compatible AgentScope model. */
+    /** 创建当前唯一支持的 OpenAI-compatible AgentScope 模型。 */
     Model createModel(ModelProviderConfiguration configuration) {
         return OpenAIChatModel.builder()
                 .apiKey(configuration.apiKey())

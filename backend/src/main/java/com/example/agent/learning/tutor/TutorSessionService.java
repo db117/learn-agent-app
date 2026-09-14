@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.UUID;
 
-/** Owns the durable Journey + LearnUnit to TutorSession association. */
+/** 负责持久化 Journey + LearnUnit 与 TutorSession 的关联。 */
 @Service
 public class TutorSessionService {
 

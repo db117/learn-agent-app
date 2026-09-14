@@ -202,7 +202,7 @@ public class ProgressService {
     /**
      * 记录 LearnUnit 评估结果，并通过工作流路由到 PASS 或 RETRY。
      *
-     * <p>当前 LearnUnit 通过时推进到下一个节点；已完成 LearnUnit 的 practice 只记录 Attempt，
+     * <p>当前 LearnUnit 通过时推进到下一个节点；已完成 LearnUnit 的练习只记录 Attempt，
      * 不改变路径；未通过时保留当前节点并刷新 Journey 活动时间。</p>
      */
     @Transactional
@@ -348,7 +348,7 @@ public class ProgressService {
                 Map.of("complete", ignored -> {}, "advance", ignored -> {}));
     }
 
-    /** 选择本 Journey 中最早的一个 review debt；review task 不创建新的路径节点。 */
+    /** 选择本 Journey 中最早的一个复习欠账；复习任务不创建新的路径节点。 */
     public Optional<LearningPathItem> nextReviewTask(String journeyId) {
         journey(journeyId);
         return repository.listPath(journeyId).stream()
@@ -357,7 +357,7 @@ public class ProgressService {
                 .thenComparing(LearningPathItem::learnUnitCode));
     }
 
-    /** Chapter synthesis 只能在该 Chapter 的所有 LearnUnit 都已 traversed/attempted 后创建。 */
+    /** Chapter synthesis 只能在该 Chapter 的所有 LearnUnit 都已遍历或尝试后创建。 */
     public void requireChapterSynthesisEligible(String journeyId, String chapterCode) {
         activeJourney(journeyId);
         List<LearnUnit> units = chapterUnits(journeyId, chapterCode);
@@ -369,7 +369,7 @@ public class ProgressService {
         }
     }
 
-    /** Journey 详情使用的无副作用 eligibility 查询。 */
+    /** Journey 详情使用的无副作用可用性查询。 */
     public boolean isChapterSynthesisEligible(String journeyId, String chapterCode) {
         try {
             requireChapterSynthesisEligible(journeyId, chapterCode);
@@ -379,12 +379,12 @@ public class ProgressService {
         }
     }
 
-    /** Journey 详情使用的无副作用 synthesis 通过查询。 */
+    /** Journey 详情使用的无副作用 synthesis 通过状态查询。 */
     public boolean hasPassedChapterSynthesis(String journeyId, String chapterCode) {
         return repository.hasPassedChapterSynthesis(journeyId, chapterCode);
     }
 
-    /** 记录 Chapter synthesis 结果；失败只增加相关 review debt，不创建新的路径节点。 */
+    /** 记录 Chapter synthesis 结果；失败只增加相关复习欠账，不创建新的路径节点。 */
     @Transactional
     public ChapterSynthesisOutcome recordChapterSynthesis(
             String journeyId,
@@ -448,7 +448,7 @@ public class ProgressService {
         return item;
     }
 
-    /** 显式 practice 入口只允许访问已完成的 LearnUnit。 */
+    /** 显式练习入口只允许访问已完成的 LearnUnit。 */
     public LearningPathItem requireCompletedLearnUnit(String journeyId, String learnUnitCode) {
         LearningJourney journey = journey(journeyId);
         if (journey.status() == JourneyStatus.ARCHIVED) {

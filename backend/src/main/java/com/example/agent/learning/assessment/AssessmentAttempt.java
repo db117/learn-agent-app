@@ -3,7 +3,7 @@ package com.example.agent.learning.assessment;
 import java.time.Instant;
 
 /**
- * 一次评估尝试，允许同一 Assessment 下存在多次 Retry。
+ * 一次评估尝试，允许同一 Assessment 下存在多次重试。
  *
  * @param id Attempt 主键
  * @param assessmentId 所属 Assessment

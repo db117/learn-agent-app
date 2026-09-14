@@ -41,6 +41,7 @@ export function useTutorSession({
             return;
         }
         const epoch = runtimeEpoch.current;
+        // TutorEvent 通过 SSE 持续回放；重置会递增 epoch，丢弃旧连接迟到的事件。
         const source = new EventSource(api.eventsUrl(tutor.id));
         eventSource.current = source;
         source.onmessage = (event) => {

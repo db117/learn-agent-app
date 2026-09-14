@@ -30,7 +30,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.sql.DataSource;
 
-/** AgentScope runtime for the single TutorAgent. */
+/** 单一 TutorAgent 使用的 AgentScope runtime；学习状态变更仍由 Learning Engine 负责。 */
 @Configuration(proxyBeanMethods = false)
 public class AgentScopeConfiguration {
 

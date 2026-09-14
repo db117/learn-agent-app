@@ -261,13 +261,13 @@ public class LearningController {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    /** Continue the server-selected current LearnUnit after a restart or result screen. */
+    /** 在重启或结果页之后，继续服务端选定的当前 LearnUnit。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/continue")
     public Mono<Object> continueLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
         return openLearnUnit(journeyId, learnUnitCode, LearnUnitContentRunService.EntryAction.CONTINUE);
     }
 
-    /** Review a completed LearnUnit without changing its historical path state. */
+    /** 复习已完成的 LearnUnit，不改变其历史 Path 状态。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/review")
     public Mono<Object> reviewLearnUnit(
             @PathVariable String journeyId, @PathVariable String learnUnitCode) {
@@ -363,7 +363,7 @@ public class LearningController {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    /** 显式 practice 已完成 LearnUnit；不会改变其 Path 状态。 */
+    /** 显式练习已完成的 LearnUnit；不会改变其 Path 状态。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/practice")
     public Mono<AssessmentResponse> practiceLearnUnit(
             @PathVariable String journeyId, @PathVariable String learnUnitCode) {
@@ -385,7 +385,7 @@ public class LearningController {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    /** Retry Chapter synthesis，保留原 Assessment 和固定题集。 */
+    /** 重试 Chapter synthesis，保留原 Assessment 和固定题集。 */
     @PostMapping("/journeys/{journeyId}/chapters/{chapterCode}/synthesis/retry")
     public Mono<AssessmentResponse> retryChapterSynthesis(
             @PathVariable String journeyId, @PathVariable String chapterCode) {
@@ -394,7 +394,7 @@ public class LearningController {
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    /** Retry a failed Attempt without replacing its Assessment or fixed Question set. */
+    /** 重试失败的 Attempt，不替换其 Assessment 或固定 Question 集。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/retry")
     public AssessmentResponse retryLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
         return AssessmentResponse.from(assessments.retry(journeyId, learnUnitCode));
@@ -407,7 +407,7 @@ public class LearningController {
         return learnUnit(journeyId, learnUnitCode);
     }
 
-    /** Confirm and recover the next server-selected LearnUnit after a closed item. */
+    /** 确认当前节点已关闭，并恢复服务端选定的下一个 LearnUnit。 */
     @PostMapping("/journeys/{journeyId}/learn-units/{learnUnitCode}/next")
     public JourneyDetailResponse nextLearnUnit(@PathVariable String journeyId, @PathVariable String learnUnitCode) {
         progress.nextLearnUnit(journeyId, learnUnitCode);
@@ -562,7 +562,7 @@ public class LearningController {
             List<QuestionAttempt> questionAttempts) {
     }
 
-    /** Typed diagnostic start response; only one of runId or assessment is populated. */
+    /** 诊断启动响应；runId 与 assessment 只会填充其中一个。 */
     public record DiagnosticStartResponse(String runId, AssessmentResponse assessment) {
     }
 

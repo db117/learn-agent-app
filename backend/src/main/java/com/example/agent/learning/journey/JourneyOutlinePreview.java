@@ -4,7 +4,7 @@ import com.example.agent.learning.catalog.CurriculumGenerator;
 
 import java.util.List;
 
-/** Safe outline projection for public generation events; it contains no rules or internal codes. */
+/** 面向公开生成事件的大纲安全投影；不包含评分规则或内部编码。 */
 public record JourneyOutlinePreview(
         int chapterCount,
         int learnUnitCount,

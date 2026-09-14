@@ -4,12 +4,12 @@ import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.HashSet;
 import java.util.Set;
 
-/** Java-owned bounds for model-generated LearnUnit content. */
+/** 由 Java 负责的模型生成 LearnUnit 内容边界。 */
 public final class LearnUnitContentValidator {
 
     private LearnUnitContentValidator() {

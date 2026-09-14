@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Journey outline adapter on top of the shared GenerationRun lifecycle. */
+/** 基于共享 GenerationRun 生命周期的 Journey 大纲适配器。 */
 @Service
 public final class JourneyDraftRunService {
 

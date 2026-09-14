@@ -4,7 +4,7 @@ import com.example.agent.learning.assessment.Question;
 
 import java.util.List;
 
-/** Safe projection of generated diagnostic questions; answer keys stay server-side. */
+/** 生成诊断题的安全投影；答案仍只保留在服务端。 */
 public record DiagnosticQuestionPreview(
         int questionCount,
         List<QuestionStem> questions) {

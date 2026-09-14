@@ -19,7 +19,7 @@ function initialTheme(): Theme {
     const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (storedTheme === "dark" || storedTheme === "light") return storedTheme;
   } catch {
-    // Storage can be unavailable in restricted webviews; use the system preference instead.
+    // 受限 WebView 可能禁止访问 localStorage；读取失败时退回系统主题，不阻断页面启动。
   }
   return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
 }
@@ -28,7 +28,7 @@ function saveTheme(theme: Theme) {
   try {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch {
-    // The selected theme still applies for this session when storage is unavailable.
+    // localStorage 不可用时仍保留本次会话的主题状态，只是不持久化到下次启动。
   }
 }
 

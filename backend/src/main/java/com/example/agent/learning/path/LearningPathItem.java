@@ -23,7 +23,7 @@ import java.util.List;
  * @param learningPhase 当前教学阶段
  * @param skippedPhases 已显式跳过的教学阶段
  * @param guidedPracticeEntries 不计分的引导练习记录
- * @param needsReview 是否存在尚未通过独立检查清除的 review debt
+ * @param needsReview 是否存在尚未通过独立检查清除的复习欠账
  */
 public record LearningPathItem(
         String id,

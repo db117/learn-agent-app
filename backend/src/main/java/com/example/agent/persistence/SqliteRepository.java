@@ -11,7 +11,8 @@ import java.util.Optional;
  * Phase 1 Tutor 数据的 SQLite 访问层。
  *
  * <p>使用 Spring {@link JdbcClient} 直接访问 schema.sql 创建的表；Agent 事件和消息都保留在数据库中，
- * 以支持应用重启后的会话恢复和 SSE 追踪。</p>
+ * 以支持应用重启后的会话恢复和 SSE 追踪。这里的 JDBC 调用是阻塞操作，必须由上层调度到
+ * {@code boundedElastic}，不能占用 WebFlux event loop。</p>
  */
 @Repository
 public class SqliteRepository {
@@ -191,7 +192,7 @@ public class SqliteRepository {
             .list();
   }
 
-  /** Reads one app setting without exposing the setting table outside the persistence boundary. */
+  /** 读取一个应用设置，不让 setting 表越过持久化边界。 */
   public Optional<String> findSetting(String key) {
     return jdbc.sql("SELECT value FROM setting WHERE key = :key")
             .param("key", key)
@@ -199,7 +200,7 @@ public class SqliteRepository {
             .optional();
   }
 
-  /** Upserts one app setting and keeps its update timestamp local to the persistence layer. */
+  /** 写入或更新一个应用设置，并由持久化层维护更新时间。 */
   public void upsertSetting(String key, String value) {
     String now = Instant.now().toString();
     jdbc.sql("""

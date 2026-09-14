@@ -8,7 +8,7 @@ import com.example.agent.learning.scoring.AssessmentScore;
 import java.util.List;
 import java.util.function.Consumer;
 
-/** LearnUnit Assessment module: independent checks, retries and mastery updates. */
+/** LearnUnit Assessment 模块：处理独立检查、重试和掌握度更新。 */
 final class LearnUnitAssessmentWorkflow {
 
     private final AssessmentWorkflowSupport support;

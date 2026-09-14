@@ -1,6 +1,6 @@
 package com.example.agent.learning.assessment;
 
-/** Stable purpose of a question in the learning system. */
+/** 题目在学习系统中的稳定用途。 */
 public enum QuestionRole {
     DIAGNOSTIC,
     INDEPENDENT,

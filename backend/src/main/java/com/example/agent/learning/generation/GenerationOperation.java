@@ -1,6 +1,6 @@
 package com.example.agent.learning.generation;
 
-/** Supported model-assisted operations and their safe user-facing terminal messages. */
+/** 支持的模型辅助操作及其安全的用户可见终态消息。 */
 public enum GenerationOperation {
     JOURNEY_OUTLINE(
             "JOURNEY_OUTLINE",

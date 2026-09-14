@@ -5,7 +5,7 @@ import com.example.agent.learning.generation.GenerationOperation;
 import com.example.agent.learning.generation.GenerationRunService;
 import org.springframework.stereotype.Service;
 
-/** Diagnostic question adapter on top of the shared GenerationRun lifecycle. */
+/** 基于共享 GenerationRun 生命周期的诊断题适配器。 */
 @Service
 public final class DiagnosticQuestionRunService {
 

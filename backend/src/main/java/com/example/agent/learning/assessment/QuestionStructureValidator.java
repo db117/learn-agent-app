@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Java-owned structural checks for model-produced Question definitions. */
+/** 由 Java 负责的模型生成 Question 定义结构校验。 */
 public final class QuestionStructureValidator {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -15,7 +15,7 @@ public final class QuestionStructureValidator {
     private QuestionStructureValidator() {
     }
 
-    /** Validates fields that are independent of a particular LearnUnit. */
+    /** 校验与具体 LearnUnit 无关的字段。 */
     public static void validate(Question question) {
         if (question == null) throw new IllegalArgumentException("Question is required");
         if (question.difficulty() < 1 || question.difficulty() > 5) {
@@ -29,7 +29,7 @@ public final class QuestionStructureValidator {
         validateReferenceConcepts(question.referenceConceptsJson());
     }
 
-    /** Validates a question and its relationship to the generated LearnUnit. */
+    /** 校验题目及其与生成结果中 LearnUnit 的关系。 */
     public static void validate(Question question, LearnUnit learnUnit) {
         validate(question);
         if (learnUnit == null || !learnUnit.code().equals(question.learnUnitCode())) {

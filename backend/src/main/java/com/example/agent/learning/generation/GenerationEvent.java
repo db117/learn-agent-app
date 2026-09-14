@@ -2,7 +2,7 @@ package com.example.agent.learning.generation;
 
 import java.time.Instant;
 
-/** Public, safe projection of one generation run event. */
+/** 单次生成运行事件的公开安全投影。 */
 public record GenerationEvent(
         long sequence,
         String runId,

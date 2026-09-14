@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Fixed Question-set rules shared by the three Assessment workflows. */
+/** 三个 Assessment 工作流共用的固定 Question 集规则。 */
 final class AssessmentQuestionSet {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();

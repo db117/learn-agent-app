@@ -24,6 +24,7 @@ export function useGenerationRun<TPreview = unknown>({runId, eventsUrl, cancel}:
       return;
     }
 
+    // 生成进度通过 SSE 推送；收到终态事件后立即关闭连接，卸载时再兜底清理计时器。
     const source = new EventSource(eventsUrl(runId));
     const timer = window.setInterval(() => {
       if (startedAt.current !== null && !terminal.current) setElapsedMs(Date.now() - startedAt.current);

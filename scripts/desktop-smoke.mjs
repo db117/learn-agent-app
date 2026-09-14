@@ -11,10 +11,11 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const backend = path.join(root, "backend");
 const jar = path.join(backend, "target", "agent-backend.jar");
 const schema = path.join(backend, "src", "main", "resources", "schema.sql");
+// 桌面冒烟测试固定连接受管 JVM 的本地地址，避免误触碰其他后端进程。
 const host = "127.0.0.1";
 const port = 18080;
 
-// 此 smoke 故意使用隔离的测试数据和空 API key，绝不接触用户数据。
+// 此冒烟测试故意使用隔离的测试数据和空 API 密钥，绝不接触用户数据。
 function delay(milliseconds) {
     return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -193,7 +194,7 @@ async function startBackend(dataDir) {
     }
 }
 
-/** 停止本次 smoke 启动的 JVM，并确认固定端口已经释放。 */
+/** 停止本次冒烟测试启动的 JVM，并确认固定端口已经释放。 */
 async function stopBackend(child) {
     if (!processAlive(child)) return;
     const exited = new Promise((resolve) => child.once("exit", resolve));

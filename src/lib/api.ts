@@ -353,14 +353,14 @@ export type LearnUnitEntryResponse = LearnUnitResponse | JourneyDraftStartRespon
 export type JourneyDraftAck = {status: string};
 export type DiagnosticStartResponse = {runId: string | null; assessment: AssessmentResponse | null};
 
-/** 完整数据库替换成功后的结果；是否重启 Tauri 由界面决定。 */
+/** 完整数据库替换成功后的结果；restartRequired 表示受管运行时需要重启，具体动作由界面按运行环境决定。 */
 export type DatabaseImportResponse = {
   schemaVersion: string;
   importedAt: string;
   restartRequired: boolean;
 };
 
-/** 项目错误信封；过期快照确认需要的两个时间戳也包含在其中。 */
+/** 后端错误响应载荷；过期快照确认所需的两个时间戳也包含在其中。 */
 export type ApiErrorPayload = {
   error?: string;
   detail?: string;
@@ -375,9 +375,10 @@ export class ApiError extends Error {
   }
 }
 
+// 前端与本地 JVM 后端只通过固定地址通信；Tauri 负责管理该地址上的进程。
 const API_BASE = "http://127.0.0.1:18080/api";
 
-/** 将响应下载为浏览器文件；后端仍然是唯一读取 SQLite 的组件。 */
+/** 将后端返回的 SQLite 快照交给浏览器下载；前端不直接读取数据库文件。 */
 async function exportDatabase() {
   const response = await fetch(`${API_BASE}/database/export`);
   if (!response.ok) throw await apiError(response, `数据库导出失败（${response.status}）`);
@@ -392,7 +393,7 @@ async function exportDatabase() {
   window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
 }
 
-/** 将选中文件作为适合流式处理的请求体发送；过期数据必须显式确认。 */
+/** 将选中文件作为二进制请求体发送；过期快照必须显式确认后才能覆盖当前数据库。 */
 async function importDatabase(file: File, confirm = false) {
   return request<DatabaseImportResponse>(`/database/import${confirm ? "?confirm=true" : ""}`, {
     method: "POST",

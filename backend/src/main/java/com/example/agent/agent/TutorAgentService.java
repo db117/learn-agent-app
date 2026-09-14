@@ -173,6 +173,7 @@ public class TutorAgentService {
                     .userId(session.userId())
                     .sessionId(session.id())
                     .build();
+            // 将事件下游的 JDBC 持久化移出 WebFlux event loop，避免阻塞 Agent 流处理。
             Disposable subscription = tutorAgent.streamEvents(List.of(new UserMessage(content)), runtimeContext)
                     .publishOn(Schedulers.boundedElastic())
                     .subscribe(

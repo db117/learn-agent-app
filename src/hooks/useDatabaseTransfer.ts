@@ -110,7 +110,7 @@ export function useDatabaseTransfer({
         try {
             let result;
             try {
-                // 第一次请求有意保持非破坏性，用于识别过期快照。
+                // 首次请求不带确认标记；后端只校验快照，并在过期时返回确认所需的时间戳。
                 result = await api.importDatabase(file);
             } catch (cause) {
                 if (!(cause instanceof ApiError) || cause.payload.error !== "database_import_stale") throw cause;
@@ -119,7 +119,7 @@ export function useDatabaseTransfer({
                 if (!window.confirm("这是较旧的数据库快照。确认后将覆盖当前数据库，是否继续？")) return;
                 setImportStatus("importing");
                 setImportMessage("正在确认并导入…");
-                // 只有学习者显式确认后，才允许执行破坏性的数据库替换。
+                // 只有学习者显式确认后，才向后端发送允许覆盖当前数据库的标记。
                 result = await api.importDatabase(file, true);
             }
             if (result.restartRequired && !isTauri()) {
@@ -132,7 +132,7 @@ export function useDatabaseTransfer({
             setImportMessage(result.restartRequired ? "导入成功，正在重新加载…" : "数据库已导入");
             if (result.restartRequired) {
                 try {
-                    // SQLite 由 Java 边界负责；Tauri 只重启受管的 JVM 进程。
+                    // 数据库替换由 Java 边界完成；Tauri 只负责重启自己管理的 JVM 进程。
                     await invoke("stop_backend");
                     setBackend(await invoke<BackendStatus>("start_backend"));
                 } catch (cause) {

@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/** Chapter synthesis Assessment module: chapter-wide fixed questions and review outcome. */
+/** Chapter synthesis Assessment 模块：维护 Chapter 级固定题集和复习结果。 */
 final class ChapterSynthesisAssessmentWorkflow {
 
     private final AssessmentWorkflowSupport support;

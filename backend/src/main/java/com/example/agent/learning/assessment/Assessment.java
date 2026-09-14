@@ -5,7 +5,7 @@ import java.time.Instant;
 /**
  * 一份固定题集的评估定义。
  *
- * <p>题目通过 {@code assessment_question} 关联表在创建时固定；Retry
+ * <p>题目通过 {@code assessment_question} 关联表在创建时固定；重试
  * 只会新增 {@link AssessmentAttempt}，不会改变这份 Assessment 的题集。</p>
  *
  * @param id Assessment 主键

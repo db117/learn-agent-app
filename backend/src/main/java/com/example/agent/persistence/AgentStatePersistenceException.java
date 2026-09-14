@@ -1,6 +1,6 @@
 package com.example.agent.persistence;
 
-/** Stable application error for an unreadable or unavailable persisted AgentState. */
+/** 持久化 AgentState 不可读取或不可用时使用的稳定应用错误。 */
 public class AgentStatePersistenceException extends IllegalStateException {
 
     public AgentStatePersistenceException(String message, Throwable cause) {

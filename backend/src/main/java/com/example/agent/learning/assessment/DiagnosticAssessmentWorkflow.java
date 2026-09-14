@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
-/** Diagnostic Assessment module: fixed-set planning and path bootstrap. */
+/** Diagnostic Assessment 模块：负责固定题集规划和 Path 初始化。 */
 final class DiagnosticAssessmentWorkflow {
 
     private static final int MIN_EVIDENCE = 2;

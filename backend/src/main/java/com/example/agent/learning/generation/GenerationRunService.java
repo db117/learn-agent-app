@@ -18,7 +18,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.function.Consumer;
 
-/** Current-JVM lifecycle, deduplication and replay seam for model-assisted work. */
+/** 当前 JVM 内模型辅助工作的生命周期、去重和回放边界。 */
 @Service
 public final class GenerationRunService {
 
