@@ -160,10 +160,10 @@ fn start_backend(
     let jar = normalize_jar_path(backend_jar_path(&app)?);
     let mut command = Command::new("java");
     command
+        .env("QUARKUS_HTTP_HOST", BACKEND_HOST)
+        .env("QUARKUS_HTTP_PORT", BACKEND_PORT.to_string())
         .arg("-jar")
-        .arg(jar)
-        .arg(format!("--server.address={BACKEND_HOST}"))
-        .arg(format!("--server.port={BACKEND_PORT}"));
+        .arg(jar);
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())

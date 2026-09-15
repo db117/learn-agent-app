@@ -8,6 +8,7 @@
     "dev": "concurrently -k -n web,tauri -c green,magenta \"pnpm dev:web\" \"pnpm dev:tauri\"",
     "dev:web": "vite --host 127.0.0.1 --port 1420",
     "dev:tauri": "wait-on http://127.0.0.1:1420 && pnpm backend:package && node scripts/tauri-dev.mjs",
+    "backend:dev": "node scripts/maven.mjs quarkus:dev",
     "build": "vite build",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
