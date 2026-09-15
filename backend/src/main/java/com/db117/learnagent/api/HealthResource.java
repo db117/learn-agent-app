@@ -30,6 +30,13 @@ public class HealthResource {
         }
     }
 
+    /**
+     * 健康检查响应。
+     *
+     * @param status 服务总体状态
+     * @param service 服务名称
+     * @param database 数据库连接状态
+     */
     @RegisterForReflection
     public record HealthResponse(String status, String service, String database) {
     }

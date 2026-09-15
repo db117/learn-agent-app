@@ -22,6 +22,13 @@ public class EventResource {
                         .onItem().transform(ignored -> RuntimeEvent.heartbeat()));
     }
 
+    /**
+     * Runtime SSE 的安全事件摘要，不承载提示词、模型回答或敏感配置。
+     *
+     * @param type 稳定的事件类型
+     * @param message 面向 UI 的短消息
+     * @param timestamp 事件发生时间的 ISO-8601 文本
+     */
     public record RuntimeEvent(String type, String message, String timestamp) {
         static RuntimeEvent ready() {
             return new RuntimeEvent("runtime.ready", "Runtime skeleton ready", Instant.now().toString());

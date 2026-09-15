@@ -1,6 +1,7 @@
 package com.db117.learnagent.bootstrap;
 
 import com.db117.learnagent.config.RuntimeConfig;
+import com.db117.learnagent.persistence.sqlite.SqliteSchemaInitializer;
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.runtime.Startup;
 import jakarta.annotation.PostConstruct;
@@ -28,8 +29,12 @@ public class RuntimeInitializer {
         try {
             Files.createDirectories(Path.of(config.dataDir()).resolve("db"));
             try (Connection connection = dataSource.getConnection()) {
-                connection.createStatement().execute("PRAGMA foreign_keys = ON");
+                try (var statement = connection.createStatement()) {
+                    statement.execute("PRAGMA foreign_keys = ON");
+                }
             }
+            // 先确认 clean-slate 标记和业务表结构，再允许其他 Repository 使用数据库。
+            new SqliteSchemaInitializer(dataSource).initialize();
         } catch (IOException | SQLException error) {
             throw new IllegalStateException("Unable to initialize the runtime database", error);
         }
