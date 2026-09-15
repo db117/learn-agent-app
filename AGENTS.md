@@ -1,77 +1,23 @@
-# 项目规则
+# AGENTS.md
 
-## 运行时边界
+## 架构合同
 
-- Spring Boot WebFlux 承载应用边界，AgentScope `HarnessAgent` 承载 Agent runtime；应用只保留一个 `TutorAgent`。
-- AgentScope OpenAI provider 负责模型接入；Agent 编排、工具执行和事件流留在 Agent runtime 中。
-- HTTP、SSE、SQLite 持久化和前端 DTO 使用框架无关的数据结构；不要把 AgentScope 内部消息类型泄漏到这些边界。
-- `Skill` 表示 Agent capability，统一放在 `agent-skills` 并由 AgentScope Skill registry 加载；教学知识、课程内容和学习状态属于
-  `LearnUnit` 与 Learning Engine。
-- 工具注册给 AgentScope Agent，由 Agent runtime 执行；TutorAgent 不能直接修改学习分数、通过状态或学习路径。
-- SQLite 是当前唯一持久化数据库；使用 Spring JDBC/JdbcClient 和 Xerial JDBC，阻塞数据库操作不能占用 WebFlux
-  event loop；不引入 R2DBC、JPA 或 Hibernate。
-- Native Image 暂不属于正式构建要求；当前正式目标是 macOS arm64 上的 Spring Boot WebFlux JVM，Native、其他平台和
-  Native runtime hints 后置。
-- Rust 只负责 Tauri 桌面壳和后端进程生命周期；Agent 和 Learning Engine 逻辑保留在 Java 中。
+本仓库是 clean-slate v2 实现。
 
-## Learning Core
+1. 不为 v1 添加向后兼容。
+2. Domain State 与 Agent State 必须保持分离。
+3. Learning Domain 是 score、mastery、completion 和 assessment 的唯一权威来源。
+4. AgentScope 负责 session、memory、skill、plan、MCP、permission 和 subagents 等 Runtime 能力。
+5. Language Pack 是产品插件；Skill 是 Agent capability。
+6. UI 不得直接消费 AgentScope raw event。
+7. 任意 shell 执行默认禁止。
+8. 代码执行必须通过 ExecutionEnvironment。
+9. TutorAgent 是唯一面向用户的主 Agent。
+10. Subagent 只用于专业化和上下文隔离。
+11. 除非明确要求，不要实现路线图中的后续阶段。
+12. 每个任务必须有明确、狭窄的修改范围和验证方式。
 
-- Learning Journey 是学习入口。学习者提交目标语言和学习目标后，LLM 为当前 Journey 按需生成独立的 `LearnUnit` 与教学内容，并保存到 SQLite；不同 Journey 不共享课程目录。
-- Java Learning Engine 确定性控制评分、通过、重试、跳过、下一单元、路径和进度；TutorAgent 只负责教学对话。
-- Question 运行时来源是 SQLite。题目定义只能新增或 soft delete；题干、答案、分值和评分规则不可更新。Assessment 只引用创建时固定的 Question，历史 Attempt 必须可读。
-- Diagnostic 和 LearnUnit 评估可以由 LLM 选题或生成题目，但 Java 必须校验结构和题型覆盖；LLM 不可用时直接报错，不回退到已有题库。
-- 每次用户 Action 都是一次短生命周期 Agent 调用；Agent 不等待用户输入，状态迁移完成后持久化 workflow transition。
+## 唯一依据
 
-## JSON 契约
-
-- 固定业务结构在 HTTP、SSE、SQLite 和 Learning Engine 边界使用 Java 对象或 record；`JsonNode` 仅用于 AgentScope
-  State、工具调用增量、workflow payload、原始事件以及其他明确的动态 JSON 边界。
-- 固定结构缺少字段、类型错误、格式错误或业务校验失败时直接报错；未知字段全局忽略。
-
-## 变更边界
-
-- 保留固定后端地址 `127.0.0.1:18080`。
-- 当前范围包含一个 TutorAgent、AgentScope Harness、OpenAI provider、HTTP/SSE、SQLite 和 Tauri/React 壳。
-- 当前范围不包含 MCP、RAG、Monaco 实现或自动更新系统。
-- 影响前端、Tauri 或后端完整构建的变更后运行 `pnpm check`；Native 检查不属于当前验收，只有未来明确进入 Native 范围时才运行。
-- CI 使用 Fake/Deterministic Model；macOS arm64 端到端验收使用真实 OpenAI。LLM 生成失败直接报错，不回退到旧题库或其他生成路径。
-- 发现旧 SQLite schema 时明确报错并要求重新初始化；不保留运行时回退，也不要求旧数据兼容。
-
-## 注释规则
-
-- 代码注释使用中文；代码标识符、库名和协议名保留原文。
-- 注释解释业务约束、设计原因、公共 API/字段契约和非显然逻辑，并保持靠近被解释的代码；行为变化时同步更新注释。
-- 直观代码保持简洁，注释提供代码本身读不出的信息。
-- 很长的链式调用分行书写，并在链前说明整体意图；中间步骤语义不明显时解释关键转换；出现复杂分支、副作用或错误处理时拆成有意义的局部变量或方法。
-
-```java
-// 生成已完成 LearnUnit 的唯一名称列表；整条链只读，不修改学习状态。
-var masteredNames = path.stream()
-                .filter(item -> item.status() == LearningPathItemStatus.COMPLETED)
-                .map(item -> unitsByCode.get(item.learnUnitCode()))
-                .filter(Objects::nonNull)
-                .sorted(Comparator.comparingInt(LearnUnit::sequence))
-                .map(LearnUnit::name)
-                .filter(name -> name != null && !name.isBlank())
-                .map(String::trim)
-                .distinct()
-                .toList();
-```
-
-解释：这条链依次筛选已完成项目、查找对应
-LearnUnit、过滤缺失值、按课程顺序排序、提取名称、过滤空名称、去除首尾空白、去重并收集结果。每一步都保持单一且无副作用；某一步需要复杂条件或产生副作用时，应拆开表达。
-
-## Agent skills
-
-### Issue tracker
-
-本仓库使用 `.scratch/<feature>/` 下的本地 Markdown 文件管理需求、规格和任务。详见 `docs/agents/issue-tracker.md`。
-
-### Triage labels
-
-使用默认 triage 标签：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。详见
-`docs/agents/triage-labels.md`。
-
-### Domain docs
-
-本仓库采用单一上下文布局，使用根目录 `CONTEXT.md` 和 `docs/adr/`。详见 `docs/agents/domain.md`。
+修改代码前读取 `docs/architecture-v2/` 中与任务相关的文档；执行规则见
+`docs/architecture-v2/codex/execution-rules.md`。

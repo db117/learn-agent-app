@@ -4,11 +4,10 @@
 
 ## 开始探索前读取
 
-- 如果根目录存在 `CONTEXT-MAP.md`，读取它指向的相关 `CONTEXT.md`；否则读取根目录的 `CONTEXT.md`
-- 读取与当前工作区域相关的 `docs/adr/` 中的 ADR
-- 如果是多上下文仓库，还要检查 `src/<context>/docs/adr/` 中与当前上下文相关的 ADR
+- 读取根目录的 `CONTEXT.md`
+- 读取与当前任务相关的 `docs/architecture-v2/` 设计或步骤文档
 
-上述文件不存在时，静默继续。不要仅因文件不存在而提示问题或建议提前创建；`/domain-modeling` 会在术语或决策真正需要时按需创建它们。
+上述文件不存在时，静默继续。不要仅因文件不存在而提示问题或建议提前创建。
 
 ## 文件结构
 
@@ -17,7 +16,7 @@
 ```text
 /
 ├── CONTEXT.md
-├── docs/adr/
+├── docs/architecture-v2/
 └── src/
 ```
 
