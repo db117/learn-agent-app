@@ -3,8 +3,6 @@ import type {AssessmentResponse, DiagnosticQuestionPreview, GenerationEvent, Que
 import {GenerationProgressPanel} from "./GenerationProgressPanel";
 
 export type AnswerDraft = { selectedOptionIds: string[]; submittedCode: string };
-type QuestionOption = { id: string; text: string };
-type QuestionConfig = { options: QuestionOption[]; multiple: boolean };
 type Theme = "dark" | "light";
 
 const MONACO_LANGUAGE_ALIASES: Record<string, string> = {
@@ -57,22 +55,6 @@ type AssessmentViewProps = {
     onNext: () => void | Promise<void>;
 };
 
-function parseQuestionConfig(raw: string | null): QuestionConfig {
-    if (!raw) return {options: [], multiple: false};
-    try {
-        const parsed = JSON.parse(raw) as { options?: unknown; multiple?: unknown };
-        const options = Array.isArray(parsed.options)
-            ? parsed.options.filter((option): option is QuestionOption =>
-                typeof option === "object" && option !== null &&
-                typeof (option as { id?: unknown }).id === "string" &&
-                typeof (option as { text?: unknown }).text === "string")
-            : [];
-        return {options, multiple: parsed.multiple === true};
-    } catch {
-        return {options: [], multiple: false};
-    }
-}
-
 function monacoLanguage(language: string | null) {
     const normalized = language?.trim().toLowerCase().replace(/[\s_-]+/g, "") ?? "";
     return MONACO_LANGUAGE_ALIASES[normalized] ?? "plaintext";
@@ -107,7 +89,7 @@ export function AssessmentView({
     const diagnostic = assessment.assessment.type === "DIAGNOSTIC";
     const synthesis = assessment.assessment.type === "CHAPTER_SYNTHESIS";
     const evaluating = generation?.status === "RUNNING";
-    const questionConfig = parseQuestionConfig(currentQuestion.configJson);
+    const questionConfig = currentQuestion.config ?? {options: [], multiple: false};
 
     return (
         <section className="assessment panel">

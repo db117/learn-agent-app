@@ -42,7 +42,8 @@ class AssessmentResultReaderTest {
         Question independent = choice("independent", "unit", false, QuestionRole.INDEPENDENT);
         Question synthesisQuestion = new Question(
                 "synthesis-question", null, "chapter", QuestionType.MULTIPLE_CHOICE, 1,
-                "Synthesize", 20, config(), null, null, null, "[\"unit\"]", false, QuestionRole.SYNTHESIS);
+                "Synthesize", 20, QuestionFixtures.choiceConfig(), null, null, null, List.of("unit"), false,
+                QuestionRole.SYNTHESIS);
         stubCompleted(diagnostic, List.of(diagnosticA, diagnosticB), List.of(
                 correctAttempt(diagnosticA, "attempt-diagnostic"), correctAttempt(diagnosticB, "attempt-diagnostic")));
         stubCompleted(learnUnit, List.of(independent), List.of(correctAttempt(independent, "attempt-learn-unit")));
@@ -80,18 +81,13 @@ class AssessmentResultReaderTest {
     private QuestionAttempt correctAttempt(Question question, String attemptId) {
         return new QuestionAttempt(
                 question.id(), attemptId, "{}", question.points(), question.points(), "Correct.", true,
-                null, null, "[\"A\"]");
+                null, null, List.of("A"));
     }
 
     private Question choice(String id, String learnUnitCode, boolean diagnostic, QuestionRole role) {
         return new Question(
                 id, learnUnitCode, QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
-                config(), null, null, null, "[]", diagnostic, role);
-    }
-
-    private String config() {
-        return "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
-                + "\"correctOptionIds\":[\"A\"],\"multiple\":false}";
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), diagnostic, role);
     }
 
     private LearnUnit learnUnit() {

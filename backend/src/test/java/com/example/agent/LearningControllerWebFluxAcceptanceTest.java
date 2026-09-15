@@ -113,13 +113,13 @@ class LearningControllerWebFluxAcceptanceTest {
         JsonNode assessment = post(base + "/learn-units/" + firstCode + "/assessment");
         String assessmentId = assessment.at("/assessment/id").asText();
         String questionId = assessment.at("/questions/0/id").asText();
-        assertFalse(assessment.at("/questions/0/configJson").asText().contains("correctOptionIds"));
+        assertFalse(assessment.at("/questions/0/config/options").isMissingNode());
         JsonNode assessmentStarted = post("/api/learning/assessments/" + assessmentId + "/start");
         String firstAttemptId = assessmentStarted.at("/openAttempt/id").asText();
         answer(assessmentId, questionId, "B");
-        assertEquals("[\"B\"]",
+        assertEquals("B",
                 get("/api/learning/assessments/" + assessmentId)
-                        .at("/questionAttempts/0/selectedOptionIdsJson").asText());
+                        .at("/questionAttempts/0/selectedOptionIds/0").asText());
         JsonNode failed = post("/api/learning/assessments/" + assessmentId + "/submit");
         assertFalse(failed.at("/passed").asBoolean());
         assertEquals(1, get("/api/learning/assessments/" + assessmentId).at("/attempts").size());

@@ -1,11 +1,12 @@
 package com.example.agent.learning;
 
-import com.example.agent.learning.assessment.QuestionType;
+import com.example.agent.learning.assessment.CodingRubric;
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
-import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.Chapter;
+import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.path.DeterministicLearningPathPlanner;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
@@ -70,12 +71,17 @@ class LearningCoreTest {
     }
 
     @Test
-    void codingRubricRequiresNumericWeights() {
+    void codingQuestionRequiresTypedRubric() {
         Question coding = new Question(
                 "coding", "learnUnit-a", QuestionType.CODING, 1, "Implement", 100,
-                null, "{\"correctness\":\"high\"}", "typescript", "", "[]", false);
+                null, null, "typescript", "", List.of(), false);
 
         assertThrows(IllegalArgumentException.class, () -> QuestionStructureValidator.validate(coding));
+    }
+
+    @Test
+    void codingRubricRejectsOutOfRangeWeights() {
+        assertThrows(IllegalArgumentException.class, () -> new CodingRubric(101, 0, 0));
     }
 
     @Test

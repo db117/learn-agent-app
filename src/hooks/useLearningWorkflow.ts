@@ -8,18 +8,18 @@ import type {BackendStatus, ImportedState} from "./useDatabaseTransfer";
 import {useGenerationRun} from "./useGenerationRun";
 import {useTutorSession} from "./useTutorSession";
 import {
-  api,
-  type AssessmentResponse,
-  type AssessmentResultResponse,
-  type BackendHealth,
-  type CreateJourneyInput,
-  type DiagnosticQuestionPreview,
-  type JourneyDetail,
-  type JourneyOutlinePreview,
-  type LearningPhase,
-  type LearnUnit,
-  type LearnUnitContentPreview,
-  type LearnUnitResponse,
+    api,
+    type AssessmentResponse,
+    type AssessmentResultResponse,
+    type BackendHealth,
+    type CreateJourneyInput,
+    type DiagnosticQuestionPreview,
+    type JourneyDetail,
+    type JourneyOutlinePreview,
+    type LearningPhase,
+    type LearnUnit,
+    type LearnUnitContentPreview,
+    type LearnUnitResponse,
 } from "../lib/api";
 
 export type View = "welcome" | "journey-draft" | "diagnostic" | "result" | "dashboard" | "assessment" | "settings";
@@ -33,20 +33,10 @@ function backendConnectionError(cause: unknown) {
     return `无法启动或连接本地 JVM 后端（127.0.0.1:18080）。请确认 Java 21 已安装且可在 PATH 中找到。${detail ? ` ${detail}` : ""}`;
 }
 
-function stringArray(raw: string | null) {
-    if (!raw) return [];
-    try {
-        const parsed = JSON.parse(raw) as unknown;
-        return Array.isArray(parsed) && parsed.every((item) => typeof item === "string") ? parsed : [];
-    } catch {
-        return [];
-    }
-}
-
 function answerDrafts(response: AssessmentResponse) {
     return response.questionAttempts.reduce<Record<string, AnswerDraft>>((drafts, attempt) => {
         drafts[attempt.questionId] = {
-            selectedOptionIds: stringArray(attempt.selectedOptionIdsJson),
+            selectedOptionIds: attempt.selectedOptionIds,
             submittedCode: attempt.submittedCode ?? "",
         };
         return drafts;

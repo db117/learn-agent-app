@@ -1,6 +1,9 @@
 package com.example.agent.llm.infrastructure;
 
+import com.example.agent.learning.assessment.CodingRubric;
+import com.example.agent.learning.assessment.MultipleChoiceConfig;
 import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionOption;
 import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.assessment.QuestionType;
@@ -8,16 +11,16 @@ import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
 import com.example.agent.learning.diagnostic.DiagnosticQuestionPlanner;
 import com.example.agent.learning.journey.LearnerProfile;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.example.agent.llm.contract.LlmContracts;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.core.model.Model;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -31,11 +34,17 @@ import java.util.function.Consumer;
 @Component
 public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPlanner {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
     private final Model model;
+    private final ObjectMapper mapper;
 
     public LlmDiagnosticQuestionPlanner(Model model) {
+        this(model, new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false));
+    }
+
+    @Autowired
+    public LlmDiagnosticQuestionPlanner(Model model, ObjectMapper mapper) {
         this.model = model;
+        this.mapper = mapper;
     }
 
     /**
@@ -70,7 +79,7 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
                 {"questions":[...]}.
                 The existing catalog may be empty. For an existing question return exactly
                 {"existingQuestionId":"..."} using one of the catalog ids.
-                You may also create a new question with learnUnitCode, type (MULTIPLE_CHOICE or CODING), difficulty as a JSON integer from 1 to 5 (never a string or label). For CODING questions, rubric must be a JSON object whose values are integer weights from 0 to 100, never a prose string,
+                You may also create a new question with learnUnitCode, type (MULTIPLE_CHOICE or CODING), difficulty as a JSON integer from 1 to 5 (never a string or label). For CODING questions, rubric must be exactly {"correctness": integer 0..100, "languageUsage": integer 0..100, "clarity": integer 0..100}, never a prose string,
                 prompt, points, language, starterCode, rubric, referenceConcepts, and for multiple choice an options array
                 of {"id":"A","text":"..."} plus correctOptionIds and boolean multiple. New questions must assess the listed LearnUnits.
                 A LearnUnit with null minCodingScore has no coding learning objective and must not receive a CODING question.
@@ -91,13 +100,13 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
             throw new IllegalStateException("Assessment question planner is unavailable", error);
         }
         try {
-            JsonNode root = MAPPER.readTree(extractJson(text));
-            JsonNode nodes = root.get("questions");
-            if (nodes == null || !nodes.isArray() || nodes.isEmpty()) {
+            LlmContracts.DiagnosticPlan root = mapper.readValue(extractJson(text), LlmContracts.DiagnosticPlan.class);
+            List<LlmContracts.Question> nodes = root.questions();
+            if (nodes == null || nodes.isEmpty()) {
                 throw new IllegalArgumentException("questions must be a non-empty array");
             }
             List<Question> result = new ArrayList<>();
-            for (JsonNode node : nodes) result.add(parseQuestion(node, existing, learnUnitsByCode));
+            for (LlmContracts.Question node : nodes) result.add(parseQuestion(node, existing, learnUnitsByCode));
             return result;
         } catch (Exception error) {
             throw new IllegalArgumentException("Assessment question planner returned invalid JSON", error);
@@ -110,69 +119,79 @@ public final class LlmDiagnosticQuestionPlanner implements DiagnosticQuestionPla
      * <p>结果只有一个 existingQuestionId 时复用现有题目；否则按新题目字段构建对象并执行结构校验。</p>
      */
     private Question parseQuestion(
-            JsonNode node, Map<String, Question> existing, Map<String, LearnUnit> learnUnitsByCode) {
-        JsonNode existingId = node.get("existingQuestionId");
-        if (existingId != null) {
-            if (!existingId.isTextual() || node.size() != 1) {
+            LlmContracts.Question node, Map<String, Question> existing, Map<String, LearnUnit> learnUnitsByCode) {
+        if (node.existingQuestionId() != null) {
+            if (!isExistingReference(node)) {
                 throw new IllegalArgumentException("Existing question references cannot contain edits");
             }
-            Question question = existing.get(existingId.textValue());
+            Question question = existing.get(node.existingQuestionId());
             if (question == null) throw new IllegalArgumentException("Unknown existing question");
             return question;
         }
-        String learnUnitCode = requiredText(node, "learnUnitCode");
+        String learnUnitCode = requiredText(node.learnUnitCode(), "learnUnitCode");
         LearnUnit learnUnit = learnUnitsByCode.get(learnUnitCode);
         if (learnUnit == null) throw new IllegalArgumentException("Unknown assessment LearnUnit");
-        QuestionType type = QuestionType.valueOf(requiredText(node, "type").toUpperCase(Locale.ROOT));
-        String prompt = requiredText(node, "prompt");
-        int difficulty = requiredInt(node, "difficulty", 1, 5);
-        int points = requiredInt(node, "points", 1, 1000);
-        String config = null;
-        String rubric = null;
+        QuestionType type = node.type();
+        if (type == null) throw new IllegalArgumentException("Missing type");
+        String prompt = requiredText(node.prompt(), "prompt");
+        int difficulty = requiredInt(node.difficulty(), "difficulty", 1, 5);
+        int points = requiredInt(node.points(), "points", 1, 1000);
+        MultipleChoiceConfig config = null;
+        CodingRubric rubric = null;
         if (type == QuestionType.MULTIPLE_CHOICE) {
-            JsonNode options = node.get("options");
-            JsonNode correct = node.get("correctOptionIds");
-            JsonNode multiple = node.get("multiple");
-            if (options == null || !options.isArray() || correct == null || !correct.isArray()
-                    || multiple == null || !multiple.isBoolean()) {
+            if (node.options() == null || node.correctOptionIds() == null || node.multiple() == null) {
                 throw new IllegalArgumentException("Multiple choice question needs options, correctOptionIds and multiple");
             }
-            ObjectNode configNode = MAPPER.createObjectNode();
-            configNode.set("options", options);
-            configNode.set("correctOptionIds", correct);
-            configNode.set("multiple", multiple);
-            config = configNode.toString();
+            List<QuestionOption> options = node.options().stream()
+                    .map(option -> new QuestionOption(requiredText(option.id(), "option.id"), requiredText(option.text(), "option.text")))
+                    .toList();
+            config = new MultipleChoiceConfig(options, strings(node.correctOptionIds(), "correctOptionIds"), node.multiple());
         } else {
-            JsonNode rubricNode = node.get("rubric");
-            if (rubricNode == null || rubricNode.isNull()) throw new IllegalArgumentException("Coding question rubric is required");
-            rubric = rubricNode.toString();
+            if (node.rubric() == null) throw new IllegalArgumentException("Coding question rubric is required");
+            rubric = new CodingRubric(node.rubric().correctness(), node.rubric().languageUsage(), node.rubric().clarity());
         }
-        JsonNode concepts = node.get("referenceConcepts");
         Question question = new Question(
                 "generated-question-" + UUID.randomUUID(), learnUnitCode, type, difficulty,
-                prompt, points, config, rubric, nullableText(node, "language"), nullableText(node, "starterCode"),
-                concepts == null || concepts.isNull() ? "[]" : concepts.toString(), true, QuestionRole.DIAGNOSTIC);
+                prompt, points, config, rubric, nullableText(node.language()), nullableText(node.starterCode()),
+                strings(node.referenceConcepts(), "referenceConcepts"),
+                true, QuestionRole.DIAGNOSTIC);
         QuestionStructureValidator.validate(question, learnUnit);
         return question;
     }
 
-    private String requiredText(JsonNode node, String field) {
-        String value = nullableText(node, field);
+    private String requiredText(String raw, String field) {
+        String value = nullableText(raw);
         if (value == null || value.isBlank()) throw new IllegalArgumentException("Missing " + field);
         return value;
     }
 
-    private int requiredInt(JsonNode node, String field, int min, int max) {
-        JsonNode value = node.get(field);
-        if (value == null || !value.isIntegralNumber()) throw new IllegalArgumentException("Missing or invalid " + field);
-        int result = value.asInt(Integer.MIN_VALUE);
+    private int requiredInt(Integer value, String field, int min, int max) {
+        if (value == null) throw new IllegalArgumentException("Missing or invalid " + field);
+        int result = value;
         if (result < min || result > max) throw new IllegalArgumentException("Invalid " + field);
         return result;
     }
 
-    private String nullableText(JsonNode node, String field) {
-        JsonNode value = node.get(field);
-        return value == null || value.isNull() ? null : value.asText();
+    private String nullableText(String raw) {
+        return raw == null ? null : raw.trim();
+    }
+
+    private List<String> strings(List<String> values, String field) {
+        if (values == null) throw new IllegalArgumentException("Missing " + field);
+        List<String> result = new ArrayList<>();
+        for (String value : values) {
+            if (value == null || value.isBlank())
+                throw new IllegalArgumentException(field + " must contain non-empty strings");
+            result.add(value.trim());
+        }
+        return result;
+    }
+
+    private boolean isExistingReference(LlmContracts.Question node) {
+        return node.learnUnitCode() == null && node.type() == null && node.difficulty() == null
+                && node.prompt() == null && node.points() == null && node.options() == null
+                && node.correctOptionIds() == null && node.multiple() == null && node.language() == null
+                && node.starterCode() == null && node.rubric() == null && node.referenceConcepts() == null;
     }
 
     private String extractJson(String value) {

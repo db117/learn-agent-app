@@ -4,6 +4,8 @@ import com.example.agent.learning.assessment.Assessment;
 import com.example.agent.learning.assessment.AssessmentAttempt;
 import com.example.agent.learning.assessment.AssessmentStatus;
 import com.example.agent.learning.assessment.AssessmentType;
+import com.example.agent.learning.assessment.CodingRubric;
+import com.example.agent.learning.assessment.MultipleChoiceConfig;
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
 import com.example.agent.learning.assessment.QuestionRole;
@@ -20,6 +22,7 @@ import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.workflow.WorkflowTransition;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -41,7 +44,9 @@ import java.util.UUID;
 @Repository
 public class LearningRepository {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+            .registerModule(new JavaTimeModule());
 
     private final JdbcClient jdbc;
 
@@ -291,11 +296,11 @@ public class LearningRepository {
                 .param("difficulty", question.difficulty())
                 .param("prompt", question.prompt())
                 .param("points", question.points())
-                .param("configJson", question.configJson())
-                .param("rubricJson", question.rubricJson())
+                .param("configJson", json(question.config()))
+                .param("rubricJson", json(question.rubric()))
                 .param("language", question.language())
                 .param("starterCode", question.starterCode())
-                .param("referenceConcepts", question.referenceConceptsJson())
+                .param("referenceConcepts", json(question.referenceConcepts()))
                 .param("diagnosticEligible", question.diagnosticEligible() ? 1 : 0)
                 .param("role", question.role().name())
                 .update();
@@ -748,7 +753,7 @@ public class LearningRepository {
                 .param("correct", attempt.correct() == null ? null : (attempt.correct() ? 1 : 0))
                 .param("submittedCode", attempt.submittedCode())
                 .param("evaluationJson", attempt.evaluationJson())
-                .param("selectedOptionIds", attempt.selectedOptionIdsJson())
+                .param("selectedOptionIds", json(attempt.selectedOptionIds()))
                 .update();
     }
 
@@ -764,7 +769,7 @@ public class LearningRepository {
                         rs.getString("question_id"), rs.getString("assessment_attempt_id"), rs.getString("answer_json"),
                         nullableInt(rs.getObject("score")), rs.getInt("max_score"), rs.getString("feedback"),
                         nullableBool(rs.getObject("correct")), rs.getString("submitted_code"),
-                        rs.getString("evaluation_json"), rs.getString("selected_option_ids_json")))
+                        rs.getString("evaluation_json"), list(rs.getString("selected_option_ids_json"))))
                 .list();
     }
 
@@ -784,7 +789,7 @@ public class LearningRepository {
                         rs.getString("question_id"), rs.getString("assessment_attempt_id"), rs.getString("answer_json"),
                         nullableInt(rs.getObject("score")), rs.getInt("max_score"), rs.getString("feedback"),
                         nullableBool(rs.getObject("correct")), rs.getString("submitted_code"),
-                        rs.getString("evaluation_json"), rs.getString("selected_option_ids_json")))
+                        rs.getString("evaluation_json"), list(rs.getString("selected_option_ids_json"))))
                 .list();
     }
 
@@ -881,12 +886,17 @@ public class LearningRepository {
     }
 
     private Question mapQuestion(java.sql.ResultSet rs) throws java.sql.SQLException {
+        QuestionType type = QuestionType.valueOf(rs.getString("type"));
         return new Question(
                 rs.getString("id"), rs.getString("learn_unit_code"), rs.getString("chapter_code"),
-                QuestionType.valueOf(rs.getString("type")),
-                rs.getInt("difficulty"), rs.getString("prompt"), rs.getInt("points"), rs.getString("config_json"),
-                rs.getString("rubric_json"), rs.getString("language"), rs.getString("starter_code"),
-                rs.getString("reference_concepts_json"), rs.getInt("diagnostic_eligible") != 0,
+                type,
+                rs.getInt("difficulty"), rs.getString("prompt"), rs.getInt("points"),
+                type == QuestionType.MULTIPLE_CHOICE
+                        ? readJson(rs.getString("config_json"), MultipleChoiceConfig.class) : null,
+                type == QuestionType.CODING
+                        ? readJson(rs.getString("rubric_json"), CodingRubric.class) : null,
+                rs.getString("language"), rs.getString("starter_code"),
+                list(rs.getString("reference_concepts_json")), rs.getInt("diagnostic_eligible") != 0,
                 QuestionRole.valueOf(rs.getString("role")));
     }
 
@@ -928,10 +938,22 @@ public class LearningRepository {
     }
 
     private String json(Object value) {
+        if (value == null) return null;
         try {
             return MAPPER.writeValueAsString(value);
         } catch (Exception error) {
             throw new IllegalStateException("Unable to serialize learning data", error);
+        }
+    }
+
+    private <T> T readJson(String value, Class<T> type) {
+        if (value == null || value.isBlank() || "null".equals(value)) {
+            throw new IllegalStateException("Missing persisted " + type.getSimpleName());
+        }
+        try {
+            return MAPPER.readValue(value, type);
+        } catch (Exception error) {
+            throw new IllegalStateException("Invalid persisted " + type.getSimpleName(), error);
         }
     }
 

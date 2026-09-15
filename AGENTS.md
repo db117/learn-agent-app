@@ -22,6 +22,12 @@
 - Diagnostic 和 LearnUnit 评估可以由 LLM 选题或生成题目，但 Java 必须校验结构和题型覆盖；LLM 不可用时直接报错，不回退到已有题库。
 - 每次用户 Action 都是一次短生命周期 Agent 调用；Agent 不等待用户输入，状态迁移完成后持久化 workflow transition。
 
+## JSON 契约
+
+- 固定业务结构在 HTTP、SSE、SQLite 和 Learning Engine 边界使用 Java 对象或 record；`JsonNode` 仅用于 AgentScope
+  State、工具调用增量、workflow payload、原始事件以及其他明确的动态 JSON 边界。
+- 固定结构缺少字段、类型错误、格式错误或业务校验失败时直接报错；未知字段全局忽略。
+
 ## 变更边界
 
 - 保留固定后端地址 `127.0.0.1:18080`。

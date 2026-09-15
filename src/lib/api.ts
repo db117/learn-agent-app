@@ -171,12 +171,13 @@ export type Question = {
   difficulty: number;
   prompt: string;
   points: number;
-  configJson: string | null;
-  rubricJson: string | null;
+    config: QuestionConfig | null;
   language: string | null;
   starterCode: string | null;
-  referenceConceptsJson: string | null;
 };
+
+export type QuestionOption = { id: string; text: string };
+export type QuestionConfig = { options: QuestionOption[]; multiple: boolean };
 
 export type Assessment = {
   id: string;
@@ -213,7 +214,7 @@ export type QuestionAttempt = {
   correct: boolean | null;
   submittedCode: string | null;
   evaluationJson: string | null;
-  selectedOptionIdsJson: string | null;
+    selectedOptionIds: string[];
 };
 
 export type AssessmentScore = {

@@ -1,22 +1,20 @@
 package com.example.agent.llm;
 
+import com.example.agent.learning.assessment.QuestionRole;
+import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.llm.infrastructure.LlmCurriculumGenerator;
-import com.example.agent.learning.assessment.Question;
-import com.example.agent.learning.assessment.QuestionRole;
-import com.example.agent.learning.assessment.QuestionType;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
-
-import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -103,7 +101,7 @@ class LlmCurriculumGeneratorTest {
         assertEquals("定义一个保存姓名的变量", result.learnUnit().guidedPracticePrompt());
         assertEquals("完成变量检查", result.learnUnit().independentCheckPrompt());
         assertEquals(List.of("name = 'Ada'"), result.learnUnit().examples());
-        assertEquals("[\"变量\"]", result.independentQuestions().get(0).referenceConceptsJson());
+        assertEquals(List.of("变量"), result.independentQuestions().get(0).referenceConcepts());
         assertEquals(QuestionType.MULTIPLE_CHOICE, result.independentQuestions().get(0).type());
     }
 

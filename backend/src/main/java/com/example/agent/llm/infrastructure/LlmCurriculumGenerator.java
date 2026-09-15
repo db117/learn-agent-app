@@ -1,19 +1,32 @@
 package com.example.agent.llm.infrastructure;
 
+import com.example.agent.learning.assessment.CodingRubric;
+import com.example.agent.learning.assessment.MultipleChoiceConfig;
 import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionOption;
 import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionStructureValidator;
 import com.example.agent.learning.assessment.QuestionType;
-import com.example.agent.learning.catalog.*;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.example.agent.learning.catalog.Chapter;
+import com.example.agent.learning.catalog.CurriculumGenerator;
+import com.example.agent.learning.catalog.LearnUnit;
+import com.example.agent.learning.catalog.LearnUnitContentValidator;
+import com.example.agent.learning.catalog.LearningLanguage;
+import com.example.agent.llm.contract.LlmContracts;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;
 import io.agentscope.core.model.Model;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
@@ -25,7 +38,6 @@ import java.util.function.Consumer;
 @Component
 public final class LlmCurriculumGenerator implements CurriculumGenerator {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final ResponseFormat CONTENT_RESPONSE_FORMAT = ResponseFormat.jsonSchema(
             JsonSchema.builder()
                     .name("learn_unit_content")
@@ -34,9 +46,16 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                     .strict(true)
                     .build());
     private final Model model;
+    private final ObjectMapper mapper;
 
     public LlmCurriculumGenerator(Model model) {
+        this(model, new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false));
+    }
+
+    @Autowired
+    public LlmCurriculumGenerator(Model model, ObjectMapper mapper) {
         this.model = model;
+        this.mapper = mapper;
     }
 
     @Override
@@ -79,7 +98,8 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                 不要生成 lessonIntro、examples、questions 或任何考试内容。
                 """.formatted(language, learningContext == null ? "" : learningContext.trim());
         try {
-            JsonNode root = MAPPER.readTree(extractJson(AgentScopeTextGenerator.generate(model, prompt, onText)));
+            LlmContracts.Outline root = mapper.readValue(
+                    extractJson(AgentScopeTextGenerator.generate(model, prompt, onText)), LlmContracts.Outline.class);
             return parseOutline(root);
         } catch (Exception error) {
             throw new IllegalArgumentException("Curriculum outline generator returned invalid JSON", error);
@@ -114,25 +134,21 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                 learningContext == null ? "" : learningContext.trim(), outline.languageCode(),
                 outline.code(), outline.name(), outline.description(), outline.learningObjectives(), outline.keyConcepts());
         String response = AgentScopeTextGenerator.generate(model, prompt, CONTENT_RESPONSE_FORMAT, onText);
-        JsonNode root;
+        LlmContracts.Content generatedContent;
         try {
-            root = MAPPER.readTree(extractJson(response));
+            generatedContent = mapper.readValue(extractJson(response), LlmContracts.Content.class);
         } catch (Exception error) {
             throw new IllegalArgumentException("LearnUnit content generator returned invalid JSON", error);
         }
         try {
-            JsonNode abilities = root.get("abilities");
-            if (abilities != null && (!abilities.isArray() || abilities.size() != 1)) {
-                throw new IllegalArgumentException("LearnUnit content must contain exactly one ability");
-            }
-            String ability = requiredText(root, "ability");
-            int estimatedMinutes = requiredBoundedInt(root, "estimatedMinutes", 1, 30);
-            String intro = boundedText(root, "lessonIntro", 2000);
-            List<String> examples = boundedStrings(root.get("examples"), 1, 5, 2000);
-            String guidedPrompt = boundedText(root, "guidedPracticePrompt", 1000);
-            List<String> guidedHints = boundedStrings(root.get("guidedPracticeHints"), 0, 3, 300);
-            String independentPrompt = boundedText(root, "independentCheckPrompt", 1000);
-            List<Question> questions = parseIndependentQuestions(root.get("questions"), outline);
+            String ability = requiredText(generatedContent.ability(), "ability");
+            int estimatedMinutes = requiredBoundedInt(generatedContent.estimatedMinutes(), "estimatedMinutes", 1, 30);
+            String intro = boundedText(generatedContent.lessonIntro(), "lessonIntro", 2000);
+            List<String> examples = boundedStrings(generatedContent.examples(), "examples", 1, 5, 2000);
+            String guidedPrompt = boundedText(generatedContent.guidedPracticePrompt(), "guidedPracticePrompt", 1000);
+            List<String> guidedHints = boundedStrings(generatedContent.guidedPracticeHints(), "guidedPracticeHints", 0, 3, 300);
+            String independentPrompt = boundedText(generatedContent.independentCheckPrompt(), "independentCheckPrompt", 1000);
+            List<Question> questions = parseIndependentQuestions(generatedContent.questions(), outline);
             LearnUnit content = new LearnUnit(
                     outline.id(), outline.languageCode(), outline.code(), outline.chapterCode(), outline.name(),
                     outline.description(), outline.sequence(), outline.prerequisiteLearnUnitCodes(), outline.passScore(),
@@ -202,9 +218,13 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
 
     private static Map<String, Object> rubricProperties() {
         return Map.of(
-                "correctness", Map.of("type", "integer"),
-                "languageUsage", Map.of("type", "integer"),
-                "clarity", Map.of("type", "integer"));
+                "correctness", rubricWeightSchema(),
+                "languageUsage", rubricWeightSchema(),
+                "clarity", rubricWeightSchema());
+    }
+
+    private static Map<String, Object> rubricWeightSchema() {
+        return Map.of("type", "integer", "minimum", 0, "maximum", 100);
     }
 
     private static Map<String, Object> arraySchema(Map<String, Object> items) {
@@ -235,46 +255,26 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                 "additionalProperties", false);
     }
 
-    private List<Question> parseIndependentQuestions(JsonNode nodes, LearnUnit outline) {
-        if (nodes == null || !nodes.isArray() || nodes.size() < 1 || nodes.size() > 5) {
+    private List<Question> parseIndependentQuestions(List<LlmContracts.Question> nodes, LearnUnit outline) {
+        if (nodes == null || nodes.size() < 1 || nodes.size() > 5) {
             throw new IllegalArgumentException("independent questions must contain 1 to 5 items");
         }
         List<Question> result = new ArrayList<>();
-        for (JsonNode node : nodes) {
-            QuestionType type;
-            try {
-                type = QuestionType.valueOf(requiredText(node, "type").toUpperCase(Locale.ROOT));
-            } catch (IllegalArgumentException error) {
-                throw new IllegalArgumentException("Invalid independent question type", error);
-            }
-            String config = null;
-            String rubric = null;
+        for (LlmContracts.Question node : nodes) {
+            QuestionType type = requireQuestionType(node.type());
+            MultipleChoiceConfig config = null;
+            CodingRubric rubric = null;
             if (type == QuestionType.MULTIPLE_CHOICE) {
-                JsonNode options = node.get("options");
-                JsonNode correct = node.get("correctOptionIds");
-                JsonNode multiple = node.get("multiple");
-                if (options == null || !options.isArray() || correct == null || !correct.isArray()
-                        || multiple == null || !multiple.isBoolean()) {
-                    throw new IllegalArgumentException("Multiple choice question needs options, correctOptionIds and multiple");
-                }
-                ObjectNode configNode = MAPPER.createObjectNode();
-                configNode.set("options", options);
-                configNode.set("correctOptionIds", correct);
-                configNode.set("multiple", multiple);
-                config = configNode.toString();
+                config = multipleChoiceConfig(node);
             } else {
-                JsonNode rubricNode = node.get("rubric");
-                if (rubricNode == null || rubricNode.isNull()) {
-                    throw new IllegalArgumentException("Coding question rubric is required");
-                }
-                rubric = rubricNode.toString();
+                rubric = codingRubric(node.rubric());
             }
             Question question = new Question(
                     "generated-independent-question-" + UUID.randomUUID(), outline.code(), type,
-                    requiredBoundedInt(node, "difficulty", 1, 5), requiredText(node, "prompt"),
-                    requiredBoundedInt(node, "points", 1, 1000), config, rubric,
-                    nullableText(node, "language"), nullableText(node, "starterCode"),
-                    node.has("referenceConcepts") ? node.get("referenceConcepts").toString() : "[]", false,
+                    requiredBoundedInt(node.difficulty(), "difficulty", 1, 5), requiredText(node.prompt(), "prompt"),
+                    requiredBoundedInt(node.points(), "points", 1, 1000), config, rubric,
+                    nullableText(node.language()), nullableText(node.starterCode()),
+                    strings(node.referenceConcepts(), "referenceConcepts"), false,
                     QuestionRole.INDEPENDENT);
             QuestionStructureValidator.validate(question, outline);
             result.add(question);
@@ -282,33 +282,31 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         return result;
     }
 
-    private GeneratedOutline parseOutline(JsonNode root) {
-        JsonNode languageNodes = root == null ? null : root.get("languages");
-        JsonNode chapterNodes = root == null ? null : root.get("chapters");
-        JsonNode learnUnitNodes = root == null ? null : root.get("learnUnits");
-        if (languageNodes == null || !languageNodes.isArray() || languageNodes.isEmpty()
-                || chapterNodes == null || !chapterNodes.isArray() || chapterNodes.isEmpty()
-                || learnUnitNodes == null || !learnUnitNodes.isArray() || learnUnitNodes.isEmpty()) {
+    private GeneratedOutline parseOutline(LlmContracts.Outline root) {
+        List<LlmContracts.Language> languageNodes = requiredItems(root == null ? null : root.languages(), "languages");
+        List<LlmContracts.Chapter> chapterNodes = requiredItems(root == null ? null : root.chapters(), "chapters");
+        List<LlmContracts.LearnUnit> learnUnitNodes = requiredItems(root == null ? null : root.learnUnits(), "learnUnits");
+        if (languageNodes.isEmpty() || chapterNodes.isEmpty() || learnUnitNodes.isEmpty()) {
             throw new IllegalArgumentException("languages, chapters and learnUnits must be non-empty arrays");
         }
         List<LearningLanguage> languages = new ArrayList<>();
         Set<String> languageCodes = new HashSet<>();
-        for (JsonNode node : languageNodes) {
-            String code = requiredText(node, "code");
+        for (LlmContracts.Language node : languageNodes) {
+            String code = requiredText(node.code(), "code");
             if (!languageCodes.add(code)) throw new IllegalArgumentException("Duplicate language code: " + code);
             languages.add(new LearningLanguage(
-                    "generated-language-" + UUID.randomUUID(), code, requiredText(node, "name"),
-                    requiredText(node, "description"), true));
+                    "generated-language-" + UUID.randomUUID(), code, requiredText(node.name(), "name"),
+                    requiredText(node.description(), "description"), true));
         }
         List<Chapter> chapters = new ArrayList<>();
         Set<String> chapterCodes = new HashSet<>();
-        for (JsonNode node : chapterNodes) {
-            String code = requiredText(node, "code");
+        for (LlmContracts.Chapter node : chapterNodes) {
+            String code = requiredText(node.code(), "code");
             if (!chapterCodes.add(code)) throw new IllegalArgumentException("Duplicate Chapter code: " + code);
             chapters.add(new Chapter(
-                    "generated-chapter-" + UUID.randomUUID(), code, requiredText(node, "name"),
-                    requiredText(node, "goal"), requiredBoundedInt(node, "sequence", 1, 1000),
-                    strings(node.get("prerequisiteChapterCodes"))));
+                    "generated-chapter-" + UUID.randomUUID(), code, requiredText(node.name(), "name"),
+                    requiredText(node.goal(), "goal"), requiredBoundedInt(node.sequence(), "sequence", 1, 1000),
+                    strings(node.prerequisiteChapterCodes(), "prerequisiteChapterCodes")));
         }
         for (Chapter chapter : chapters) {
             Set<String> prerequisites = new HashSet<>();
@@ -321,10 +319,10 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         }
         List<LearnUnit> learnUnits = new ArrayList<>();
         Set<String> learnUnitCodes = new HashSet<>();
-        for (JsonNode node : learnUnitNodes) {
-            String code = requiredText(node, "code");
-            String languageCode = requiredText(node, "languageCode");
-            String chapterCode = requiredText(node, "chapterCode");
+        for (LlmContracts.LearnUnit node : learnUnitNodes) {
+            String code = requiredText(node.code(), "code");
+            String languageCode = requiredText(node.languageCode(), "languageCode");
+            String chapterCode = requiredText(node.chapterCode(), "chapterCode");
             if (!languageCodes.contains(languageCode)) {
                 throw new IllegalArgumentException("LearnUnit belongs to unknown language: " + code);
             }
@@ -332,17 +330,18 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
                 throw new IllegalArgumentException("LearnUnit belongs to unknown Chapter: " + code);
             }
             if (!learnUnitCodes.add(code)) throw new IllegalArgumentException("Duplicate LearnUnit code: " + code);
-            List<String> objectives = strings(node.get("learningObjectives"));
-            List<String> concepts = strings(node.get("keyConcepts"));
+            List<String> objectives = strings(node.learningObjectives(), "learningObjectives");
+            List<String> concepts = strings(node.keyConcepts(), "keyConcepts");
             if (objectives.isEmpty() || concepts.isEmpty()) {
                 throw new IllegalArgumentException("Outline LearnUnit needs objectives and keyConcepts");
             }
             learnUnits.add(new LearnUnit(
                     "generated-learn-unit-" + UUID.randomUUID(), languageCode, code, chapterCode,
-                    requiredText(node, "name"),
-                    requiredText(node, "description"), requiredBoundedInt(node, "sequence", 1, 1000),
-                    strings(node.get("prerequisiteLearnUnitCodes")), requiredBoundedInt(node, "passScore", 0, 100),
-                    nullableBoundedInt(node, "minCodingScore", 0, 100), true, objectives, "", concepts, List.of(), true));
+                    requiredText(node.name(), "name"),
+                    requiredText(node.description(), "description"), requiredBoundedInt(node.sequence(), "sequence", 1, 1000),
+                    strings(node.prerequisiteLearnUnitCodes(), "prerequisiteLearnUnitCodes"),
+                    requiredBoundedInt(node.passScore(), "passScore", 0, 100),
+                    nullableBoundedInt(node.minCodingScore(), "minCodingScore", 0, 100), true, objectives, "", concepts, List.of(), true));
         }
         for (LearnUnit learnUnit : learnUnits) {
             for (String prerequisite : learnUnit.prerequisiteLearnUnitCodes()) {
@@ -354,32 +353,30 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         return new GeneratedOutline(languages, chapters, learnUnits);
     }
 
-    private int requiredBoundedInt(JsonNode node, String field, int min, int max) {
-        JsonNode value = node.get(field);
-        if (value == null || !value.isIntegralNumber()) throw new IllegalArgumentException("Missing or invalid " + field);
-        int result = value.asInt(Integer.MIN_VALUE);
+    private int requiredBoundedInt(Integer value, String field, int min, int max) {
+        if (value == null) throw new IllegalArgumentException("Missing or invalid " + field);
+        int result = value;
         if (result < min || result > max) throw new IllegalArgumentException("Invalid " + field);
         return result;
     }
 
-    private Integer nullableBoundedInt(JsonNode node, String field, int min, int max) {
-        JsonNode value = node.get(field);
-        if (value == null || value.isNull()) return null;
-        int result = value.asInt(Integer.MIN_VALUE);
+    private Integer nullableBoundedInt(Integer value, String field, int min, int max) {
+        if (value == null) return null;
+        int result = value;
         if (result < min || result > max) throw new IllegalArgumentException("Invalid " + field);
         return result;
     }
 
-    private String boundedText(JsonNode node, String field, int maxLength) {
-        String value = requiredText(node, field);
+    private String boundedText(String raw, String field, int maxLength) {
+        String value = requiredText(raw, field);
         if (value.length() > maxLength) throw new IllegalArgumentException(field + " is too long");
         return value;
     }
 
-    private List<String> boundedStrings(JsonNode node, int min, int max, int itemMaxLength) {
-        List<String> values = strings(node);
+    private List<String> boundedStrings(List<String> raw, String field, int min, int max, int itemMaxLength) {
+        List<String> values = strings(raw, field);
         if (values.size() < min || values.size() > max) {
-            throw new IllegalArgumentException("Array field has an invalid size");
+            throw new IllegalArgumentException(field + " has an invalid size");
         }
         if (values.stream().anyMatch(value -> value.length() > itemMaxLength)) {
             throw new IllegalArgumentException("Array field contains oversized text");
@@ -387,32 +384,51 @@ public final class LlmCurriculumGenerator implements CurriculumGenerator {
         return values;
     }
 
-    private List<String> strings(JsonNode node) {
-        if (node == null || !node.isArray()) return List.of();
+    private List<String> strings(List<String> values, String field) {
+        if (values == null) throw new IllegalArgumentException("Missing " + field);
         List<String> result = new ArrayList<>();
-        for (JsonNode value : node) {
-            if (!value.isTextual() || value.textValue().isBlank()) {
+        for (String value : values) {
+            if (value == null || value.isBlank()) {
                 throw new IllegalArgumentException("Array fields must contain non-empty strings");
             }
-            result.add(value.textValue().trim());
+            result.add(value.trim());
         }
         return result;
     }
 
-    private String requiredText(JsonNode node, String field) {
-        String value = optionalText(node, field);
+    private String requiredText(String raw, String field) {
+        String value = raw == null ? null : raw.trim();
         if (value == null || value.isBlank()) throw new IllegalArgumentException("Missing " + field);
         return value;
     }
 
-    private String optionalText(JsonNode node, String field) {
-        JsonNode value = node == null ? null : node.get(field);
-        return value == null || value.isNull() ? "" : value.asText().trim();
+    private String nullableText(String raw) {
+        return raw == null ? null : raw.trim();
     }
 
-    private String nullableText(JsonNode node, String field) {
-        JsonNode value = node == null ? null : node.get(field);
-        return value == null || value.isNull() ? null : value.asText().trim();
+    private MultipleChoiceConfig multipleChoiceConfig(LlmContracts.Question question) {
+        if (question.options() == null || question.correctOptionIds() == null || question.multiple() == null) {
+            throw new IllegalArgumentException("Multiple choice question needs options, correctOptionIds and multiple");
+        }
+        List<QuestionOption> options = question.options().stream()
+                .map(option -> new QuestionOption(requiredText(option.id(), "option.id"), requiredText(option.text(), "option.text")))
+                .toList();
+        return new MultipleChoiceConfig(options, strings(question.correctOptionIds(), "correctOptionIds"), question.multiple());
+    }
+
+    private CodingRubric codingRubric(LlmContracts.Rubric rubric) {
+        if (rubric == null) throw new IllegalArgumentException("Coding question rubric is required");
+        return new CodingRubric(rubric.correctness(), rubric.languageUsage(), rubric.clarity());
+    }
+
+    private QuestionType requireQuestionType(QuestionType type) {
+        if (type == null) throw new IllegalArgumentException("Missing question type");
+        return type;
+    }
+
+    private <T> List<T> requiredItems(List<T> values, String field) {
+        if (values == null) throw new IllegalArgumentException("Missing " + field);
+        return values;
     }
 
     private String extractJson(String value) {

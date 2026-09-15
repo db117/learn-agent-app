@@ -8,9 +8,7 @@ import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.learning.scoring.LearnUnitPassPolicy;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 
 /** Chapter synthesis Assessment 模块：维护 Chapter 级固定题集和复习结果。 */
@@ -93,17 +91,14 @@ final class ChapterSynthesisAssessmentWorkflow {
         if (learnUnits.isEmpty()) throw new IllegalStateException("Chapter has no LearnUnits: " + chapter.code());
         List<Question> result = new ArrayList<>();
         for (LearnUnit learnUnit : learnUnits) {
-            Map<String, Object> config = new LinkedHashMap<>();
-            config.put("options", List.of(
-                    Map.of("id", "A", "text", "能够独立运用本章目标中的能力"),
-                    Map.of("id", "B", "text", "只记住一个术语的名称")));
-            config.put("correctOptionIds", List.of("A"));
-            config.put("multiple", false);
+            MultipleChoiceConfig config = new MultipleChoiceConfig(List.of(
+                    new QuestionOption("A", "能够独立运用本章目标中的能力"),
+                    new QuestionOption("B", "只记住一个术语的名称")), List.of("A"), false);
             Question question = new Question(
                     "generated-synthesis-question-" + java.util.UUID.randomUUID(), null, chapter.code(),
                     QuestionType.MULTIPLE_CHOICE, 1,
                     "围绕“" + learnUnit.name() + "”，哪项表现符合 Chapter 的综合目标？", 20,
-                    support.json(config), null, null, null, support.json(List.of(learnUnit.code())), false,
+                    config, null, null, null, List.of(learnUnit.code()), false,
                     QuestionRole.SYNTHESIS);
             QuestionStructureValidator.validate(question);
             result.add(question);

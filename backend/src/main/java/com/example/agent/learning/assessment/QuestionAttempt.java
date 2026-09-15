@@ -1,5 +1,7 @@
 package com.example.agent.learning.assessment;
 
+import java.util.List;
+
 /**
  * 一道题在某次 Attempt 中的答案、评分和反馈快照。
  *
@@ -12,7 +14,7 @@ package com.example.agent.learning.assessment;
  * @param correct 选择题是否答对；Coding 使用维度分数，因此可为空
  * @param submittedCode Coding 提交内容
  * @param evaluationJson Coding 评估维度 JSON
- * @param selectedOptionIdsJson 选择题选项编码 JSON
+ * @param selectedOptionIds 选择题选项编码
  */
 public record QuestionAttempt(
         String questionId,
@@ -24,5 +26,9 @@ public record QuestionAttempt(
         Boolean correct,
         String submittedCode,
         String evaluationJson,
-        String selectedOptionIdsJson) {
+        List<String> selectedOptionIds) {
+
+    public QuestionAttempt {
+        selectedOptionIds = List.copyOf(selectedOptionIds == null ? List.of() : selectedOptionIds);
+    }
 }

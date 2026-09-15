@@ -1,5 +1,7 @@
 package com.example.agent.learning.assessment;
 
+import java.util.List;
+
 /**
  * 提供给 CodingAnswerEvaluator 的 Coding 题只读视图。
  *
@@ -8,8 +10,8 @@ package com.example.agent.learning.assessment;
  * @param prompt 题干
  * @param language 要求使用的编程语言
  * @param starterCode 起始代码
- * @param rubricJson 评分维度和权重 JSON
- * @param referenceConceptsJson 参考概念 JSON
+ * @param rubric 评分维度和权重
+ * @param referenceConcepts 参考概念
  * @param maxPoints 题目满分
  */
 public record CodingQuestion(
@@ -18,8 +20,8 @@ public record CodingQuestion(
         String prompt,
         String language,
         String starterCode,
-        String rubricJson,
-        String referenceConceptsJson,
+        CodingRubric rubric,
+        List<String> referenceConcepts,
         int maxPoints) {
 
     public static CodingQuestion from(Question question) {
@@ -32,8 +34,8 @@ public record CodingQuestion(
                 question.prompt(),
                 question.language(),
                 question.starterCode(),
-                question.rubricJson(),
-                question.referenceConceptsJson(),
+                question.rubric(),
+                question.referenceConcepts(),
                 question.points());
     }
 }

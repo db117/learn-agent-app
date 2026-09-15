@@ -3,14 +3,14 @@ package com.example.agent.llm.infrastructure;
 import com.example.agent.learning.assessment.CodingAnswerEvaluator;
 import com.example.agent.learning.assessment.CodingEvaluationResult;
 import com.example.agent.learning.assessment.CodingQuestion;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.example.agent.llm.contract.LlmContracts;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.model.Model;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -21,13 +21,17 @@ import java.util.function.Consumer;
 @Component
 public final class LlmCodingAnswerEvaluator implements CodingAnswerEvaluator {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Set<String> ALLOWED_FIELDS = Set.of(
-            "correctness", "languageUsage", "clarity", "feedback", "issues");
     private final Model model;
+    private final ObjectMapper mapper;
 
     public LlmCodingAnswerEvaluator(Model model) {
+        this(model, new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false));
+    }
+
+    @Autowired
+    public LlmCodingAnswerEvaluator(Model model, ObjectMapper mapper) {
         this.model = model;
+        this.mapper = mapper;
     }
 
     @Override
@@ -52,39 +56,40 @@ public final class LlmCodingAnswerEvaluator implements CodingAnswerEvaluator {
                 Submitted code:
                 %s
                 """.formatted(
-                question.language() == null ? "programming" : question.language(), question.prompt(), question.referenceConceptsJson(), question.rubricJson(),
+                question.language() == null ? "programming" : question.language(), question.prompt(), json(question.referenceConcepts()), json(question.rubric()),
                 question.starterCode(), submittedCode == null ? "" : submittedCode);
         String text = AgentScopeTextGenerator.generate(model, prompt, onModelText);
         try {
-            JsonNode root = MAPPER.readTree(extractJson(text));
-            if (root == null || !root.isObject()) throw new IllegalArgumentException("response must be an object");
-            root.fieldNames().forEachRemaining(field -> {
-                if (!ALLOWED_FIELDS.contains(field)) throw new IllegalArgumentException("unsupported evaluator field: " + field);
-            });
-            int correctness = requiredInt(root, "correctness", 0, 60);
-            int languageUsage = requiredInt(root, "languageUsage", 0, 20);
-            int clarity = requiredInt(root, "clarity", 0, 20);
-            JsonNode feedbackNode = root.get("feedback");
-            if (feedbackNode == null || !feedbackNode.isTextual()) throw new IllegalArgumentException("missing feedback");
-            List<String> issues = new ArrayList<>();
-            JsonNode issuesNode = root.get("issues");
-            if (issuesNode == null || !issuesNode.isArray()) throw new IllegalArgumentException("issues must be an array");
-            for (JsonNode issue : issuesNode) {
-                if (!issue.isTextual()) throw new IllegalArgumentException("issues must contain strings");
-                issues.add(issue.textValue());
+            LlmContracts.CodingEvaluation response = mapper.readValue(
+                    extractJson(text), LlmContracts.CodingEvaluation.class);
+            int correctness = requiredInt(response.correctness(), "correctness", 0, 60);
+            int languageUsage = requiredInt(response.languageUsage(), "languageUsage", 0, 20);
+            int clarity = requiredInt(response.clarity(), "clarity", 0, 20);
+            String feedback = response.feedback();
+            if (feedback == null || feedback.isBlank()) throw new IllegalArgumentException("missing feedback");
+            List<String> issues = response.issues();
+            if (issues == null || issues.stream().anyMatch(issue -> issue == null || issue.isBlank())) {
+                throw new IllegalArgumentException("issues must contain strings");
             }
-            return new CodingEvaluationResult(correctness, languageUsage, clarity, feedbackNode.textValue(), issues);
+            return new CodingEvaluationResult(correctness, languageUsage, clarity, feedback, issues);
         } catch (Exception error) {
             throw new IllegalArgumentException("Coding evaluator returned invalid JSON", error);
         }
     }
 
-    private int requiredInt(JsonNode root, String field, int min, int max) {
-        JsonNode value = root.get(field);
-        if (value == null || !value.isIntegralNumber()) throw new IllegalArgumentException("missing or non-integer " + field);
-        int number = value.intValue();
+    private int requiredInt(Integer value, String field, int min, int max) {
+        if (value == null) throw new IllegalArgumentException("missing or non-integer " + field);
+        int number = value;
         if (number < min || number > max) throw new IllegalArgumentException(field + " is outside its rubric range");
         return number;
+    }
+
+    private String json(Object value) {
+        try {
+            return mapper.writeValueAsString(value);
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to serialize coding evaluation prompt", error);
+        }
     }
 
     private String extractJson(String value) {

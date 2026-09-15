@@ -1,6 +1,7 @@
 package com.example.agent.learning.catalog;
 
 import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionFixtures;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.persistence.LearningRepository;
 import org.junit.jupiter.api.Test;
@@ -167,7 +168,6 @@ class CurriculumServiceTest {
         return new Question(
                 "question-" + learnUnitCode, learnUnitCode, QuestionType.MULTIPLE_CHOICE, 1,
                 "哪个是变量？", 20,
-                "{\"options\":[{\"id\":\"A\",\"text\":\"name\"},{\"id\":\"B\",\"text\":\"123\"}],\"correctOptionIds\":[\"A\"],\"multiple\":false}",
-                null, null, null, "[\"变量\"]", false);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of("变量"), false);
     }
 }

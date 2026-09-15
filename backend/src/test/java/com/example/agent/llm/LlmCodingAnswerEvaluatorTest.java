@@ -1,6 +1,7 @@
 package com.example.agent.llm;
 
 import com.example.agent.learning.assessment.CodingQuestion;
+import com.example.agent.learning.assessment.CodingRubric;
 import com.example.agent.llm.infrastructure.LlmCodingAnswerEvaluator;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.model.ChatResponse;
@@ -9,8 +10,8 @@ import io.agentscope.core.model.Model;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -24,7 +25,7 @@ class LlmCodingAnswerEvaluatorTest {
 
     private final CodingQuestion question = new CodingQuestion(
             "question", "typescript.generics", "Write a generic identity function.", "typescript",
-            "", "{\"correctness\":60}", "[\"generics\"]", 100);
+            "", new CodingRubric(60, 20, 20), List.of("generics"), 100);
 
     @Test
     void validatesDimensionsAndCalculatesTotal() {
@@ -63,10 +64,10 @@ class LlmCodingAnswerEvaluatorTest {
                 """));
         assertThrows(IllegalArgumentException.class, () -> missingFeedback.evaluate(question, "code"));
 
-        var decisionField = new LlmCodingAnswerEvaluator(model("""
+        var unknownField = new LlmCodingAnswerEvaluator(model("""
                 {"correctness":60,"languageUsage":20,"clarity":20,"feedback":"bad","issues":[],"passed":true}
                 """));
-        assertThrows(IllegalArgumentException.class, () -> decisionField.evaluate(question, "code"));
+        assertEquals(100, unknownField.evaluate(question, "code").totalScore());
     }
 
     @Test

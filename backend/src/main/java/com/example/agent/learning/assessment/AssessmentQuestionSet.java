@@ -2,9 +2,6 @@ package com.example.agent.learning.assessment;
 
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.persistence.LearningRepository;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -15,8 +12,6 @@ import java.util.Set;
 
 /** 三个 Assessment 工作流共用的固定 Question 集规则。 */
 final class AssessmentQuestionSet {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final LearningRepository repository;
 
@@ -147,16 +142,8 @@ final class AssessmentQuestionSet {
         Set<String> codes = learnUnits.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
         Set<String> covered = new LinkedHashSet<>();
         for (Question question : questions) {
-            try {
-                JsonNode concepts = MAPPER.readTree(question.referenceConceptsJson());
-                if (concepts != null && concepts.isArray()) {
-                    for (JsonNode concept : concepts) {
-                        if (concept.isTextual() && codes.contains(concept.textValue()))
-                            covered.add(concept.textValue());
-                    }
-                }
-            } catch (Exception ignored) {
-                return List.of();
+            for (String concept : question.referenceConcepts()) {
+                if (codes.contains(concept)) covered.add(concept);
             }
         }
         return List.copyOf(covered);

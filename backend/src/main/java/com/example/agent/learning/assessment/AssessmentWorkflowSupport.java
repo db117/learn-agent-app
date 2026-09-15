@@ -101,7 +101,7 @@ final class AssessmentWorkflowSupport {
             result = new QuestionAttempt(
                     question.id(), attempt.id(), json(answer), evaluated.score(), question.points(),
                     evaluated.correct() ? "Correct." : "Review this concept and try again.", evaluated.correct(),
-                    null, null, json(answer.selectedOptionIds()));
+                    null, null, answer.selectedOptionIds());
         } else {
             result = new QuestionAttempt(
                     question.id(), attempt.id(), json(answer), null, question.points(), null, null,
@@ -194,12 +194,12 @@ final class AssessmentWorkflowSupport {
             return new QuestionAttempt(
                     current.questionId(), current.assessmentAttemptId(), current.answerJson(), score,
                     current.maxScore(), evaluation.feedback(), null, current.submittedCode(),
-                    json(evaluation), current.selectedOptionIdsJson());
+                    json(evaluation), current.selectedOptionIds());
         } catch (RuntimeException error) {
             QuestionAttempt draft = new QuestionAttempt(
                     current.questionId(), current.assessmentAttemptId(), current.answerJson(), null, current.maxScore(),
                     "评分暂不可用，请保留答案后重试。", null, current.submittedCode(), null,
-                    current.selectedOptionIdsJson());
+                    current.selectedOptionIds());
             repository.saveQuestionAttempt(draft);
             throw new AssessmentService.AssessmentEvaluationException(
                     "Coding evaluation failed; draft was preserved", error);
@@ -214,7 +214,7 @@ final class AssessmentWorkflowSupport {
                 question.type() == QuestionType.MULTIPLE_CHOICE ? "No option selected." : null,
                 question.type() == QuestionType.MULTIPLE_CHOICE ? false : null,
                 question.type() == QuestionType.CODING ? "" : null, null,
-                question.type() == QuestionType.MULTIPLE_CHOICE ? "[]" : null);
+                question.type() == QuestionType.MULTIPLE_CHOICE ? List.of() : List.of());
     }
 
     private Question question(String assessmentId, String questionId) {

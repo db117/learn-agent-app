@@ -5,6 +5,7 @@ import com.example.agent.learning.assessment.AssessmentService;
 import com.example.agent.learning.assessment.AssessmentStatus;
 import com.example.agent.learning.assessment.AssessmentType;
 import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionFixtures;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.generation.GenerationEvent;
 import com.example.agent.learning.generation.GenerationRunService;
@@ -44,8 +45,7 @@ class DiagnosticQuestionRunServiceTest {
         when(assessments.requiresDiagnosticGeneration("journey")).thenReturn(true);
         Question question = new Question(
                 "question", "journey.unit", QuestionType.MULTIPLE_CHOICE, 1, "选择正确的概念", 20,
-                "{\"options\":[{\"id\":\"A\",\"text\":\"正确\"}],\"correctOptionIds\":[\"A\"]}",
-                "{\"criterion\":100}", null, null, "[]", true);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), true);
         Assessment assessment = new Assessment(
                 "assessment", "journey", null, AssessmentType.DIAGNOSTIC,
                 AssessmentStatus.CREATED, Instant.now(), null);

@@ -52,7 +52,7 @@ class LlmDiagnosticQuestionPlannerTest {
         String response = "{\"questions\":[{\"learnUnitCode\":\"python.basics\",\"type\":\"MULTIPLE_CHOICE\","
                 + "\"difficulty\":1,\"prompt\":\"哪个是变量？\",\"points\":20,"
                 + "\"options\":[{\"id\":\"A\",\"text\":\"name\"},{\"id\":\"B\",\"text\":\"123\"}],"
-                + "\"correctOptionIds\":[\"A\"],\"multiple\":false}]}";
+                + "\"correctOptionIds\":[\"A\"],\"multiple\":false,\"referenceConcepts\":[\"变量\"]}]}";
         when(model.stream(anyList(), anyList(), any(GenerateOptions.class))).thenReturn(
                 Flux.just(ChatResponse.builder()
                         .content(List.of(TextBlock.builder().text(response).build()))

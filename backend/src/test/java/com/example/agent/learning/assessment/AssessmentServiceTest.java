@@ -1,13 +1,13 @@
 package com.example.agent.learning.assessment;
 
+import com.example.agent.learning.catalog.Chapter;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
-import com.example.agent.learning.catalog.Chapter;
+import com.example.agent.learning.diagnostic.DiagnosticQuestionPlanner;
+import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.path.LearningPathItem;
 import com.example.agent.learning.path.LearningPathItemStatus;
 import com.example.agent.learning.path.LearningPhase;
-import com.example.agent.learning.diagnostic.DiagnosticQuestionPlanner;
-import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
 import com.example.agent.learning.scoring.AssessmentScore;
@@ -57,11 +57,10 @@ class AssessmentServiceTest {
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), true);
         Question choice = new Question(
                 "choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
-                "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), false);
         Question coding = new Question(
                 "coding", "learnUnit-a", QuestionType.CODING, 1, "Implement", 100,
-                null, "{\"correctness\":60,\"languageUsage\":20,\"clarity\":20}",
-                "typescript", "", "[]", false);
+                null, QuestionFixtures.codingRubric(), "typescript", "", List.of(), false);
         AssessmentAttempt first = attempt("attempt-1");
         AssessmentAttempt second = attempt("attempt-2");
         when(repository.findAssessment("assessment")).thenReturn(Optional.of(assessment));
@@ -69,10 +68,10 @@ class AssessmentServiceTest {
         when(repository.listQuestionsForAssessment("assessment")).thenReturn(List.of(choice, coding));
         when(repository.findLearnUnit("learnUnit-a")).thenReturn(Optional.of(learnUnit));
         when(repository.listQuestionAttempts("attempt-1")).thenReturn(List.of(
-                new QuestionAttempt("choice", "attempt-1", "{}", 0, 20, "wrong", false, null, null, "[]"),
+                new QuestionAttempt("choice", "attempt-1", "{}", 0, 20, "wrong", false, null, null, List.of()),
                 new QuestionAttempt("coding", "attempt-1", "{}", null, 100, null, null, "answer", null, null)));
         when(repository.listQuestionAttempts("attempt-2")).thenReturn(List.of(
-                new QuestionAttempt("choice", "attempt-2", "{}", 20, 20, "Correct.", true, null, null, "[\"A\"]"),
+                new QuestionAttempt("choice", "attempt-2", "{}", 20, 20, "Correct.", true, null, null, List.of("A")),
                 new QuestionAttempt("coding", "attempt-2", "{}", null, 100, null, null, "answer", null, null)));
         when(repository.findAttempt("attempt-1")).thenReturn(Optional.of(first));
         when(repository.findAttempt("attempt-2")).thenReturn(Optional.of(second));
@@ -111,7 +110,7 @@ class AssessmentServiceTest {
                         LearningPathItemStatus.CURRENT));
         Question choice = new Question(
                 "choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
-                "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), false);
         when(repository.findAssessment(completed.id())).thenReturn(Optional.of(completed), Optional.of(inProgress));
         when(repository.findLatestLearnUnitAssessment(completed.journeyId(), completed.learnUnitCode()))
                 .thenReturn(Optional.of(completed));
@@ -136,9 +135,7 @@ class AssessmentServiceTest {
     void multipleChoiceUsesTheExactConfiguredOptionSet() {
         Question question = new Question(
                 "choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
-                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
-                        + "\"correctOptionIds\":[\"A\",\"B\"],\"multiple\":true}",
-                null, null, null, "[]", false);
+                QuestionFixtures.choiceConfig(List.of("A", "B"), true), null, null, null, List.of(), false);
         MultipleChoiceEvaluator evaluator = new MultipleChoiceEvaluator();
 
         assertEquals(new MultipleChoiceEvaluator.Result(20, true), evaluator.evaluate(question, List.of("B", "A")));
@@ -157,12 +154,12 @@ class AssessmentServiceTest {
         AssessmentAttempt openAttempt = attempt("attempt-1");
         Question choice = new Question(
                 "choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
-                "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), false);
         when(repository.findAssessment("assessment")).thenReturn(Optional.of(assessment));
         when(repository.findOpenAttempt("assessment")).thenReturn(Optional.of(openAttempt));
         when(repository.listQuestionsForAssessment("assessment")).thenReturn(List.of(choice));
         when(repository.listQuestionAttempts("attempt-1")).thenReturn(List.of(
-                new QuestionAttempt("choice", "attempt-1", "{}", 16, 20, "Correct.", true, null, null, "[\"A\"]")));
+                new QuestionAttempt("choice", "attempt-1", "{}", 16, 20, "Correct.", true, null, null, List.of("A"))));
         when(repository.findLearnUnit("learnUnit-a")).thenReturn(Optional.of(learnUnit));
         when(repository.findAttempt("attempt-1")).thenReturn(Optional.of(new AssessmentAttempt(
                 "attempt-1", "assessment", "journey", "learnUnit-a", 1,
@@ -191,8 +188,7 @@ class AssessmentServiceTest {
         AssessmentAttempt openAttempt = attempt("attempt-1");
         Question coding = new Question(
                 "coding", "learnUnit-a", QuestionType.CODING, 1, "Implement", 100,
-                null, "{\"correctness\":60,\"languageUsage\":20,\"clarity\":20}",
-                "typescript", "", "[]", false);
+                null, QuestionFixtures.codingRubric(), "typescript", "", List.of(), false);
         when(repository.findAssessment("assessment")).thenReturn(Optional.of(assessment));
         when(repository.findOpenAttempt("assessment")).thenReturn(Optional.of(openAttempt));
         when(repository.listQuestionsForAssessment("assessment")).thenReturn(List.of(coding));
@@ -231,8 +227,7 @@ class AssessmentServiceTest {
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), true);
         Question coding = new Question(
                 "coding", "learnUnit-a", QuestionType.CODING, 1, "Implement", 30,
-                null, "{\"correctness\":60,\"languageUsage\":20,\"clarity\":20}",
-                "typescript", "", "[]", false);
+                null, QuestionFixtures.codingRubric(), "typescript", "", List.of(), false);
         when(repository.findAssessment("assessment")).thenReturn(Optional.of(assessment));
         when(repository.findOpenAttempt("assessment")).thenReturn(Optional.of(openAttempt));
         when(repository.listQuestionsForAssessment("assessment")).thenReturn(List.of(coding));
@@ -266,8 +261,7 @@ class AssessmentServiceTest {
                 80, 70, true, List.of("objective"), "intro", List.of("concept"), List.of("example"), false);
         Question coding = new Question(
                 "coding-only", learnUnit.code(), QuestionType.CODING, 1, "Implement", 100,
-                null, "{\"correctness\":60,\"languageUsage\":20,\"clarity\":20}",
-                "typescript", "", "[]", false);
+                null, QuestionFixtures.codingRubric(), "typescript", "", List.of(), false);
         when(repository.findJourney("journey")).thenReturn(Optional.of(journey));
         when(repository.findLearnUnit("learnUnit-a")).thenReturn(Optional.of(learnUnit));
         when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(learnUnit));
@@ -298,9 +292,7 @@ class AssessmentServiceTest {
         Question synthesisQuestion = new Question(
                 "synthesis-question", null, "chapter-a", QuestionType.MULTIPLE_CHOICE, 1,
                 "Synthesize", 20,
-                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
-                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
-                null, null, null, "[\"learnUnit-a\"]", false, QuestionRole.SYNTHESIS);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of("learnUnit-a"), false, QuestionRole.SYNTHESIS);
         LearningJourney journey = new LearningJourney(
                 "journey", "user", "typescript", "goal", com.example.agent.learning.journey.JourneyStatus.ACTIVE,
                 Instant.EPOCH, Instant.EPOCH);
@@ -334,14 +326,12 @@ class AssessmentServiceTest {
         LearnUnit learnUnit = new LearnUnit(
                 "learnUnit-a", "reading", "learnUnit-a", "chapter", "Read docs", "documentation",
                 1, List.of(), 80, null, true, List.of("Read docs"), "Read", List.of("terms"), List.of("API"), false);
-        String config = "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
-                + "\"correctOptionIds\":[\"A\"],\"multiple\":false}";
         Question diagnostic = new Question(
                 "diagnostic", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Diagnostic", 20,
-                config, null, null, null, "[]", true);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), true);
         Question independent = new Question(
                 "independent", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Independent", 20,
-                config, null, null, null, "[]", false);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), false);
         when(repository.findJourney("journey")).thenReturn(Optional.of(journey));
         when(repository.findLearnUnit("learnUnit-a")).thenReturn(Optional.of(learnUnit));
         when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(learnUnit));
@@ -394,7 +384,7 @@ class AssessmentServiceTest {
                         LearningPathItemStatus.CURRENT));
         Question choice = new Question(
                 "choice", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
-                "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), false);
         when(repository.findAssessment("assessment")).thenReturn(
                 Optional.of(assessment), Optional.of(new Assessment(
                         assessment.id(), assessment.journeyId(), assessment.learnUnitCode(), assessment.type(),
@@ -426,7 +416,7 @@ class AssessmentServiceTest {
         AssessmentAttempt openAttempt = attempt("attempt-1");
         Question coding = new Question(
                 "coding", "learnUnit-a", QuestionType.CODING, 1, "Implement", 100,
-                null, "{\"correctness\":60}", "typescript", "", "[]", false);
+                null, QuestionFixtures.codingRubric(), "typescript", "", List.of(), false);
         when(repository.findAssessment("assessment")).thenReturn(Optional.of(assessment));
         when(repository.findOpenAttempt("assessment")).thenReturn(Optional.of(openAttempt));
         when(repository.listQuestionsForAssessment("assessment")).thenReturn(List.of(coding));
@@ -453,9 +443,7 @@ class AssessmentServiceTest {
                 1, List.of(), 80, null, true, List.of("Read docs"), "Read", List.of("terms"), List.of("API"), false);
         Question choice = new Question(
                 "generated-choice-only", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
-                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
-                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
-                null, null, null, "[]", false);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), false);
         when(repository.findJourney("journey")).thenReturn(Optional.of(journey));
         when(repository.findLearnUnit("learnUnit-reading")).thenReturn(Optional.of(learnUnit));
         when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(learnUnit));
@@ -485,9 +473,7 @@ class AssessmentServiceTest {
                 1, List.of(), 80, null, true, List.of("Read docs"), "Read", List.of("terms"), List.of("API"), true);
         Question choice = new Question(
                 "diagnostic-choice", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
-                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
-                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
-                null, null, null, "[]", true);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), true);
         when(repository.findJourney("journey")).thenReturn(Optional.of(journey));
         when(repository.findLanguage("reading")).thenReturn(Optional.of(language));
         when(repository.listLearnUnitsForJourney("journey")).thenReturn(List.of(learnUnit));
@@ -514,14 +500,10 @@ class AssessmentServiceTest {
                 1, List.of(), 80, null, true, List.of("Read docs"), "Read", List.of("terms"), List.of("API"), true);
         Question first = new Question(
                 "diagnostic-choice-1", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 1, "Choose one", 20,
-                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
-                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
-                null, null, null, "[]", true);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), true);
         Question second = new Question(
                 "diagnostic-choice-2", learnUnit.code(), QuestionType.MULTIPLE_CHOICE, 2, "Choose two", 20,
-                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
-                        + "\"correctOptionIds\":[\"B\"],\"multiple\":false}",
-                null, null, null, "[]", true);
+                QuestionFixtures.choiceConfig(List.of("B"), false), null, null, null, List.of(), true);
         when(repository.findDiagnosticAssessment("journey")).thenReturn(Optional.empty());
         when(repository.findJourney("journey")).thenReturn(Optional.of(journey));
         when(repository.findLanguage("reading")).thenReturn(Optional.of(language));
@@ -560,20 +542,16 @@ class AssessmentServiceTest {
                 null, null, null, null, Instant.EPOCH, null);
         Question first = new Question(
                 "diagnostic-choice-1", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 1, "Choose one", 20,
-                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
-                        + "\"correctOptionIds\":[\"A\"],\"multiple\":false}",
-                null, null, null, "[]", true);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), true);
         Question second = new Question(
                 "diagnostic-choice-2", "learnUnit-a", QuestionType.MULTIPLE_CHOICE, 2, "Choose two", 20,
-                "{\"options\":[{\"id\":\"A\",\"text\":\"yes\"},{\"id\":\"B\",\"text\":\"no\"}],"
-                        + "\"correctOptionIds\":[\"B\"],\"multiple\":false}",
-                null, null, null, "[]", true);
+                QuestionFixtures.choiceConfig(List.of("B"), false), null, null, null, List.of(), true);
         when(repository.findAssessment(assessment.id())).thenReturn(Optional.of(assessment));
         when(repository.findOpenAttempt(assessment.id())).thenReturn(Optional.of(openAttempt));
         when(repository.listQuestionsForAssessment(assessment.id())).thenReturn(List.of(first, second));
         when(repository.listQuestionAttempts(openAttempt.id())).thenReturn(List.of(
-                new QuestionAttempt(first.id(), openAttempt.id(), "{}", 20, 20, "Correct.", true, null, null, "[\"A\"]"),
-                new QuestionAttempt(second.id(), openAttempt.id(), "{}", 20, 20, "Correct.", true, null, null, "[\"B\"]")));
+                new QuestionAttempt(first.id(), openAttempt.id(), "{}", 20, 20, "Correct.", true, null, null, List.of("A")),
+                new QuestionAttempt(second.id(), openAttempt.id(), "{}", 20, 20, "Correct.", true, null, null, List.of("B"))));
         when(repository.findAttempt(openAttempt.id())).thenReturn(Optional.of(new AssessmentAttempt(
                 openAttempt.id(), assessment.id(), "journey", null, 1,
                 100, null, 100, true, Instant.EPOCH, Instant.now())));

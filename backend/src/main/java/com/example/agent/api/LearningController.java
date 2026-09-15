@@ -5,6 +5,7 @@ import com.example.agent.learning.assessment.Assessment;
 import com.example.agent.learning.assessment.AssessmentAttempt;
 import com.example.agent.learning.assessment.AssessmentService;
 import com.example.agent.learning.assessment.CodingEvaluationRunService;
+import com.example.agent.learning.assessment.MultipleChoiceConfig;
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAnswer;
 import com.example.agent.learning.assessment.QuestionAttempt;
@@ -30,8 +31,6 @@ import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
 import com.example.agent.learning.scoring.AssessmentScore;
 import com.example.agent.learning.tutor.TutorSessionService;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -59,8 +58,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/learning")
 public class LearningController {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final LearningRepository learning;
     private final CurriculumService curriculum;
@@ -450,7 +447,7 @@ public class LearningController {
         return new QuestionAttempt(
                 attempt.questionId(), attempt.assessmentAttemptId(), attempt.answerJson(),
                 draft ? null : attempt.score(), attempt.maxScore(), draft ? null : attempt.feedback(),
-                draft ? null : attempt.correct(), attempt.submittedCode(), null, attempt.selectedOptionIdsJson());
+                draft ? null : attempt.correct(), attempt.submittedCode(), null, attempt.selectedOptionIds());
     }
 
     /** 将 Coding 评分失败转换为 422，保留可重试的答案草稿。 */
@@ -604,11 +601,9 @@ public class LearningController {
      * @param difficulty 难度
      * @param prompt 题干
      * @param points 题目满分
-     * @param configJson 公开题目配置
-     * @param rubricJson 对外始终为空；评分标准属于服务端评估器私有数据
+     * @param config 公开题目配置
      * @param language Coding 语言
      * @param starterCode 起始代码
-     * @param referenceConceptsJson 参考概念
      */
     public record QuestionResponse(
             String id,
@@ -618,29 +613,29 @@ public class LearningController {
             int difficulty,
             String prompt,
             int points,
-            String configJson,
-            String rubricJson,
+            PublicQuestionConfig config,
             String language,
-            String starterCode,
-            String referenceConceptsJson) {
+            String starterCode) {
 
         static QuestionResponse from(Question question) {
             return new QuestionResponse(
                     question.id(), question.learnUnitCode(), question.chapterCode(), question.type(), question.difficulty(), question.prompt(),
-                    question.points(), publicConfig(question.configJson()), null, question.language(),
-                    question.starterCode(), question.referenceConceptsJson());
+                    question.points(), PublicQuestionConfig.from(question.config()), question.language(), question.starterCode());
         }
+    }
 
-        private static String publicConfig(String configJson) {
-            if (configJson == null) return null;
-            try {
-                JsonNode config = MAPPER.readTree(configJson);
-                if (config.isObject()) ((com.fasterxml.jackson.databind.node.ObjectNode) config).remove("correctOptionIds");
-                return config.toString();
-            } catch (Exception error) {
-                throw new IllegalStateException("Invalid question config", error);
-            }
+    /** 选择题的安全公开配置，不携带服务端正确答案。 */
+    public record PublicQuestionConfig(List<PublicQuestionOption> options, boolean multiple) {
+
+        static PublicQuestionConfig from(MultipleChoiceConfig config) {
+            if (config == null) return null;
+            return new PublicQuestionConfig(config.options().stream()
+                    .map(option -> new PublicQuestionOption(option.id(), option.text()))
+                    .toList(), config.multiple());
         }
+    }
+
+    public record PublicQuestionOption(String id, String text) {
     }
 
     /**

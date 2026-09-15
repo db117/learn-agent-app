@@ -1,6 +1,7 @@
 package com.example.agent.learning.catalog;
 
 import com.example.agent.learning.assessment.Question;
+import com.example.agent.learning.assessment.QuestionFixtures;
 import com.example.agent.learning.assessment.QuestionType;
 import com.example.agent.learning.generation.GenerationEvent;
 import com.example.agent.learning.generation.GenerationRunService;
@@ -43,7 +44,7 @@ class LearnUnitContentRunServiceTest {
                 "完成练习", List.of("先声明变量"), "完成检查");
         Question question = new Question(
                 "q-1", outline.code(), QuestionType.MULTIPLE_CHOICE, 1, "选择变量", 20,
-                "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), false);
         CurriculumGenerator.GeneratedLearnUnitContent generated =
                 new CurriculumGenerator.GeneratedLearnUnitContent(content, List.of(question));
         when(curriculum.learnUnitOutline("journey-1", outline.code())).thenReturn(outline);
@@ -104,6 +105,6 @@ class LearnUnitContentRunServiceTest {
     private Question question(String code) {
         return new Question(
                 "q-" + code, code, QuestionType.MULTIPLE_CHOICE, 1, "Choose", 20,
-                "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
+                QuestionFixtures.choiceConfig(), null, null, null, List.of(), false);
     }
 }

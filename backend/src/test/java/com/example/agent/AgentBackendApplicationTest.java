@@ -8,19 +8,20 @@ import com.example.agent.learning.assessment.AssessmentStatus;
 import com.example.agent.learning.assessment.AssessmentType;
 import com.example.agent.learning.assessment.Question;
 import com.example.agent.learning.assessment.QuestionAttempt;
+import com.example.agent.learning.assessment.QuestionFixtures;
 import com.example.agent.learning.assessment.QuestionRole;
 import com.example.agent.learning.assessment.QuestionType;
-import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.Chapter;
+import com.example.agent.learning.catalog.CurriculumGenerator;
 import com.example.agent.learning.catalog.CurriculumService;
 import com.example.agent.learning.catalog.LearnUnit;
 import com.example.agent.learning.catalog.LearningLanguage;
+import com.example.agent.learning.journey.JourneyStatus;
 import com.example.agent.learning.journey.LearningJourney;
 import com.example.agent.learning.journey.LearningJourneyService;
 import com.example.agent.learning.journey.PassReason;
-import com.example.agent.learning.journey.JourneyStatus;
-import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.path.LearningPathItemStatus;
+import com.example.agent.learning.path.LearningPhase;
 import com.example.agent.learning.persistence.LearningRepository;
 import com.example.agent.learning.progress.ProgressService;
 import com.example.agent.learning.scoring.AssessmentScore;
@@ -190,7 +191,7 @@ class AgentBackendApplicationTest {
         Assessment restoredAssessment = restarted.findAssessment(assessment.assessment().id()).orElseThrow();
         AssessmentAttempt restoredAttempt = restarted.findOpenAttempt(restoredAssessment.id()).orElseThrow();
         assertEquals(assessment.questions(), restarted.listQuestionsForAssessment(restoredAssessment.id()));
-        assertEquals("[\"A\"]", restarted.listQuestionAttempts(restoredAttempt.id()).get(0).selectedOptionIdsJson());
+        assertEquals(List.of("A"), restarted.listQuestionAttempts(restoredAttempt.id()).get(0).selectedOptionIds());
 
         assessments.submit(assessment.assessment().id());
         var completedBeforePractice = learning.findPathItem(journey.id(), code).orElseThrow();
@@ -298,7 +299,7 @@ class AgentBackendApplicationTest {
 
         Question question = new Question(
                 "integration-question-" + UUID.randomUUID(), current, QuestionType.MULTIPLE_CHOICE, 1,
-                "Choose A", 20, "{\"correctOptionIds\":[\"A\"]}", null, null, null, "[]", false);
+                "Choose A", 20, QuestionFixtures.choiceConfig(), null, null, null, List.of(), false);
         learning.insertGeneratedQuestion(question);
         Assessment assessment = new Assessment(
                 UUID.randomUUID().toString(), journey.id(), current, AssessmentType.LEARN_UNIT,
@@ -310,7 +311,7 @@ class AgentBackendApplicationTest {
                 0, null, 0, false, Instant.now(), Instant.now());
         learning.insertAttempt(attempt);
         learning.saveQuestionAttempt(new QuestionAttempt(
-                question.id(), attempt.id(), "{}", 0, 20, "wrong", false, null, null, "[]"));
+                question.id(), attempt.id(), "{}", 0, 20, "wrong", false, null, null, List.of()));
         learning.retireQuestion(question.id());
 
         assertTrue(learning.listQuestionsForLearnUnit(current).stream().noneMatch(value -> value.id().equals(question.id())));
@@ -378,8 +379,7 @@ class AgentBackendApplicationTest {
                     Question question = new Question(
                             "integration-independent-" + outline.code(), outline.code(), QuestionType.MULTIPLE_CHOICE,
                             1, "哪个选项符合本单元？", 20,
-                            "{\"options\":[{\"id\":\"A\",\"text\":\"核心概念\"},{\"id\":\"B\",\"text\":\"无关概念\"}],\"correctOptionIds\":[\"A\"],\"multiple\":false}",
-                            null, null, null, "[]", false);
+                            QuestionFixtures.choiceConfig(), null, null, null, List.of(), false);
                     return new GeneratedLearnUnitContent(content, List.of(question));
                 }
             };

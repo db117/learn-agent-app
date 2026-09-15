@@ -1,5 +1,7 @@
 package com.example.agent.learning.assessment;
 
+import java.util.List;
+
 /**
  * 题库中的不可变题目定义，对应 SQLite 的 {@code question} 表。
  *
@@ -13,11 +15,11 @@ package com.example.agent.learning.assessment;
  * @param difficulty 题目难度
  * @param prompt 题干
  * @param points 题目满分
- * @param configJson 选择题选项和正确答案等配置 JSON
- * @param rubricJson Coding 评分标准 JSON
+ * @param config 选择题选项和正确答案等配置
+ * @param rubric Coding 评分标准
  * @param language Coding 要求的语言
  * @param starterCode Coding 起始代码
- * @param referenceConceptsJson 题目涉及的概念 JSON
+ * @param referenceConcepts 题目涉及的概念
  * @param diagnosticEligible 是否可用于初始诊断
  * @param role 题目在学习流程中的固定用途
  */
@@ -29,11 +31,11 @@ public record Question(
         int difficulty,
         String prompt,
         int points,
-        String configJson,
-        String rubricJson,
+        MultipleChoiceConfig config,
+        CodingRubric rubric,
         String language,
         String starterCode,
-        String referenceConceptsJson,
+        List<String> referenceConcepts,
         boolean diagnosticEligible,
         QuestionRole role) {
 
@@ -44,15 +46,15 @@ public record Question(
             int difficulty,
             String prompt,
             int points,
-            String configJson,
-            String rubricJson,
+            MultipleChoiceConfig config,
+            CodingRubric rubric,
             String language,
             String starterCode,
-            String referenceConceptsJson,
+            List<String> referenceConcepts,
             boolean diagnosticEligible,
             QuestionRole role) {
-        this(id, learnUnitCode, null, type, difficulty, prompt, points, configJson, rubricJson, language,
-                starterCode, referenceConceptsJson, diagnosticEligible, role);
+        this(id, learnUnitCode, null, type, difficulty, prompt, points, config, rubric, language,
+                starterCode, referenceConcepts, diagnosticEligible, role);
     }
 
     public Question(
@@ -62,14 +64,14 @@ public record Question(
             int difficulty,
             String prompt,
             int points,
-            String configJson,
-            String rubricJson,
+            MultipleChoiceConfig config,
+            CodingRubric rubric,
             String language,
             String starterCode,
-            String referenceConceptsJson,
+            List<String> referenceConcepts,
             boolean diagnosticEligible) {
-        this(id, learnUnitCode, null, type, difficulty, prompt, points, configJson, rubricJson, language, starterCode,
-                referenceConceptsJson, diagnosticEligible,
+        this(id, learnUnitCode, null, type, difficulty, prompt, points, config, rubric, language, starterCode,
+                referenceConcepts, diagnosticEligible,
                 diagnosticEligible ? QuestionRole.DIAGNOSTIC : QuestionRole.INDEPENDENT);
     }
 
@@ -78,6 +80,7 @@ public record Question(
         if (type == null) throw new IllegalArgumentException("Question type is required");
         if (prompt == null || prompt.isBlank()) throw new IllegalArgumentException("Question prompt is required");
         if (points <= 0) throw new IllegalArgumentException("Question points must be positive");
+        referenceConcepts = List.copyOf(referenceConcepts == null ? List.of() : referenceConcepts);
         if (role == null) throw new IllegalArgumentException("Question role is required");
         if (role == QuestionRole.SYNTHESIS) {
             if (chapterCode == null || chapterCode.isBlank()) throw new IllegalArgumentException("Synthesis question Chapter is required");

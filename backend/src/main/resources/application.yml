@@ -6,6 +6,9 @@ spring:
   sql:
     init:
       mode: never
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
 server:
   address: 127.0.0.1
   port: 18080
