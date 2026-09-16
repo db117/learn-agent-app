@@ -186,6 +186,9 @@ public class TutorSessionService {
 
     private Flux<TutorEvent> project(Flux<Event> events, ActiveTurn active) {
         return events.handle((event, sink) -> {
+            for (var projection : TutorEventMapper.map(event)) {
+                sink.next(active.event(projection.type(), projection.text(), projection.errorCode()));
+            }
             if (event.getType() == EventType.REASONING && !event.isLast()) {
                 emitVisibleText(event.getMessage(), active, sink);
             } else if (event.getType() == EventType.AGENT_RESULT && !active.hasDelta.get()) {

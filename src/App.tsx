@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from "react";
-import {WorkspacePanel} from "./features/workspace/WorkspacePanel";
+import {PracticeWorkspace} from "./features/practice/PracticeWorkspace";
 
 const BACKEND_URL = "http://127.0.0.1:18080";
 const PLANNING_PROMPT = "请根据我的 Learner 背景和 Journey 目标，先提出一版学习路径草案。请说明阶段、顺序、每阶段目标，并列出需要我确认或调整的地方。";
@@ -307,6 +307,9 @@ export default function App() {
             await readSse(response, (event) => {
                 if (event.type === "turn.started") setActivity("TutorAgent 已开始处理");
                 if (event.type === "activity") setActivity(event.text ?? "TutorAgent 正在工作");
+                if (event.type.startsWith("tool.") || event.type === "workspace.changed") {
+                    setActivity(event.text ?? "TutorAgent 正在操作 Workspace");
+                }
                 if (event.type === "message.delta" && event.text) {
                     setMessages((current) => {
                         const next = [...current];
@@ -597,7 +600,7 @@ export default function App() {
                                 将在现有路径上继续学习。</p>
                         )}
                         {visibleSessionMode === "LEARNING" && currentJourney.learningJourneyId != null && (
-                            <WorkspacePanel journeyId={currentJourney.id} onDirtyChange={setWorkspaceDirty}/>
+                            <PracticeWorkspace journeyId={currentJourney.id} onDirtyChange={setWorkspaceDirty}/>
                         )}
                         <p className="session-status" role="status" aria-live="polite">
                             {loadingSession ? "正在恢复消息…" : activity}

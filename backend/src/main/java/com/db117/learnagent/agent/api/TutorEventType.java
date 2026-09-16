@@ -6,6 +6,10 @@ import com.fasterxml.jackson.annotation.JsonValue;
 public enum TutorEventType {
     TURN_STARTED("turn.started"),
     ACTIVITY("activity"),
+    TOOL_STARTED("tool.started"),
+    TOOL_COMPLETED("tool.completed"),
+    TOOL_FAILED("tool.failed"),
+    WORKSPACE_CHANGED("workspace.changed"),
     MESSAGE_DELTA("message.delta"),
     TURN_COMPLETED("turn.completed"),
     TURN_FAILED("turn.failed"),
