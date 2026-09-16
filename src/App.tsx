@@ -94,6 +94,7 @@ export default function App() {
     const [workspaceDirty, setWorkspaceDirty] = useState(false);
     const [planningJourneyId, setPlanningJourneyId] = useState<number | null>(null);
     const [pendingPlanningPrompt, setPendingPlanningPrompt] = useState(false);
+    const [confirmingPlan, setConfirmingPlan] = useState(false);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [sessionMode, setSessionMode] = useState<SessionMode | null>(null);
     const [currentLearnUnit, setCurrentLearnUnit] = useState<string | null>(null);
@@ -162,6 +163,9 @@ export default function App() {
         ? `${bootstrap.learner.id}:${currentJourney.id}:${currentJourney.learningJourneyId ?? "planning"}`
         : null;
     const visibleSessionMode = sessionMode ?? (currentJourney ? sessionModeFor(currentJourney) : null);
+    const planningDraftMessage = [...messages].reverse().find(
+        (message) => message.role === "assistant" && message.text.trim(),
+    );
 
     const createSession = async (journey: Journey, learnerId: number, targetKey?: string) => {
         setError(null);
@@ -286,9 +290,39 @@ export default function App() {
         }
     };
 
+    const confirmPlanning = async () => {
+        const journey = currentJourney;
+        const plan = planningDraftMessage?.text.trim();
+        if (!journey || visibleSessionMode !== "PLANNING" || !plan || confirmingPlan) return;
+        setError(null);
+        setConfirmingPlan(true);
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/journeys/${journey.id}/confirm-plan`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({plan}),
+            });
+            if (!response.ok) throw new Error(await readError(response));
+            await response.json() as Journey;
+            setSessionId(null);
+            setSessionMode(null);
+            setCurrentLearnUnit(null);
+            setMessages([]);
+            setDraft("");
+            setPlanningJourneyId(null);
+            setJourneyFeedback("学习路径已保存，正在进入第一课。");
+            setActivity("学习路径已确认，正在进入第一课");
+            await loadBootstrap();
+        } catch (requestError) {
+            setError(requestError instanceof Error ? requestError.message : "无法保存学习路径");
+        } finally {
+            setConfirmingPlan(false);
+        }
+    };
+
     const sendMessage = async (messageOverride?: string) => {
         const text = (messageOverride ?? draft).trim();
-        if (!sessionId || !text || sending) return;
+        if (!sessionId || !text || sending || confirmingPlan) return;
         setError(null);
         setDraft("");
         setMessages((current) => [...current, {role: "user", text}, {role: "assistant", text: ""}]);
@@ -583,7 +617,7 @@ export default function App() {
                                 type="button"
                                 className="secondary"
                                 onClick={() => void createSession(currentJourney, bootstrap.learner!.id)}
-                                disabled={loadingSession || sending}
+                                disabled={loadingSession || sending || confirmingPlan}
                             >
                                 {loadingSession ? "恢复中…" : "重新恢复"}
                             </button>
@@ -598,6 +632,17 @@ export default function App() {
                         ) : (
                             <p className="planning-note" role="note">当前 Journey 已有 LearningJourney，TutorAgent
                                 将在现有路径上继续学习。</p>
+                        )}
+                        {visibleSessionMode === "PLANNING" && planningDraftMessage && (
+                            <div className="journey-actions">
+                                <button
+                                    type="button"
+                                    onClick={() => void confirmPlanning()}
+                                    disabled={confirmingPlan || loadingSession || sending}
+                                >
+                                    {confirmingPlan ? "保存中…" : "完成设计"}
+                                </button>
+                            </div>
                         )}
                         {visibleSessionMode === "LEARNING" && currentJourney.learningJourneyId != null && (
                             <PracticeWorkspace journeyId={currentJourney.id} onDirtyChange={setWorkspaceDirty}/>
@@ -633,7 +678,7 @@ export default function App() {
                                     }
                                 }}
                                 placeholder={sessionId ? "问 TutorAgent 一个问题…" : "正在准备 Tutor Session…"}
-                                disabled={!sessionId || sending}
+                                disabled={!sessionId || sending || confirmingPlan}
                                 rows={3}
                             />
                             <div className="composer-actions">
@@ -643,7 +688,7 @@ export default function App() {
                                             onClick={() => void cancelMessage()}>取消</button>
                                 ) : (
                                     <button type="button" onClick={() => void sendMessage()}
-                                            disabled={!sessionId || !draft.trim()}>
+                                            disabled={!sessionId || !draft.trim() || confirmingPlan}>
                                         发送
                                     </button>
                                 )}

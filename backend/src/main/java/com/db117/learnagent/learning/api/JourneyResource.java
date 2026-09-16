@@ -67,4 +67,15 @@ public class JourneyResource {
     public JourneyResponse selectJourney(@PathParam("journeyId") long journeyId) {
         return JourneyResponse.from(journeys.selectJourney(journeyId));
     }
+
+    @POST
+    @Path("/journeys/{journeyId}/confirm-plan")
+    public JourneyResponse confirmPlan(
+            @PathParam("journeyId") long journeyId,
+            ConfirmPlanRequest request) {
+        if (request == null) {
+            throw LearningRequestException.badRequest("INVALID_PLAN", "请先生成规划草稿");
+        }
+        return JourneyResponse.from(journeys.confirmPlan(journeyId, request.plan()));
+    }
 }

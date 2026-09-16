@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
@@ -90,6 +91,33 @@ class RuntimeSkeletonTest {
 
         assertEquals(HttpURLConnection.HTTP_NOT_FOUND, response.statusCode());
         assertTrue(response.body().contains("SESSION_NOT_FOUND"));
+    }
+
+    @Test
+    void confirmingPlanningDraftCreatesPathAndAttachesItToJourney() throws Exception {
+        var learner = learnerRepository.findCurrent().orElseGet(() -> learnerRepository.save(
+                Learner.create("Planning tester", "TypeScript developer", CREATED_AT)));
+        var selected = journeyRepository.selectCurrent(
+                journeyRepository.save(Journey.create(learner.id(), "Confirm a TypeScript plan", CREATED_AT)).id(),
+                learner.id());
+        var plan = "第一阶段：变量与类型；第二阶段：异步编程";
+        var confirmUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/confirm-plan");
+
+        var response = HTTP.send(
+                HttpRequest.newBuilder(confirmUrl.toURI())
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"plan\":\"" + plan + "\"}", StandardCharsets.UTF_8))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
+        var linked = journeyRepository.findById(selected.id()).orElseThrow();
+        assertNotNull(linked.learningJourneyId());
+        assertTrue(response.body().contains("\"learningJourneyId\":" + linked.learningJourneyId()));
+        var learningJourney = learningJourneyRepository.findById(linked.learningJourneyId()).orElseThrow();
+        assertEquals("已确认的规划草稿：\n" + plan, learningJourney.learnUnits().getFirst().content());
+        assertEquals("first-lesson", learningJourney.currentItem().learnUnitCode());
     }
 
     @Test
