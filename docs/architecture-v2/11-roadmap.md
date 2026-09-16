@@ -7,6 +7,7 @@ Architecture
 → Desktop Runtime
 → Domain
 → HarnessAgent
+→ Learner + Journey Bootstrap
 → Workspace
 → Language Pack
 → Practice
@@ -28,6 +29,7 @@ Architecture
 | 1    | Tauri / Quarkus 运行骨架     |
 | 2    | Domain Model                 |
 | 3    | AgentScope Harness Runtime   |
+| 3.5  | Learner + Journey Bootstrap  |
 | 4    | Language Pack + Workspace    |
 | 5    | Practice Runtime             |
 | 6    | Learn Mode                   |

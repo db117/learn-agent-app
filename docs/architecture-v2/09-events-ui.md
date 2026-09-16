@@ -22,6 +22,9 @@ tool.completed
 tool.failed
 plan.created
 plan.updated
+journey.created
+journey.selected
+journey.planning
 permission.requested
 permission.resolved
 subagent.started

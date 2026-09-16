@@ -1,25 +1,26 @@
 package com.db117.learnagent.persistence.sqlite;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import javax.sql.DataSource;
 
 /**
- * 创建并验证 Step 2 的 clean-slate SQLite 结构。
+ * 创建并验证 Step 3.5 的 clean-slate SQLite 结构。
  *
  * <p>数据库没有已知标记时不猜测旧结构，也不迁移旧表；这样可以避免把未知数据误当成 v2 事实。</p>
  */
 public final class SqliteSchemaInitializer {
     public static final String SCHEMA_MARKER = "learn-agent-app-v2";
-    public static final int SCHEMA_VERSION = 2;
-    public static final String SCHEMA_SOURCE = "step-2-domain";
+    public static final int SCHEMA_VERSION = 3;
+    public static final String SCHEMA_SOURCE = "step-3-journey-bootstrap";
 
     private static final List<String> REQUIRED_TABLES = List.of(
             "schema_metadata",
             "learner",
             "learning_journey",
+            "journey",
             "chapter",
             "learn_unit",
             "assessment",
@@ -112,6 +113,7 @@ public final class SqliteSchemaInitializer {
                 CREATE TABLE learner (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     display_name TEXT NOT NULL,
+                    background_summary TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 )
                 """);
@@ -129,9 +131,24 @@ public final class SqliteSchemaInitializer {
                 )
                 """);
         execute(connection, """
-                CREATE UNIQUE INDEX uq_active_journey
-                ON learning_journey(learner_id, language_pack_id)
-                WHERE status = 'ACTIVE'
+                CREATE TABLE journey (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    learner_id INTEGER NOT NULL REFERENCES learner(id) ON DELETE CASCADE,
+                    goal_description TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'ARCHIVED')),
+                    created_at TEXT NOT NULL,
+                    archived_at TEXT,
+                    learning_journey_id INTEGER UNIQUE REFERENCES learning_journey(id) ON DELETE SET NULL,
+                    is_current INTEGER NOT NULL DEFAULT 0 CHECK (is_current IN (0, 1)),
+                    CHECK ((status = 'ARCHIVED' AND archived_at IS NOT NULL)
+                        OR (status = 'ACTIVE' AND archived_at IS NULL)),
+                    CHECK (is_current = 0 OR status = 'ACTIVE')
+                )
+                """);
+        execute(connection, """
+                CREATE UNIQUE INDEX uq_current_goal_journey
+                ON journey(learner_id)
+                WHERE is_current = 1
                 """);
         execute(connection, """
                 CREATE TABLE chapter (

@@ -7,4 +7,7 @@ public interface LearnerRepository {
     Learner save(Learner learner);
 
     Optional<Learner> findById(long id);
+
+    /** 本地单用户应用的唯一 Learner；首次打开前可能不存在。 */
+    Optional<Learner> findCurrent();
 }

@@ -4,11 +4,11 @@ import com.db117.learnagent.learning.domain.Learner;
 import com.db117.learnagent.learning.domain.LearnerRepository;
 import jakarta.enterprise.context.ApplicationScoped;
 
-import javax.sql.DataSource;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.Optional;
+import javax.sql.DataSource;
 
 /** SQLite 对 Learner 身份的持久化适配器；不保存 Journey 进度。 */
 @ApplicationScoped
@@ -25,20 +25,22 @@ public class SqliteLearnerRepository implements LearnerRepository {
             SqliteSupport.enableForeignKeys(connection);
             if (learner.id() == null) {
                 try (var statement = connection.prepareStatement(
-                        "INSERT INTO learner(display_name, created_at) VALUES (?, ?)",
+                        "INSERT INTO learner(display_name, background_summary, created_at) VALUES (?, ?, ?)",
                         java.sql.Statement.RETURN_GENERATED_KEYS)) {
                     statement.setString(1, learner.displayName());
-                    statement.setString(2, learner.createdAt().toString());
+                    statement.setString(2, learner.backgroundSummary());
+                    statement.setString(3, learner.createdAt().toString());
                     statement.executeUpdate();
                     return learner.withId(SqliteSupport.generatedId(connection, statement));
                 }
             }
             // ID 由 SQLite 生成；Domain 对象在保存前可以保持未持久化状态。
             try (var statement = connection.prepareStatement(
-                    "UPDATE learner SET display_name = ?, created_at = ? WHERE id = ?")) {
+                    "UPDATE learner SET display_name = ?, background_summary = ?, created_at = ? WHERE id = ?")) {
                 statement.setString(1, learner.displayName());
-                statement.setString(2, learner.createdAt().toString());
-                statement.setLong(3, learner.id());
+                statement.setString(2, learner.backgroundSummary());
+                statement.setString(3, learner.createdAt().toString());
+                statement.setLong(4, learner.id());
                 requireUpdated(statement.executeUpdate(), "learner", learner.id());
                 return learner;
             }
@@ -51,7 +53,7 @@ public class SqliteLearnerRepository implements LearnerRepository {
     public Optional<Learner> findById(long id) {
         try (var connection = dataSource.getConnection();
              var statement = connection.prepareStatement(
-                     "SELECT id, display_name, created_at FROM learner WHERE id = ?")) {
+                     "SELECT id, display_name, background_summary, created_at FROM learner WHERE id = ?")) {
             statement.setLong(1, id);
             try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? Optional.of(read(result)) : Optional.empty();
@@ -61,10 +63,24 @@ public class SqliteLearnerRepository implements LearnerRepository {
         }
     }
 
+    @Override
+    public Optional<Learner> findCurrent() {
+        try (var connection = dataSource.getConnection();
+             var statement = connection.prepareStatement(
+                     "SELECT id, display_name, background_summary, created_at "
+                             + "FROM learner ORDER BY id LIMIT 1");
+             ResultSet result = statement.executeQuery()) {
+            return result.next() ? Optional.of(read(result)) : Optional.empty();
+        } catch (SQLException error) {
+            throw new IllegalStateException("Unable to find current learner", error);
+        }
+    }
+
     private Learner read(ResultSet result) throws SQLException {
         return new Learner(
                 result.getLong("id"),
                 result.getString("display_name"),
+                result.getString("background_summary"),
                 Instant.parse(result.getString("created_at")));
     }
 

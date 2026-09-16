@@ -14,4 +14,5 @@
 实现 LanguagePack SPI、TypeScriptLanguagePack、LearningWorkspace、ProjectWorkspace、WorkspaceManager，并在前端引入 Monaco 与
 File Tree。
 
-**DoD：**创建 TypeScript Journey 后自动初始化 Workspace，Monaco 可读写文件，后端能读取同一文件。
+**DoD：**在 Bootstrap 已存在且用户确认了需要语言 Workspace 的 LearningJourney 后自动初始化 Workspace，Monaco
+可读写文件，后端能读取同一文件。

@@ -6,7 +6,15 @@ import com.db117.learnagent.agent.api.TutorEventType;
 import com.db117.learnagent.agent.application.TutorContextAssembler;
 import com.db117.learnagent.agent.application.TutorRequestException;
 import com.db117.learnagent.agent.application.TutorSessionService;
-import com.db117.learnagent.learning.domain.*;
+import com.db117.learnagent.learning.domain.Assessment;
+import com.db117.learnagent.learning.domain.Chapter;
+import com.db117.learnagent.learning.domain.Journey;
+import com.db117.learnagent.learning.domain.JourneyRepository;
+import com.db117.learnagent.learning.domain.LearnUnit;
+import com.db117.learnagent.learning.domain.Learner;
+import com.db117.learnagent.learning.domain.LearnerRepository;
+import com.db117.learnagent.learning.domain.LearningJourney;
+import com.db117.learnagent.learning.domain.LearningJourneyRepository;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -24,7 +32,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AgentScopeRuntimeTest {
     @Test
@@ -33,7 +45,11 @@ class AgentScopeRuntimeTest {
         var model = new FakeModel();
         var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(model), root.resolve("agent"));
         var service = new TutorSessionService(
-                new TutorContextAssembler(new FakeLearnerRepository(), new FakeJourneyRepository()), runtime);
+                new TutorContextAssembler(
+                        new FakeLearnerRepository(),
+                        new FakeParentJourneyRepository(),
+                        new FakeJourneyRepository()),
+                runtime);
         try {
             var session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
             var events = service.streamTurn(
@@ -79,7 +95,11 @@ class AgentScopeRuntimeTest {
         var root = Files.createTempDirectory("tutor-no-model");
         var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(null), root.resolve("agent"));
         var service = new TutorSessionService(
-                new TutorContextAssembler(new FakeLearnerRepository(), new FakeJourneyRepository()), runtime);
+                new TutorContextAssembler(
+                        new FakeLearnerRepository(),
+                        new FakeParentJourneyRepository(),
+                        new FakeJourneyRepository()),
+                runtime);
         try {
             var session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
             var error = assertThrows(TutorRequestException.class, () -> service.streamTurn(
@@ -97,7 +117,11 @@ class AgentScopeRuntimeTest {
         var model = new FailingModel();
         var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(model), root.resolve("agent"));
         var service = new TutorSessionService(
-                new TutorContextAssembler(new FakeLearnerRepository(), new FakeJourneyRepository()), runtime);
+                new TutorContextAssembler(
+                        new FakeLearnerRepository(),
+                        new FakeParentJourneyRepository(),
+                        new FakeJourneyRepository()),
+                runtime);
         try {
             var session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
             var events = service.streamTurn(
@@ -115,6 +139,28 @@ class AgentScopeRuntimeTest {
                     .block();
             assertEquals(TutorEventType.TURN_FAILED, replay.get(replay.size() - 1).type());
             assertEquals(1, model.calls.get());
+        } finally {
+            runtime.close();
+        }
+    }
+
+    @Test
+    void planningSessionStartsBeforeLearningJourneyExists() throws Exception {
+        var root = Files.createTempDirectory("tutor-planning");
+        var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(null), root.resolve("agent"));
+        var service = new TutorSessionService(
+                new TutorContextAssembler(
+                        new FakeLearnerRepository(),
+                        new FakeParentJourneyRepository(2L),
+                        new FakeJourneyRepository()),
+                runtime);
+        try {
+            var session = service.createSession(new CreateTutorSessionRequest(
+                    1L, 2L, com.db117.learnagent.agent.api.TutorSessionMode.PLANNING));
+
+            assertEquals(com.db117.learnagent.agent.api.TutorSessionMode.PLANNING, session.mode());
+            assertNull(session.currentLearnUnitCode());
+            assertFalse(session.restored());
         } finally {
             runtime.close();
         }
@@ -164,7 +210,8 @@ class AgentScopeRuntimeTest {
     }
 
     private static final class FakeLearnerRepository implements LearnerRepository {
-        private final Learner learner = new Learner(1L, "Ada", Instant.parse("2026-01-01T00:00:00Z"));
+        private final Learner learner = new Learner(
+                1L, "Ada", "Java engineer with ten years of experience", Instant.parse("2026-01-01T00:00:00Z"));
 
         @Override
         public Learner save(Learner learner) {
@@ -174,6 +221,11 @@ class AgentScopeRuntimeTest {
         @Override
         public Optional<Learner> findById(long id) {
             return id == learner.id() ? Optional.of(learner) : Optional.empty();
+        }
+
+        @Override
+        public Optional<Learner> findCurrent() {
+            return Optional.of(learner);
         }
     }
 
@@ -215,6 +267,50 @@ class AgentScopeRuntimeTest {
                     List.of(com.db117.learnagent.learning.domain.LearningPathItem.current("java-basics", 0, at)
                             .withId(1L)),
                     List.of());
+        }
+    }
+
+    private static final class FakeParentJourneyRepository implements JourneyRepository {
+        private final Journey journey;
+
+        private FakeParentJourneyRepository() {
+            this(1L);
+        }
+
+        private FakeParentJourneyRepository(long journeyId) {
+            var created = Journey.create(
+                    1L, "Build a Java service", Instant.parse("2026-01-01T00:00:00Z")).withId(journeyId);
+            journey = journeyId == 1L ? created.attachLearningJourney(1L) : created;
+        }
+
+        @Override
+        public Journey save(Journey journey) {
+            return journey;
+        }
+
+        @Override
+        public Optional<Journey> findById(long id) {
+            return id == journey.id() ? Optional.of(journey) : Optional.empty();
+        }
+
+        @Override
+        public List<Journey> findByLearnerId(long learnerId) {
+            return learnerId == journey.learnerId() ? List.of(journey) : List.of();
+        }
+
+        @Override
+        public Optional<Journey> findCurrentByLearnerId(long learnerId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public Journey selectCurrent(long journeyId, long learnerId) {
+            return journey.select();
+        }
+
+        @Override
+        public Journey attachLearningJourney(long journeyId, long learningJourneyId, long learnerId) {
+            return journey.attachLearningJourney(learningJourneyId);
         }
     }
 }

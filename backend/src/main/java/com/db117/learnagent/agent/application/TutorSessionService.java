@@ -1,18 +1,35 @@
 package com.db117.learnagent.agent.application;
 
-import com.db117.learnagent.agent.api.*;
+import com.db117.learnagent.agent.api.CreateTutorSessionRequest;
+import com.db117.learnagent.agent.api.SendTutorMessageRequest;
+import com.db117.learnagent.agent.api.TutorCancelResponse;
+import com.db117.learnagent.agent.api.TutorEvent;
+import com.db117.learnagent.agent.api.TutorEventType;
+import com.db117.learnagent.agent.api.TutorMessage;
+import com.db117.learnagent.agent.api.TutorSessionMode;
+import com.db117.learnagent.agent.api.TutorSessionResponse;
 import com.db117.learnagent.agent.runtime.TutorAgentRuntime;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.agent.StreamOptions;
-import io.agentscope.core.message.*;
+import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentState;
 import jakarta.enterprise.context.ApplicationScoped;
 import reactor.core.publisher.Flux;
 
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -50,7 +67,7 @@ public class TutorSessionService {
 
     public TutorSessionResponse createSession(CreateTutorSessionRequest request) {
         var ids = requireSessionRequest(request);
-        var context = contextAssembler.assemble(ids.learnerId(), ids.journeyId());
+        var context = contextAssembler.assemble(ids.learnerId(), ids.journeyId(), ids.mode());
         var sessionId = sessionId(context);
         var userId = Long.toString(context.learnerId());
         var binding = new SessionBinding(
@@ -58,6 +75,7 @@ public class TutorSessionService {
                 userId,
                 context.learnerId(),
                 context.journeyId(),
+                context.mode(),
                 context.currentLearnUnitCode());
         sessions.put(sessionId, binding);
         var state = runtime.loadState(userId, sessionId);
@@ -65,6 +83,7 @@ public class TutorSessionService {
                 sessionId,
                 state.isPresent(),
                 context.currentLearnUnitCode(),
+                context.mode(),
                 state.map(this::publicMessages).orElseGet(List::of));
     }
 
@@ -75,8 +94,9 @@ public class TutorSessionService {
             throw TutorRequestException.notFound("SESSION_NOT_FOUND", "Tutor Session 不存在，请先创建或恢复");
         }
 
-        var context = contextAssembler.assemble(binding.learnerId(), binding.journeyId());
-        if (!context.currentLearnUnitCode().equals(binding.currentLearnUnitCode())) {
+        var context = contextAssembler.assemble(binding.learnerId(), binding.journeyId(), binding.mode());
+        if (binding.currentLearnUnitCode() != null
+                && !binding.currentLearnUnitCode().equals(context.currentLearnUnitCode())) {
             throw TutorRequestException.conflict("STALE_SESSION", "学习项已变化，请恢复新的 Tutor Session");
         }
 
@@ -378,7 +398,10 @@ public class TutorSessionService {
                 || request.learnerId() <= 0 || request.journeyId() <= 0) {
             throw TutorRequestException.badRequest("INVALID_SESSION_REQUEST", "learnerId 和 journeyId 必须为正数");
         }
-        return new SessionIds(request.learnerId(), request.journeyId());
+        return new SessionIds(
+                request.learnerId(),
+                request.journeyId(),
+                request.mode() == null ? TutorSessionMode.LEARNING : request.mode());
     }
 
     private MessageInput requireMessageRequest(String sessionId, SendTutorMessageRequest request) {
@@ -399,15 +422,18 @@ public class TutorSessionService {
     }
 
     private String sessionId(TutorContext context) {
-        var seed = context.learnerId() + "|" + context.journeyId() + "|" + context.currentLearnUnitCode();
+        var seed = context.learnerId() + "|" + context.journeyId() + "|"
+                + context.mode() + "|" + Objects.toString(context.currentLearnUnitCode(), "planning");
         return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     private record SessionIds(
             /** 请求中的 Learner Domain ID。 */
             long learnerId,
-            /** 请求中的 LearningJourney Domain ID。 */
-            long journeyId) {
+            /** 请求中的 Journey Domain ID。 */
+            long journeyId,
+            /** 规划或学习模式。 */
+            TutorSessionMode mode) {
     }
 
     private record MessageInput(
@@ -424,8 +450,10 @@ public class TutorSessionService {
             String userId,
             /** 绑定的 Learner Domain ID。 */
             long learnerId,
-            /** 绑定的 LearningJourney Domain ID。 */
+            /** 绑定的 Journey Domain ID。 */
             long journeyId,
+            /** 绑定的 Tutor Session 模式。 */
+            TutorSessionMode mode,
             /** 创建绑定时的当前 LearnUnit 编码。 */
             String currentLearnUnitCode) {
     }

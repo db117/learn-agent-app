@@ -8,11 +8,10 @@ AgentScope Java、SQLite 和 GraalVM Native Image。
 [Roadmap](docs/architecture-v2/11-roadmap.md)，当前清场合同见
 [Step 0](docs/architecture-v2/steps/00-architecture-contract.md)。
 
-## Step 0
+## 当前阶段：Step 3.5
 
-已移除旧学习流程、旧 REST API、旧 SQLite schema、旧 Agent runtime、旧 Tutor session、
-旧前端业务代码和冲突的旧架构文档；保留桌面壳、前端构建链、Maven/Cargo 工具链、静态资源
-以及 Git 历史。后续从 Step 1 建立新的 Quarkus 运行骨架。
+本阶段为本地单用户设置 Learner 背景能力，创建和选择 Journey，并在 Tutor 规划会话中准备 LearningJourney。
+Language Pack、Workspace、Practice 和 Learn 继续按路线图的后续阶段实现。
 
 ## 检查
 

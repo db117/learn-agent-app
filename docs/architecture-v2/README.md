@@ -39,6 +39,7 @@
 - `steps/01-runtime-skeleton.md`
 - `steps/02-domain.md`
 - `steps/03-agent-runtime.md`
+- `steps/03-journey-bootstrap.md`
 - `steps/04-language-pack-workspace.md`
 - `steps/05-practice-runtime.md`
 - `steps/06-learn-mode.md`

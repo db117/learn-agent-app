@@ -40,6 +40,18 @@ agent_session
 
 数据库：metadata、状态、关系、结构化 evidence、时间戳。
 
+本地单用户的目标引导至少保存：
+
+```text
+learner.background_summary
+journey.goal_description
+journey.status
+journey.is_current
+journey.learning_journey_id
+```
+
+Journey 可以先没有 LearningJourney；规划草稿和 Tutor 对话继续由 AgentScope Runtime 管理，确认后才写入路径事实。
+
 文件系统：源码、Workspace 文件、Artifact、大日志、生成项目。
 
 完整 stdout/stderr 不默认长期塞 SQLite，只保存摘要、exit code、duration 等。

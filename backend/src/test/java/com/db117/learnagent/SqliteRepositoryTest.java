@@ -1,8 +1,26 @@
 package com.db117.learnagent;
 
-import com.db117.learnagent.learning.domain.*;
-import com.db117.learnagent.persistence.sqlite.*;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.learning.domain.Answer;
+import com.db117.learnagent.learning.domain.Assessment;
+import com.db117.learnagent.learning.domain.AssessmentAttempt;
+import com.db117.learnagent.learning.domain.Chapter;
+import com.db117.learnagent.learning.domain.Journey;
+import com.db117.learnagent.learning.domain.LearnUnit;
+import com.db117.learnagent.learning.domain.Learner;
+import com.db117.learnagent.learning.domain.LearningJourney;
+import com.db117.learnagent.learning.domain.LearningPathItemStatus;
+import com.db117.learnagent.learning.domain.Question;
+import com.db117.learnagent.persistence.sqlite.SqliteJourneyRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteLearnerRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteLearningJourneyRepository;
+import com.db117.learnagent.persistence.sqlite.SqlitePracticeTaskRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteProjectRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteSchemaInitializer;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.db117.learnagent.project.domain.Project;
 import com.db117.learnagent.project.domain.ProjectEvidence;
 import com.db117.learnagent.project.domain.ProjectMilestone;
@@ -15,7 +33,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SqliteRepositoryTest {
     private static final Instant T0 = Instant.parse("2026-02-01T00:00:00Z");
@@ -30,7 +53,7 @@ class SqliteRepositoryTest {
             var practiceRepository = new SqlitePracticeTaskRepository(dataSource);
             var projectRepository = new SqliteProjectRepository(dataSource);
 
-            var learner = learnerRepository.save(Learner.create("Alice", T0));
+            var learner = learnerRepository.save(Learner.create("Alice", "Java engineer with ten years of experience", T0));
             assertNotNull(learner.id());
             var savedJourney = journeyRepository.save(journey(learner.id()));
             assertNotNull(savedJourney.id());
@@ -94,8 +117,8 @@ class SqliteRepositoryTest {
             assertEquals(completedProject.id(), projectRoundTrip.id());
             assertEquals(1, projectRoundTrip.milestones().get(0).evidence().size());
 
-            assertThrows(IllegalStateException.class,
-                    () -> journeyRepository.save(journey(learner.id())));
+            var sameLanguageJourney = journeyRepository.save(journey(learner.id()));
+            assertNotEquals(savedJourney.id(), sameLanguageJourney.id());
             assertThrows(IllegalStateException.class,
                     () -> projectRepository.save(Project.create(
                             savedJourney.id(),
@@ -103,6 +126,34 @@ class SqliteRepositoryTest {
                             List.of(ProjectMilestone.create("m1", "Duplicate", 0)),
                             T0)));
             assertTrue(journeyRepository.findById(savedJourney.id()).isPresent());
+        }
+    }
+
+    @Test
+    void journeyRepositoryPersistsCurrentSelectionAndOneToOnePathLink() {
+        var dataSource = dataSource();
+        try (var anchor = dataSource.getConnection()) {
+            new SqliteSchemaInitializer(dataSource).initialize();
+            var learnerRepository = new SqliteLearnerRepository(dataSource);
+            var journeyRepository = new SqliteJourneyRepository(dataSource);
+            var learningJourneyRepository = new SqliteLearningJourneyRepository(dataSource);
+
+            var learner = learnerRepository.save(Learner.create("Alice", "Java engineer", T0));
+            var first = journeyRepository.selectCurrent(
+                    journeyRepository.save(Journey.create(learner.id(), "Learn Java", T0)).id(), learner.id());
+            var second = journeyRepository.save(Journey.create(learner.id(), "Build a service", T0.plusSeconds(1)));
+
+            assertEquals(first.id(), journeyRepository.findCurrentByLearnerId(learner.id()).orElseThrow().id());
+            var path = learningJourneyRepository.save(journey(learner.id()));
+            var linked = journeyRepository.attachLearningJourney(first.id(), path.id(), learner.id());
+            assertEquals(path.id(), linked.learningJourneyId());
+
+            var selectedSecond = journeyRepository.selectCurrent(second.id(), learner.id());
+            assertTrue(selectedSecond.current());
+            assertFalse(journeyRepository.findById(first.id()).orElseThrow().current());
+            assertEquals(2, journeyRepository.findByLearnerId(learner.id()).size());
+        } catch (SQLException error) {
+            throw new IllegalStateException(error);
         }
     }
 

@@ -6,6 +6,7 @@
 
 ```text
 Learner
+Journey
 LearningJourney
 Chapter
 LearnUnit
@@ -16,6 +17,17 @@ AssessmentAttempt
 Answer
 Mastery
 ```
+
+`Learner` 保存当前用户确认的背景能力描述；`Journey` 只保存用户要学习或完成的目标原文。
+
+二者与生成路径的关系是：
+
+```text
+Learner 1 ── * Journey 1 ── 0..1 LearningJourney ── * LearnUnit
+```
+
+一个 Journey 最终只能有一份 LearningJourney。规划过程中的路径是 Agent State 草稿，用户确认后才进入 Domain State；Tutor 不得直接
+写入 Journey、LearnUnit、score、mastery 或 completion。
 
 `LearnUnit` 回答： **学什么？**
 
