@@ -12,10 +12,11 @@ public interface LanguagePack {
     LanguageMetadata metadata();
     Toolchain toolchain();
     WorkspaceTemplateProvider templates();
-    PracticeGenerator practiceGenerator();
-    AssessmentStrategy assessmentStrategy();
 }
 ```
+
+PracticeGenerator 与 AssessmentStrategy 是按 language pack 选择的可选能力，不属于上述核心 SPI；它们在 Practice/Learn
+阶段单独注册和解析。Step 4 不实现这两类能力的行为。
 
 ## 第一实现
 
@@ -26,7 +27,7 @@ TypeScriptLanguagePack
 目录：
 
 ```text
-language-packs/typescript/
+backend/src/main/resources/language-packs/typescript/
   pack.yaml
   knowledge/
   skills/

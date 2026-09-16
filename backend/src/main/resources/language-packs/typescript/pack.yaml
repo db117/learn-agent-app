@@ -1,0 +1,12 @@
+id: typescript
+displayName: TypeScript
+
+toolchain:
+  runtime: node
+  packageManager: pnpm
+  compiler: tsc
+  testRunner: vitest
+
+fileExtensions:
+  - ts
+  - tsx
