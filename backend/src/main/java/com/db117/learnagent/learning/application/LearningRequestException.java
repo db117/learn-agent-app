@@ -25,6 +25,10 @@ public final class LearningRequestException extends RuntimeException {
         return new LearningRequestException(409, code, message);
     }
 
+    public static LearningRequestException internal(String code, String message) {
+        return new LearningRequestException(500, code, message);
+    }
+
     public int status() {
         return status;
     }

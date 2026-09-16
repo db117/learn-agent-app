@@ -1,6 +1,9 @@
 package com.db117.learnagent.learning.api;
 
 import com.db117.learnagent.learning.application.JourneyApplicationService;
+import com.db117.learnagent.learning.application.LearningRequestException;
+import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
+import com.db117.learnagent.workspace.application.WorkspaceInitializationException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -16,15 +19,27 @@ import jakarta.ws.rs.core.MediaType;
 @Produces(MediaType.APPLICATION_JSON)
 public class JourneyResource {
     private final JourneyApplicationService journeys;
+    private final WorkspaceApplicationService workspaces;
 
-    public JourneyResource(JourneyApplicationService journeys) {
+    public JourneyResource(
+            JourneyApplicationService journeys,
+            WorkspaceApplicationService workspaces) {
         this.journeys = journeys;
+        this.workspaces = workspaces;
     }
 
     @GET
     @Path("/bootstrap")
     public OnboardingResponse bootstrap() {
-        return OnboardingResponse.from(journeys.snapshot());
+        try {
+            var workspace = workspaces.ensureCurrentLearningWorkspace()
+                    .map(WorkspaceDescriptor::from)
+                    .orElse(null);
+            return OnboardingResponse.from(journeys.snapshot(), workspace);
+        } catch (WorkspaceInitializationException error) {
+            throw LearningRequestException.internal(
+                    "WORKSPACE_INITIALIZATION_FAILED", "无法初始化学习 Workspace");
+        }
     }
 
     @PUT

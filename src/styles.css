@@ -451,6 +451,111 @@ button.secondary {
     line-height: 1.5;
 }
 
+.workspace-panel {
+    margin-top: 1.25rem;
+    padding: 1rem;
+    border: 1px solid #334568;
+    border-radius: 0.75rem;
+    background: rgba(11, 18, 36, 0.48);
+}
+
+.workspace-heading {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.workspace-heading .mode-label {
+    margin-top: 0;
+    font-size: 0.68rem;
+}
+
+.workspace-actions {
+    display: flex;
+    gap: 0.55rem;
+}
+
+.workspace-layout {
+    display: grid;
+    grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+    gap: 0.85rem;
+    margin-top: 1rem;
+}
+
+.workspace-files {
+    min-width: 0;
+    max-height: 360px;
+    overflow: auto;
+    padding: 0.45rem;
+    border: 1px solid #293858;
+    border-radius: 0.55rem;
+    background: #0b1224;
+}
+
+.workspace-files ul {
+    display: grid;
+    gap: 0.2rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.workspace-files ul ul {
+    margin: 0.2rem 0 0 0.8rem;
+}
+
+.workspace-files li > span {
+    display: block;
+    padding: 0.3rem 0.45rem;
+    color: #8391aa;
+    font-size: 0.78rem;
+}
+
+.workspace-files button {
+    width: 100%;
+    min-height: 2rem;
+    padding: 0.35rem 0.45rem;
+    background: transparent;
+    color: #d7e0ee;
+    font-size: 0.78rem;
+    font-weight: 500;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+.workspace-files button:hover:not(:disabled),
+.workspace-files button[aria-pressed="true"] {
+    background: #293858;
+    color: #f5f8fc;
+}
+
+.workspace-editor {
+    min-width: 0;
+}
+
+.workspace-path {
+    min-height: 1.25rem;
+    margin-bottom: 0.45rem;
+    color: #9aa9c2;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+}
+
+.workspace-editor .monaco-editor,
+.workspace-editor > .empty-state {
+    border: 1px solid #293858;
+    border-radius: 0.55rem;
+}
+
+.workspace-editor > .empty-state {
+    min-height: 360px;
+    margin: 0;
+    padding: 1rem;
+    background: #0b1224;
+}
+
 .sr-only {
     position: absolute;
     width: 1px;
@@ -495,5 +600,20 @@ button.secondary {
 
     .journey-actions {
         justify-content: flex-start;
+    }
+
+    .workspace-heading {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 720px) {
+    .workspace-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .workspace-files {
+        max-height: 12rem;
     }
 }

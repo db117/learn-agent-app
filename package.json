@@ -10,13 +10,14 @@
     "dev:tauri": "wait-on http://127.0.0.1:1420 && pnpm backend:package && node scripts/tauri-dev.mjs",
     "backend:dev": "node scripts/maven.mjs quarkus:dev",
     "build": "vite build",
+    "test:unit": "vitest run",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "cargo:check": "node scripts/cargo-check.mjs",
     "backend:test": "node scripts/maven.mjs test",
     "backend:package": "node scripts/maven.mjs package -DskipTests",
-    "check": "pnpm typecheck && pnpm lint && pnpm build && pnpm cargo:check && pnpm backend:test",
+    "check": "pnpm typecheck && pnpm test:unit && pnpm lint && pnpm build && pnpm cargo:check && pnpm backend:test",
     "native:build": "node scripts/maven.mjs install -Dnative",
     "package:desktop": "pnpm backend:package && pnpm exec tauri build"
   },
@@ -39,6 +40,7 @@
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.41.0",
     "vite": "^7.1.3",
+    "vitest": "^5.0.0",
     "wait-on": "^8.0.4"
   }
 }

@@ -126,7 +126,7 @@ public class TutorContextAssembler {
                 completedCount,
                 journey.pathItems().size(),
                 TutorSessionMode.LEARNING,
-                WorkspaceBinding.agent());
+                WorkspaceBinding.learning(parent.id()));
     }
 
     private void requireJourneyBelongsToLearner(Journey journey, long learnerId) {

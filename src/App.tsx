@@ -1,4 +1,5 @@
 import {useEffect, useRef, useState} from "react";
+import {WorkspacePanel} from "./features/workspace/WorkspacePanel";
 
 const BACKEND_URL = "http://127.0.0.1:18080";
 const PLANNING_PROMPT = "请根据我的 Learner 背景和 Journey 目标，先提出一版学习路径草案。请说明阶段、顺序、每阶段目标，并列出需要我确认或调整的地方。";
@@ -16,7 +17,8 @@ type Journey = {
     current: boolean;
     learningJourneyId: number | null;
 };
-type Bootstrap = { learner: Learner | null; journeys: Journey[] };
+type Workspace = { kind: string; id: number; reference: string };
+type Bootstrap = { learner: Learner | null; journeys: Journey[]; workspace: Workspace | null };
 
 function formatValue(value: unknown) {
     if (value === undefined || value === null) return "—";
@@ -89,6 +91,7 @@ export default function App() {
     const [journeyDraft, setJourneyDraft] = useState("");
     const [journeyAction, setJourneyAction] = useState<"creating" | number | null>(null);
     const [journeyFeedback, setJourneyFeedback] = useState<string | null>(null);
+    const [workspaceDirty, setWorkspaceDirty] = useState(false);
     const [planningJourneyId, setPlanningJourneyId] = useState<number | null>(null);
     const [pendingPlanningPrompt, setPendingPlanningPrompt] = useState(false);
     const [sessionId, setSessionId] = useState<string | null>(null);
@@ -264,6 +267,10 @@ export default function App() {
 
     const selectJourney = async (journey: Journey) => {
         if (journey.status !== "ACTIVE" || journey.current || journeyAction !== null) return;
+        if (workspaceDirty) {
+            setError("当前 Workspace 文件有未保存修改，请先保存。");
+            return;
+        }
         setError(null);
         setJourneyFeedback(null);
         setJourneyAction(journey.id);
@@ -588,6 +595,9 @@ export default function App() {
                         ) : (
                             <p className="planning-note" role="note">当前 Journey 已有 LearningJourney，TutorAgent
                                 将在现有路径上继续学习。</p>
+                        )}
+                        {visibleSessionMode === "LEARNING" && currentJourney.learningJourneyId != null && (
+                            <WorkspacePanel journeyId={currentJourney.id} onDirtyChange={setWorkspaceDirty}/>
                         )}
                         <p className="session-status" role="status" aria-live="polite">
                             {loadingSession ? "正在恢复消息…" : activity}
