@@ -21,6 +21,8 @@ export type PracticePanelProps = {
     saving?: boolean;
     compiling?: boolean;
     testing?: boolean;
+    verifying?: boolean;
+    practiceVerified?: boolean;
     feedback?: string | null;
     diagnostics?: readonly PracticeDiagnostic[];
     onSelectFile: (path: string) => void;
@@ -28,4 +30,5 @@ export type PracticePanelProps = {
     onSave: () => void | Promise<void>;
     onCompile: () => void | Promise<void>;
     onTest: () => void | Promise<void>;
+    onVerify?: () => void | Promise<void>;
 };

@@ -125,6 +125,10 @@ class WorkspaceApplicationServiceTest {
             }
 
             @Override
+            public void delete(long id) {
+            }
+
+            @Override
             public Optional<LearningJourney> findById(long id) {
                 return id == 3L ? Optional.of(learningJourney) : Optional.empty();
             }

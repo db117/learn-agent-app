@@ -116,8 +116,49 @@ class RuntimeSkeletonTest {
         assertNotNull(linked.learningJourneyId());
         assertTrue(response.body().contains("\"learningJourneyId\":" + linked.learningJourneyId()));
         var learningJourney = learningJourneyRepository.findById(linked.learningJourneyId()).orElseThrow();
-        assertEquals("已确认的规划草稿：\n" + plan, learningJourney.learnUnits().getFirst().content());
+        assertEquals("已确认的规划阶段：\n第一阶段：变量与类型",
+                learningJourney.learnUnits().getFirst().content());
+        assertEquals(2, learningJourney.learnUnits().size());
         assertEquals("first-lesson", learningJourney.currentItem().learnUnitCode());
+    }
+
+    @Test
+    void confirmedPathExposesCurrentAssessmentAndAcceptsDeterministicAnswer() throws Exception {
+        var learner = learnerRepository.findCurrent().orElseGet(() -> learnerRepository.save(
+                Learner.create("Progress tester", "TypeScript developer", CREATED_AT)));
+        var selected = journeyRepository.selectCurrent(
+                journeyRepository.save(Journey.create(learner.id(), "Expose learning progress", CREATED_AT)).id(),
+                learner.id());
+        var confirmUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/confirm-plan");
+        HTTP.send(
+                HttpRequest.newBuilder(confirmUrl.toURI())
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"plan\":\"第一阶段；第二阶段\"}", StandardCharsets.UTF_8))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        var learningUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/learning");
+        var progress = HTTP.send(
+                HttpRequest.newBuilder(learningUrl.toURI()).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(HttpURLConnection.HTTP_OK, progress.statusCode());
+        assertTrue(progress.body().contains("\"currentLearnUnitCode\":\"first-lesson\""));
+        assertTrue(progress.body().contains("\"assessment\":"));
+
+        var assessmentUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/assessment");
+        var evaluated = HTTP.send(
+                HttpRequest.newBuilder(assessmentUrl.toURI())
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"learnUnitCode\":\"first-lesson\","
+                                        + "\"answers\":[{\"questionCode\":\"stage-1\","
+                                        + "\"selectedOptionIds\":[\"第一阶段\"]}]}",
+                                StandardCharsets.UTF_8))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(HttpURLConnection.HTTP_OK, evaluated.statusCode());
+        assertTrue(evaluated.body().contains("\"assessmentPassed\":true"));
     }
 
     @Test

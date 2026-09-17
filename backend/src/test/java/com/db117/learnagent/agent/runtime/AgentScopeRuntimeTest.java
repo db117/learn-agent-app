@@ -238,6 +238,10 @@ class AgentScopeRuntimeTest {
         }
 
         @Override
+        public void delete(long id) {
+        }
+
+        @Override
         public Optional<LearningJourney> findById(long id) {
             return id == journey.id() ? Optional.of(journey) : Optional.empty();
         }

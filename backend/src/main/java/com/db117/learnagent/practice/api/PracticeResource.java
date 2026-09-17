@@ -4,10 +4,15 @@ import com.db117.learnagent.execution.ExecutionResult;
 import com.db117.learnagent.execution.TypeScriptCompileResult;
 import com.db117.learnagent.execution.TypeScriptDiagnostic;
 import com.db117.learnagent.execution.TypeScriptTestResult;
+import com.db117.learnagent.learning.application.JourneyApplicationService;
+import com.db117.learnagent.learning.application.LearningRequestException;
+import com.db117.learnagent.learning.domain.LearningJourney;
 import com.db117.learnagent.practice.application.PracticeRuntimeService;
 import com.db117.learnagent.practice.domain.PracticeEvidence;
 import com.db117.learnagent.practice.domain.PracticeTask;
 import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.practice.domain.PracticeTaskStatus;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.BadRequestException;
@@ -31,15 +36,18 @@ public final class PracticeResource {
     private final WorkspaceApplicationService workspaces;
     private final PracticeRuntimeService runtime;
     private final PracticeTaskRepository practiceTasks;
+    private final JourneyApplicationService journeys;
 
     @Inject
     public PracticeResource(
             WorkspaceApplicationService workspaces,
             PracticeRuntimeService runtime,
-            PracticeTaskRepository practiceTasks) {
+            PracticeTaskRepository practiceTasks,
+            JourneyApplicationService journeys) {
         this.workspaces = workspaces;
         this.runtime = runtime;
         this.practiceTasks = practiceTasks;
+        this.journeys = journeys;
     }
 
     @POST
@@ -71,11 +79,60 @@ public final class PracticeResource {
     public VerifyResponse verify(
             @PathParam("journeyId") long journeyId,
             @PathParam("taskId") long taskId) {
+        var learningJourney = journeys.learningJourneyFor(journeyId);
         var task = practiceTasks.findById(taskId)
-                .filter(value -> value.journeyId() == journeyId)
+                .filter(value -> value.journeyId() == learningJourney.id())
                 .orElseThrow(() -> new NotFoundException("PracticeTask 不存在"));
         var result = runtime.verify(task, workspaces.learningWorkspace(journeyId));
-        return VerifyResponse.from(result.task(), result.evidence());
+        var updated = recordLearningProgress(journeyId, learningJourney, result);
+        return VerifyResponse.from(result.task(), result.evidence(), learningJourney, updated);
+    }
+
+    /** 验证当前 LearnUnit；首次验证时按当前路径项创建最小 PracticeTask。 */
+    @POST
+    @Path("/verify")
+    public VerifyResponse verifyCurrent(@PathParam("journeyId") long journeyId) {
+        var learningJourney = journeys.learningJourneyFor(journeyId);
+        var currentItem = learningJourney.currentItem();
+        if (currentItem == null) {
+            throw LearningRequestException.conflict("LEARNING_JOURNEY_COMPLETED", "学习路径已经完成");
+        }
+        var unit = learningJourney.learnUnit(currentItem.learnUnitCode());
+        var learnUnitId = Objects.requireNonNull(unit.id(), "persisted LearnUnit id must not be null");
+        var candidates = practiceTasks.findByLearnUnit(learningJourney.id(), learnUnitId);
+        if (currentItem.practiceVerified()) {
+            throw LearningRequestException.conflict("PRACTICE_ALREADY_VERIFIED", "当前单元的 Practice 已验证");
+        }
+        var task = candidates.stream()
+                .filter(value -> value.status() == PracticeTaskStatus.OPEN)
+                .findFirst()
+                .orElseGet(() -> practiceTasks.save(PracticeTask.create(
+                        learningJourney.id(),
+                        learnUnitId,
+                        learningJourney.languagePackId(),
+                        "CODE",
+                        "练习：" + unit.title(),
+                        unit.objective(),
+                        1,
+                        "",
+                        new VerificationPolicy(true, true, false, false),
+                        Instant.now())));
+        var result = runtime.verify(task, workspaces.learningWorkspace(journeyId));
+        var updated = recordLearningProgress(journeyId, learningJourney, result);
+        return VerifyResponse.from(result.task(), result.evidence(), learningJourney, updated);
+    }
+
+    private LearningJourney recordLearningProgress(
+            long journeyId, LearningJourney before, PracticeRuntimeService.PracticeVerification result) {
+        if (!result.evidence().isVerified(result.task().verificationPolicy())) {
+            return before;
+        }
+        var learnUnitCode = before.learnUnits().stream()
+                .filter(unit -> Objects.equals(unit.id(), result.task().learnUnitId()))
+                .map(unit -> unit.code())
+                .findFirst()
+                .orElseThrow(() -> new NotFoundException("PracticeTask 对应的 LearnUnit 不存在"));
+        return journeys.recordPracticeVerified(journeyId, learnUnitCode);
     }
 
     /** 编译结果及可定位的 TypeScript 诊断。 */
@@ -164,8 +221,18 @@ public final class PracticeResource {
             /** 本次验证涉及的文件路径。 */
             List<String> submittedFiles,
             /** 通过验证时的时间；失败时为空。 */
-            Instant verifiedAt) {
-        static VerifyResponse from(PracticeTask task, PracticeEvidence evidence) {
+            Instant verifiedAt,
+            /** 回写 Learning Domain 后的 LearningJourney 状态。 */
+            String learningJourneyStatus,
+            /** 当前 LearningPathItem 对应的 LearnUnit；路径完成后为空。 */
+            String currentLearnUnitCode,
+            /** 本次验证是否使路径推进到了下一个单元。 */
+            boolean advanced) {
+        static VerifyResponse from(
+                PracticeTask task,
+                PracticeEvidence evidence,
+                LearningJourney before,
+                LearningJourney after) {
             return new VerifyResponse(
                     Objects.requireNonNull(task.id(), "persisted task id must not be null"),
                     task.status().name(),
@@ -174,7 +241,12 @@ public final class PracticeResource {
                     evidence.testsPassed(),
                     evidence.testCount(),
                     evidence.submittedFiles(),
-                    evidence.verifiedAt());
+                    evidence.verifiedAt(),
+                    after.status().name(),
+                    after.currentItem() == null ? null : after.currentItem().learnUnitCode(),
+                    !Objects.equals(
+                            before.currentItem() == null ? null : before.currentItem().learnUnitCode(),
+                            after.currentItem() == null ? null : after.currentItem().learnUnitCode()));
         }
     }
 }

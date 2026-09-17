@@ -14,6 +14,8 @@ export function PracticePanel({
                                   saving = false,
                                   compiling = false,
                                   testing = false,
+                                  verifying = false,
+                                  practiceVerified = false,
                                   feedback = null,
                                   diagnostics = [],
                                   onSelectFile,
@@ -21,6 +23,7 @@ export function PracticePanel({
                                   onSave,
                                   onCompile,
                                   onTest,
+                                  onVerify = () => undefined,
                               }: PracticePanelProps) {
     const tree = buildFileTree([...files]);
     const orderedDiagnostics = sortDiagnostics(diagnostics);
@@ -48,6 +51,11 @@ export function PracticePanel({
                             disabled={!selectedPath || !dirty || actionsDisabled}
                             aria-busy={saving}>
                         {saving ? "保存中…" : "保存"}
+                    </button>
+                    <button type="button" className="secondary" onClick={() => void onVerify()}
+                            disabled={actionsDisabled || compiling || testing || verifying || practiceVerified}
+                            aria-busy={verifying}>
+                        {verifying ? "验证中…" : practiceVerified ? "Practice 已记录" : "验证并记录"}
                     </button>
                 </div>
             </div>

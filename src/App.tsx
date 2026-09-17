@@ -16,6 +16,8 @@ type Journey = {
     status: string;
     current: boolean;
     learningJourneyId: number | null;
+    learningJourneyStatus: string | null;
+    currentLearnUnitCode: string | null;
 };
 type Workspace = { kind: string; id: number; reference: string };
 type Bootstrap = { learner: Learner | null; journeys: Journey[]; workspace: Workspace | null };
@@ -92,6 +94,8 @@ export default function App() {
     const [journeyAction, setJourneyAction] = useState<"creating" | number | null>(null);
     const [journeyFeedback, setJourneyFeedback] = useState<string | null>(null);
     const [workspaceDirty, setWorkspaceDirty] = useState(false);
+    const [progressVersion, setProgressVersion] = useState(0);
+    const [learningCompleted, setLearningCompleted] = useState(false);
     const [planningJourneyId, setPlanningJourneyId] = useState<number | null>(null);
     const [pendingPlanningPrompt, setPendingPlanningPrompt] = useState(false);
     const [confirmingPlan, setConfirmingPlan] = useState(false);
@@ -116,6 +120,9 @@ export default function App() {
         setBootstrapState("ready");
         setBootstrapError(null);
         setLearnerDraft(payload.learner?.backgroundSummary ?? "");
+        setLearningCompleted(payload.journeys.some(
+            (journey) => journey.current && journey.learningJourneyStatus === "COMPLETED",
+        ));
     };
 
     const loadBootstrap = async (signal?: AbortSignal) => {
@@ -159,7 +166,8 @@ export default function App() {
     const archivedJourneys = bootstrap?.journeys.filter((journey) => journey.status !== "ACTIVE") ?? [];
     const planningOpen = currentJourney !== null
         && (currentJourney.learningJourneyId != null || planningJourneyId === currentJourney.id);
-    const sessionTargetKey = bootstrap?.learner && currentJourney && planningOpen
+    const sessionTargetKey = bootstrap?.learner && currentJourney && planningOpen && !learningCompleted
+    && currentJourney.learningJourneyStatus !== "COMPLETED"
         ? `${bootstrap.learner.id}:${currentJourney.id}:${currentJourney.learningJourneyId ?? "planning"}`
         : null;
     const visibleSessionMode = sessionMode ?? (currentJourney ? sessionModeFor(currentJourney) : null);
@@ -176,6 +184,7 @@ export default function App() {
         setMessages([]);
         setDraft("");
         setActivity("正在准备 Tutor Session");
+        setLearningCompleted(false);
         try {
             const mode = sessionModeFor(journey);
             const response = await fetch(`${BACKEND_URL}/api/tutor/sessions`, {
@@ -310,6 +319,7 @@ export default function App() {
             setMessages([]);
             setDraft("");
             setPlanningJourneyId(null);
+            setLearningCompleted(false);
             setJourneyFeedback("学习路径已保存，正在进入第一课。");
             setActivity("学习路径已确认，正在进入第一课");
             await loadBootstrap();
@@ -398,6 +408,31 @@ export default function App() {
             setActivity("Tutor Turn 已取消");
         }
     };
+
+    const handleProgressChanged = (status: string, nextLearnUnitCode: string | null) => {
+        setProgressVersion((version) => version + 1);
+        if (status === "COMPLETED") {
+            setLearningCompleted(true);
+            sessionTargetRef.current = null;
+            setSessionId(null);
+            setSessionMode(null);
+            setCurrentLearnUnit(null);
+            setMessages([]);
+            setActivity("学习路径已完成");
+            void loadBootstrap();
+            return;
+        }
+
+        setLearningCompleted(false);
+        if (currentJourney && bootstrap?.learner
+            && nextLearnUnitCode !== null && nextLearnUnitCode !== currentLearnUnit) {
+            sessionTargetRef.current = null;
+            void createSession(currentJourney, bootstrap.learner.id);
+        }
+        void loadBootstrap();
+    };
+
+    const showLearningCard = sessionTargetKey !== null || learningCompleted;
 
     return (
         <main className="app-shell">
@@ -605,7 +640,7 @@ export default function App() {
                     </article>
                 )}
 
-                {bootstrap?.learner && currentJourney && sessionTargetKey && (
+                {bootstrap?.learner && currentJourney && showLearningCard && (
                     <article className="status-card tutor-card" aria-labelledby="tutor-title">
                         <div className="card-heading card-heading-actions">
                             <div className="card-heading">
@@ -644,8 +679,14 @@ export default function App() {
                                 </button>
                             </div>
                         )}
-                        {visibleSessionMode === "LEARNING" && currentJourney.learningJourneyId != null && (
-                            <PracticeWorkspace journeyId={currentJourney.id} onDirtyChange={setWorkspaceDirty}/>
+                        {(visibleSessionMode === "LEARNING" || learningCompleted)
+                            && currentJourney.learningJourneyId != null && (
+                                <PracticeWorkspace
+                                    journeyId={currentJourney.id}
+                                    onDirtyChange={setWorkspaceDirty}
+                                    onProgressChanged={handleProgressChanged}
+                                    progressVersion={progressVersion}
+                                />
                         )}
                         <p className="session-status" role="status" aria-live="polite">
                             {loadingSession ? "正在恢复消息…" : activity}
@@ -654,7 +695,11 @@ export default function App() {
                         <div className="chat-log" aria-live="polite" aria-label="Tutor 对话记录">
                             {messages.length === 0 && (
                                 <p className="empty-state">
-                                    {loadingSession ? "正在加载 Session…" : "发送第一条消息，开始与 TutorAgent 对话。"}
+                                    {learningCompleted
+                                        ? "学习路径已完成。"
+                                        : loadingSession
+                                            ? "正在加载 Session…"
+                                            : "发送第一条消息，开始与 TutorAgent 对话。"}
                                 </p>
                             )}
                             {messages.map((message, index) => (

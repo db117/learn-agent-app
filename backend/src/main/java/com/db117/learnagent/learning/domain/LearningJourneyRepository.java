@@ -6,6 +6,9 @@ import java.util.Optional;
 public interface LearningJourneyRepository {
     LearningJourney save(LearningJourney journey);
 
+    /** 删除尚未挂接到 Journey 的新建路径，用于确认规划的失败补偿。 */
+    void delete(long id);
+
     Optional<LearningJourney> findById(long id);
 
     Optional<LearningJourney> findActiveByLearnerAndLanguage(long learnerId, String languagePackId);

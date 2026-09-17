@@ -2,6 +2,7 @@ package com.db117.learnagent.learning.api;
 
 import com.db117.learnagent.learning.application.JourneyApplicationService;
 import com.db117.learnagent.learning.application.LearningRequestException;
+import com.db117.learnagent.shared.domain.DomainRuleViolation;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import com.db117.learnagent.workspace.application.WorkspaceInitializationException;
 import jakarta.ws.rs.Consumes;
@@ -77,5 +78,31 @@ public class JourneyResource {
             throw LearningRequestException.badRequest("INVALID_PLAN", "请先生成规划草稿");
         }
         return JourneyResponse.from(journeys.confirmPlan(journeyId, request.plan()));
+    }
+
+    @GET
+    @Path("/journeys/{journeyId}/learning")
+    public LearningProgressResponse learning(@PathParam("journeyId") long journeyId) {
+        return LearningProgressResponse.from(journeyId, journeys.learningJourneyFor(journeyId));
+    }
+
+    @POST
+    @Path("/journeys/{journeyId}/assessment")
+    public LearningProgressResponse submitAssessment(
+            @PathParam("journeyId") long journeyId,
+            AssessmentSubmissionRequest request) {
+        if (request == null) {
+            throw LearningRequestException.badRequest("INVALID_ASSESSMENT", "评估提交不能为空");
+        }
+        if (request.learnUnitCode() == null || request.learnUnitCode().isBlank()) {
+            throw LearningRequestException.badRequest("INVALID_ASSESSMENT", "learnUnitCode 不能为空");
+        }
+        try {
+            var submission = new JourneyApplicationService.AssessmentSubmission(
+                    request.learnUnitCode(), request.toDomain());
+            return LearningProgressResponse.from(journeyId, journeys.recordAssessment(journeyId, submission));
+        } catch (DomainRuleViolation error) {
+            throw LearningRequestException.badRequest("INVALID_ASSESSMENT", error.getMessage());
+        }
     }
 }

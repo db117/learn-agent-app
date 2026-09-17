@@ -1,15 +1,31 @@
 package com.db117.learnagent.persistence.sqlite;
 
-import com.db117.learnagent.learning.domain.*;
+import com.db117.learnagent.learning.domain.Answer;
+import com.db117.learnagent.learning.domain.Assessment;
+import com.db117.learnagent.learning.domain.AssessmentAttempt;
+import com.db117.learnagent.learning.domain.AssessmentAttemptStatus;
+import com.db117.learnagent.learning.domain.Chapter;
+import com.db117.learnagent.learning.domain.LearnUnit;
+import com.db117.learnagent.learning.domain.LearningJourney;
+import com.db117.learnagent.learning.domain.LearningJourneyRepository;
+import com.db117.learnagent.learning.domain.LearningJourneyStatus;
+import com.db117.learnagent.learning.domain.LearningPathItem;
+import com.db117.learnagent.learning.domain.LearningPathItemStatus;
+import com.db117.learnagent.learning.domain.Question;
+import com.db117.learnagent.learning.domain.QuestionType;
 import jakarta.enterprise.context.ApplicationScoped;
 
-import javax.sql.DataSource;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import javax.sql.DataSource;
 
 /**
  * LearningJourney 聚合的 SQLite 适配器。
@@ -39,6 +55,17 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
             }
         } catch (SQLException error) {
             throw new IllegalStateException("Unable to save learning journey", error);
+        }
+    }
+
+    @Override
+    public void delete(long id) {
+        try (var connection = dataSource.getConnection();
+             var statement = connection.prepareStatement("DELETE FROM learning_journey WHERE id = ?")) {
+            statement.setLong(1, id);
+            statement.executeUpdate();
+        } catch (SQLException error) {
+            throw new IllegalStateException("Unable to delete learning journey", error);
         }
     }
 

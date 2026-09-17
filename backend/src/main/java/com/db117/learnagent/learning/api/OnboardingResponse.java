@@ -17,7 +17,10 @@ public record OnboardingResponse(
             WorkspaceDescriptor workspace) {
         return new OnboardingResponse(
                 snapshot.learner() == null ? null : LearnerResponse.from(snapshot.learner()),
-                snapshot.journeys().stream().map(JourneyResponse::from).toList(),
+                snapshot.journeys().stream()
+                        .map(journey -> JourneyResponse.from(
+                                journey, snapshot.learningJourneys().get(journey.id())))
+                        .toList(),
                 workspace);
     }
 }
