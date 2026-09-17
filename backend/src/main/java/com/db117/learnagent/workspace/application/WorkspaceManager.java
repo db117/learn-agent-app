@@ -3,11 +3,7 @@ package com.db117.learnagent.workspace.application;
 import com.db117.learnagent.config.RuntimeConfig;
 import com.db117.learnagent.language.LanguagePack;
 import com.db117.learnagent.language.WorkspaceTemplate;
-import com.db117.learnagent.workspace.domain.LearningWorkspace;
-import com.db117.learnagent.workspace.domain.ProjectWorkspace;
-import com.db117.learnagent.workspace.domain.Workspace;
-import com.db117.learnagent.workspace.domain.WorkspaceFile;
-import com.db117.learnagent.workspace.domain.WorkspaceFileEntry;
+import com.db117.learnagent.workspace.domain.*;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.io.IOException;
@@ -89,6 +85,7 @@ public final class WorkspaceManager {
         ensureManagedRootHasNoSymlink(workspace.root());
         try (Stream<Path> paths = Files.walk(workspace.root())) {
             return paths.filter(path -> !path.equals(workspace.root()))
+                    .filter(path -> !isDependencyPath(workspace, path))
                     .filter(path -> isRegularNonSymlink(workspace, path))
                     .map(path -> entry(workspace, path))
                     .sorted(Comparator.comparing(WorkspaceFileEntry::path))
@@ -221,6 +218,18 @@ public final class WorkspaceManager {
         } catch (IOException error) {
             return false;
         }
+    }
+
+    private static boolean isDependencyPath(Workspace workspace, Path path) {
+        var relative = workspace.root().relativize(path);
+        if (relative.getNameCount() == 0) {
+            return false;
+        }
+        var first = relative.getName(0).toString();
+        return first.equals("node_modules")
+                || (workspace.reference().kind() == WorkspaceKind.LEARNING
+                && relative.getNameCount() == 1
+                && first.equals("pnpm-lock.yaml"));
     }
 
     private static WorkspaceFileEntry entry(Workspace workspace, Path path) {

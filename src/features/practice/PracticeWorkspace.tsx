@@ -15,11 +15,13 @@ type Props = {
 
 type CompileResponse = {
     success: boolean;
+    summary: string;
     diagnostics: PracticeDiagnostic[];
 };
 
 type TestResponse = {
     success: boolean;
+    summary: string;
     passed: boolean;
     testCount: number;
 };
@@ -67,6 +69,7 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
     const [testing, setTesting] = useState(false);
     const [verifying, setVerifying] = useState(false);
     const [diagnostics, setDiagnostics] = useState<PracticeDiagnostic[]>([]);
+    const [runtimeSummary, setRuntimeSummary] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<string | null>(null);
     const [progress, setProgress] = useState<LearningProgress | null>(null);
     const [progressLoading, setProgressLoading] = useState(true);
@@ -114,6 +117,7 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
         setState(initialSaveState());
         setFiles([]);
         setDiagnostics([]);
+        setRuntimeSummary(null);
         setFeedback(null);
         setLoading(true);
         void loadProgress(controller.signal);
@@ -167,15 +171,18 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
         }
         setCompiling(true);
         setFeedback(null);
+        setRuntimeSummary(null);
         try {
             const response = await fetch(`${BACKEND_URL}/api/journeys/${journeyId}/practice/compile`, {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
+                body: "{}",
             });
             if (!response.ok) throw new Error("编译请求失败");
             const result = await response.json() as CompileResponse;
             setDiagnostics(result.diagnostics);
-            setFeedback(result.success ? "TypeScript 编译通过。" : "TypeScript 编译失败，请查看诊断。");
+            setRuntimeSummary(result.summary);
+            setFeedback(result.success ? "TypeScript 编译通过。" : "TypeScript 编译失败，请查看执行摘要和诊断。");
         } catch (error: unknown) {
             setFeedback(error instanceof Error ? error.message : "无法执行编译");
         } finally {
@@ -190,13 +197,16 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
         }
         setTesting(true);
         setFeedback(null);
+        setRuntimeSummary(null);
         try {
             const response = await fetch(`${BACKEND_URL}/api/journeys/${journeyId}/practice/tests`, {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
+                body: "{}",
             });
             if (!response.ok) throw new Error("测试请求失败");
             const result = await response.json() as TestResponse;
+            setRuntimeSummary(result.summary);
             setFeedback(result.passed
                 ? `测试通过（${result.testCount} 个）。`
                 : `测试未通过（${result.testCount} 个）。`);
@@ -308,6 +318,7 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
             verifying={verifying}
             practiceVerified={progress?.practiceVerified}
             feedback={feedback}
+            runtimeSummary={runtimeSummary}
             diagnostics={diagnostics}
             onSelectFile={selectWorkspaceFile}
             onContentChange={(content) => setState((current) => editDraft(current, content))}

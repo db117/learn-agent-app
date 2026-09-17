@@ -17,6 +17,7 @@ export function PracticePanel({
                                   verifying = false,
                                   practiceVerified = false,
                                   feedback = null,
+                                  runtimeSummary = null,
                                   diagnostics = [],
                                   onSelectFile,
                                   onContentChange,
@@ -61,6 +62,7 @@ export function PracticePanel({
             </div>
 
             {feedback && <p className="form-feedback" role="alert">{feedback}</p>}
+            {runtimeSummary && <pre className="runtime-summary" aria-label="执行摘要">{runtimeSummary}</pre>}
 
             <div className="workspace-layout">
                 <nav className="workspace-files" aria-label="Practice Workspace 文件树">

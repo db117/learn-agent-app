@@ -1,10 +1,6 @@
 package com.db117.learnagent.language.typescript;
 
-import com.db117.learnagent.language.LanguageMetadata;
-import com.db117.learnagent.language.LanguagePack;
-import com.db117.learnagent.language.Toolchain;
-import com.db117.learnagent.language.WorkspaceTemplate;
-import com.db117.learnagent.language.WorkspaceTemplateProvider;
+import com.db117.learnagent.language.*;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.List;
@@ -18,7 +14,39 @@ public class TypeScriptLanguagePack implements LanguagePack {
     private static final Toolchain TOOLCHAIN = new Toolchain(
             "node", "pnpm", "tsc", "vitest");
     private static final WorkspaceTemplateProvider TEMPLATES = () -> List.of(
-            new WorkspaceTemplate("src/index.ts", "export {};")
+            new WorkspaceTemplate("package.json", """
+                    {
+                      "name": "learn-agent-practice",
+                      "private": true,
+                      "type": "module"
+                    }
+                    """),
+            new WorkspaceTemplate("tsconfig.json", """
+                    {
+                      "compilerOptions": {
+                        "target": "ES2022",
+                        "module": "NodeNext",
+                        "moduleResolution": "NodeNext",
+                        "strict": true,
+                        "skipLibCheck": true,
+                        "noEmit": true
+                      },
+                      "include": ["src/**/*.ts"]
+                    }
+                    """),
+            new WorkspaceTemplate("vitest.config.mjs", """
+                    export default {
+                      test: { globals: true }
+                    };
+                    """),
+            new WorkspaceTemplate("src/index.ts", "export {};"),
+            new WorkspaceTemplate("src/index.test.mjs", """
+                    import assert from "node:assert/strict";
+                    
+                    it("starter workspace is ready", () => {
+                      assert.equal(true, true);
+                    });
+                    """)
     );
 
     @Override

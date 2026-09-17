@@ -46,7 +46,8 @@ class PracticeRuntimeE2ETest {
         assertTrue(verification.tests().passed());
         assertTrue(verification.evidence().isVerified(task.verificationPolicy()));
         assertEquals("VERIFIED", verification.task().status().name());
-        assertEquals(List.of("src/index.ts"), verification.evidence().submittedFiles());
+        assertEquals(List.of("package.json", "src/index.test.mjs", "src/index.ts", "tsconfig.json",
+                "vitest.config.mjs"), verification.evidence().submittedFiles());
         assertEquals("VERIFIED", repository.saved.status().name());
     }
 

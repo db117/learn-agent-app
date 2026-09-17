@@ -10,9 +10,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class TypeScriptTestRunnerTest {
     @TempDir
@@ -66,6 +64,21 @@ class TypeScriptTestRunnerTest {
 
         assertEquals(0, result.testCount());
         assertFalse(result.passed());
+    }
+
+    @Test
+    void ignoresVitestTerminalColorCodesWhenCountingTests() {
+        var execution = new ExecutionResult(true, 0, """
+                stdout:
+                \u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m1 passed\u001b[39m\u001b[90m (1)\u001b[39m
+                stderr:
+                """, Duration.ZERO);
+
+        var result = new TypeScriptTestRunner((workspace, request) -> execution)
+                .run(workspace(), List.of());
+
+        assertEquals(1, result.testCount());
+        assertTrue(result.passed());
     }
 
     private Workspace workspace() {

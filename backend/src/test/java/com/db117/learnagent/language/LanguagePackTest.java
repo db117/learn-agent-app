@@ -6,8 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 class LanguagePackTest {
     @Test
@@ -21,8 +20,14 @@ class LanguagePackTest {
         assertEquals("pnpm", pack.toolchain().packageManager());
         assertEquals("tsc", pack.toolchain().compiler());
         assertEquals("vitest", pack.toolchain().testRunner());
-        assertEquals(List.of(new WorkspaceTemplate("src/index.ts", "export {};")),
-                pack.templates().templates());
+        var templates = pack.templates().templates();
+        assertEquals(List.of("package.json", "tsconfig.json", "vitest.config.mjs", "src/index.ts",
+                        "src/index.test.mjs"),
+                templates.stream().map(WorkspaceTemplate::path).toList());
+        assertTrue(templates.get(0).content().contains("\"type\": \"module\""));
+        assertTrue(templates.get(1).content().contains("\"noEmit\": true"));
+        assertEquals("export {};", templates.get(3).content());
+        assertTrue(templates.get(4).content().contains("starter workspace is ready"));
     }
 
     @Test

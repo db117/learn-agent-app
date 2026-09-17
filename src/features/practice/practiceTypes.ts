@@ -24,6 +24,7 @@ export type PracticePanelProps = {
     verifying?: boolean;
     practiceVerified?: boolean;
     feedback?: string | null;
+    runtimeSummary?: string | null;
     diagnostics?: readonly PracticeDiagnostic[];
     onSelectFile: (path: string) => void;
     onContentChange: (content: string) => void;

@@ -12,11 +12,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class LocalExecutionEnvironmentTest {
     @TempDir
@@ -83,6 +81,15 @@ class LocalExecutionEnvironmentTest {
         assertThrows(IllegalArgumentException.class,
                 () -> environment().execute(missing,
                         new ExecutionRequest(ExecutionOperation.RUN_PROGRAM, List.of("program.mjs"))));
+    }
+
+    @Test
+    void usesThePlatformPackageManagerLauncher() {
+        var windows = System.getProperty("os.name", "")
+                .toLowerCase(Locale.ROOT)
+                .contains("win");
+
+        assertEquals(windows ? "pnpm.cmd" : "pnpm", LocalExecutionEnvironment.packageManagerCommand());
     }
 
     private LocalExecutionEnvironment environment() {

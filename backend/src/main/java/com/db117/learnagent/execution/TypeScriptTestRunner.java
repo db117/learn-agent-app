@@ -11,6 +11,7 @@ import java.util.regex.Pattern;
 @ApplicationScoped
 public final class TypeScriptTestRunner {
     private static final Pattern TEST_SUMMARY = Pattern.compile("^\\s*Tests\\b.*\\((\\d+)\\)\\s*$");
+    private static final Pattern ANSI_SGR = Pattern.compile("\\u001B\\[[0-9;]*m");
 
     private final ExecutionEnvironment executionEnvironment;
 
@@ -32,7 +33,8 @@ public final class TypeScriptTestRunner {
         }
         var testCount = 0;
         for (var line : summary.lines().toList()) {
-            var matcher = TEST_SUMMARY.matcher(line);
+            // Vitest 在 Windows 的进程输出中保留颜色控制码，先清理再解析稳定的汇总行。
+            var matcher = TEST_SUMMARY.matcher(ANSI_SGR.matcher(line).replaceAll(""));
             if (!matcher.matches()) {
                 continue;
             }

@@ -1,11 +1,7 @@
 package com.db117.learnagent.workspace;
 
 import com.db117.learnagent.config.RuntimeConfig;
-import com.db117.learnagent.language.LanguageMetadata;
-import com.db117.learnagent.language.LanguagePack;
-import com.db117.learnagent.language.Toolchain;
-import com.db117.learnagent.language.WorkspaceTemplate;
-import com.db117.learnagent.language.WorkspaceTemplateProvider;
+import com.db117.learnagent.language.*;
 import com.db117.learnagent.language.typescript.TypeScriptLanguagePack;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.WorkspaceFileEntry;
@@ -19,10 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class WorkspaceManagerTest {
     @TempDir
@@ -82,6 +75,21 @@ class WorkspaceManagerTest {
         var written = manager.writeFile(workspace, "a/b.txt", "updated");
         assertEquals("updated", written.content());
         assertEquals("updated", Files.readString(workspace.root().resolve("a/b.txt")));
+    }
+
+    @Test
+    void hidesPackageManagerFilesFromTheWorkspaceFileList() throws IOException {
+        var manager = manager();
+        var workspace = manager.ensureLearningWorkspace(12, new TypeScriptLanguagePack());
+        Files.createDirectories(workspace.root().resolve("node_modules/.bin"));
+        Files.writeString(workspace.root().resolve("node_modules/.bin/tool"), "tool");
+        Files.writeString(workspace.root().resolve("pnpm-lock.yaml"), "lockfileVersion: '9.0'");
+        manager.writeFile(workspace, "src/index.ts", "export {};");
+
+        assertEquals(List.of("package.json", "src/index.test.mjs", "src/index.ts", "tsconfig.json",
+                "vitest.config.mjs"), manager.listFiles(workspace).stream()
+                .map(WorkspaceFileEntry::path)
+                .toList());
     }
 
     @Test

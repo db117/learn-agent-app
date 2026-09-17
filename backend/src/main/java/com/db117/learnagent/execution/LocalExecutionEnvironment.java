@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -51,14 +52,20 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
             throw new IllegalArgumentException("request must not be null");
         }
         return switch (request.operation()) {
-            case COMPILE -> commandWithPaths(List.of("pnpm", "exec", "tsc", "--noEmit"), root,
+            case COMPILE -> commandWithPaths(List.of(packageManagerCommand(), "exec", "tsc", "--noEmit"), root,
                     request.arguments());
-            case RUN_TESTS -> commandWithPaths(List.of("pnpm", "exec", "vitest", "run"), root,
+            case RUN_TESTS -> commandWithPaths(List.of(packageManagerCommand(), "exec", "vitest", "run"), root,
                     request.arguments());
             case RUN_PROGRAM -> commandForProgram(root, request.arguments());
             case FORMAT, LINT -> throw new UnsupportedOperationException(
                     "operation is not supported by LocalExecutionEnvironment: " + request.operation());
         };
+    }
+
+    static String packageManagerCommand() {
+        return System.getProperty("os.name", "")
+                .toLowerCase(Locale.ROOT)
+                .contains("win") ? "pnpm.cmd" : "pnpm";
     }
 
     private static List<String> commandWithPaths(List<String> fixedCommand, Path root,

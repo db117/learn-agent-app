@@ -50,12 +50,16 @@ describe("practice diagnostics", () => {
 
 describe("PracticePanel", () => {
     it("renders workspace actions, file tree and diagnostics from props", () => {
-        const markup = renderToStaticMarkup(createElement(PracticePanel, panelProps({diagnostics})));
+        const markup = renderToStaticMarkup(createElement(PracticePanel, panelProps({
+            diagnostics,
+            runtimeSummary: "failed to start COMPILE: pnpm.cmd",
+        })));
         expect(markup).toContain("编译");
         expect(markup).toContain("测试");
         expect(markup).toContain("保存");
         expect(markup).toContain("main.ts");
         expect(markup).toContain("src/main.ts:2:1");
         expect(markup).toContain("TS2322");
+        expect(markup).toContain("failed to start COMPILE: pnpm.cmd");
     });
 });
