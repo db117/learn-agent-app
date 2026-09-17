@@ -22,6 +22,11 @@ PracticeEvidence 是 Domain State，不是 Tutor Session 的结果。代码执�
 全部通过后回写 PracticeEvidence，Learning Domain 决定 `practicePassed`，并与 Assessment 结果共同决定当前
 LearningPathItem 是否完成。
 
+当前 Step 5 的 PracticeTask 验证只支持固定的 compile 和 tests 检查。虽然 `ExecutionOperation` 保留了
+`LINT`，但 `LocalExecutionEnvironment` 尚未提供 Lint 实现；`PracticeTask` 也没有固定的 runtime script，因而
+`requireLint` 或 `requireRuntime` 会在验证开始前以 `UNSUPPORTED_VERIFICATION_POLICY` 拒绝。应用层不会把未执行的
+检查写成通过或静默追加误导性的 PracticeEvidence。默认的 compile/tests 验证路径不变。
+
 当前项的完成条件是：Assessment 得分达到 70，且存在通过的 PracticeEvidence。两项条件都满足后，Learning
 Domain 自动将当前项标记为完成，并将下一个有序 `PENDING` 项设为当前项；不存在下一个项时，将
 LearningJourney 置为 `COMPLETED`。Session 只重新加载新的当前 LearnUnit，不自行修改领域状态，也不自动发送

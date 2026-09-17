@@ -63,3 +63,7 @@ Domain Tool：`get_learning_context`、`get_current_unit`、`get_progress`、`ve
 不要默认提供 `executeShell(String command)`。
 
 第一语言 TypeScript 使用：Node、pnpm、tsc、Vitest。
+
+Step 5 的当前 LocalExecutionEnvironment 仅将 compile、run_tests 和 Workspace 内固定脚本的 run_program
+作为可用能力；lint 尚未实现。Practice 验证不会把未执行的 lint/runtime 检查写入通过证据，要求这些检查的任务
+会在应用边界被明确拒绝。Sandbox、Permission 和更完整的任务运行契约属于后续步骤。

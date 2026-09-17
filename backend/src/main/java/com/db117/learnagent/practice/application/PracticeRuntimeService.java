@@ -8,11 +8,13 @@ import com.db117.learnagent.execution.TypeScriptCompileResult;
 import com.db117.learnagent.execution.TypeScriptCompiler;
 import com.db117.learnagent.execution.TypeScriptTestResult;
 import com.db117.learnagent.execution.TypeScriptTestRunner;
+import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.practice.domain.PracticeAttempt;
 import com.db117.learnagent.practice.domain.PracticeEvidence;
 import com.db117.learnagent.practice.domain.PracticeTask;
 import com.db117.learnagent.practice.domain.PracticeTaskRepository;
 import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.Workspace;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -72,6 +74,7 @@ public final class PracticeRuntimeService {
     /** 执行编译和测试，并把固定验收策略需要的客观证据追加到 PracticeTask。 */
     public PracticeVerification verify(PracticeTask task, Workspace workspace) {
         var currentTask = Objects.requireNonNull(task, "task must not be null");
+        requireSupportedPolicy(currentTask.verificationPolicy());
         var currentWorkspace = requireWorkspace(workspace);
         var compile = compile(currentWorkspace);
         var tests = runTests(currentWorkspace);
@@ -96,6 +99,22 @@ public final class PracticeRuntimeService {
         var saved = practiceTasks.save(currentTask.recordAttempt(
                 PracticeAttempt.submit(evidence, Instant.now())));
         return new PracticeVerification(saved, compile, tests, evidence);
+    }
+
+    /** 当前 Step 5 只具备 compile/tests 的固定验收能力；不为未实现的检查伪造 Evidence。 */
+    private static void requireSupportedPolicy(VerificationPolicy policy) {
+        var unsupported = new ArrayList<String>();
+        if (policy.requireLint()) {
+            unsupported.add("lint");
+        }
+        if (policy.requireRuntime()) {
+            unsupported.add("runtime");
+        }
+        if (!unsupported.isEmpty()) {
+            throw LearningRequestException.badRequest(
+                    "UNSUPPORTED_VERIFICATION_POLICY",
+                    "当前 Practice Runtime 不支持验证项: " + String.join(", ", unsupported));
+        }
     }
 
     private List<String> submittedFiles(Workspace workspace) {
