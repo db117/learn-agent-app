@@ -18,7 +18,11 @@ public class TypeScriptLanguagePack implements LanguagePack {
                     {
                       "name": "learn-agent-practice",
                       "private": true,
-                      "type": "module"
+                      "type": "module",
+                      "devDependencies": {
+                        "typescript": "5.9.3",
+                        "vitest": "5.0.0"
+                      }
                     }
                     """),
             new WorkspaceTemplate("tsconfig.json", """

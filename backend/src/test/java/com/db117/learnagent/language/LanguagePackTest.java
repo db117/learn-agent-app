@@ -25,6 +25,8 @@ class LanguagePackTest {
                         "src/index.test.mjs"),
                 templates.stream().map(WorkspaceTemplate::path).toList());
         assertTrue(templates.get(0).content().contains("\"type\": \"module\""));
+        assertTrue(templates.get(0).content().contains("\"typescript\": \"5.9.3\""));
+        assertTrue(templates.get(0).content().contains("\"vitest\": \"5.0.0\""));
         assertTrue(templates.get(1).content().contains("\"noEmit\": true"));
         assertEquals("export {};", templates.get(3).content());
         assertTrue(templates.get(4).content().contains("starter workspace is ready"));
