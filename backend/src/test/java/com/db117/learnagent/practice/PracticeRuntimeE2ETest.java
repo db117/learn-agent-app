@@ -16,7 +16,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -95,6 +97,7 @@ class PracticeRuntimeE2ETest {
         var verified = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
         assertTrue(verified.body().contains("\"verified\":true"));
         assertTrue(verified.body().contains("\"status\":\"VERIFIED\""));
+        assertSafeVerifyResponse(verified.body());
         var taskAfterVerification = practiceTasks.findById(taskId).orElseThrow();
         assertEquals(2, taskAfterVerification.attempts().size());
         var evidence = taskAfterVerification.attempts().getLast().evidence();
@@ -175,6 +178,23 @@ class PracticeRuntimeE2ETest {
                 .replace("\"", "\\\"")
                 .replace("\r", "\\r")
                 .replace("\n", "\\n") + "\"";
+    }
+
+    /** 锁定 Practice REST 对 UI 的安全摘要契约；不把运行时内部数据带出边界。 */
+    private static void assertSafeVerifyResponse(String body) {
+        var fields = Set.of(
+                "taskId", "status", "verified", "compilePassed", "testsPassed", "testCount",
+                "submittedFiles", "verifiedAt", "learningJourneyStatus", "currentLearnUnitCode", "advanced");
+        for (var field : fields) {
+            assertTrue(body.contains("\"" + field + "\":"), () -> "Missing VerifyResponse field: " + field);
+        }
+        for (var forbidden : List.of(
+                "hostPath", "stdout", "stderr", "prompt", "answer", "secret", "reasoning", "practice.verified")) {
+            assertFalse(body.contains("\"" + forbidden + "\":"),
+                    () -> "Unsafe or out-of-band field leaked: " + forbidden);
+        }
+        assertFalse(body.contains("C:\\") || body.contains("F:\\") || body.contains("/tmp/"),
+                "VerifyResponse must not contain a host path");
     }
 
     /** 测试专用临时数据目录，确保真实 Workspace 不会回退到仓库祖先的 node_modules。 */
