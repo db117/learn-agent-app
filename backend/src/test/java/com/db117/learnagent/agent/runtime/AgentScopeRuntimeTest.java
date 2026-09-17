@@ -6,6 +6,11 @@ import com.db117.learnagent.agent.api.TutorEventType;
 import com.db117.learnagent.agent.application.TutorContextAssembler;
 import com.db117.learnagent.agent.application.TutorRequestException;
 import com.db117.learnagent.agent.application.TutorSessionService;
+import com.db117.learnagent.execution.LocalExecutionEnvironment;
+import com.db117.learnagent.execution.TypeScriptCompiler;
+import com.db117.learnagent.execution.TypeScriptTestRunner;
+import com.db117.learnagent.language.LanguagePackCatalog;
+import com.db117.learnagent.language.typescript.TypeScriptLanguagePack;
 import com.db117.learnagent.learning.domain.Assessment;
 import com.db117.learnagent.learning.domain.Chapter;
 import com.db117.learnagent.learning.domain.Journey;
@@ -15,9 +20,18 @@ import com.db117.learnagent.learning.domain.Learner;
 import com.db117.learnagent.learning.domain.LearnerRepository;
 import com.db117.learnagent.learning.domain.LearningJourney;
 import com.db117.learnagent.learning.domain.LearningJourneyRepository;
+import com.db117.learnagent.practice.application.PracticeRuntimeService;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.agent.tool.TutorWorkspaceTools;
+import com.db117.learnagent.config.RuntimeConfig;
+import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
+import com.db117.learnagent.workspace.application.WorkspaceManager;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
@@ -166,6 +180,88 @@ class AgentScopeRuntimeTest {
         }
     }
 
+    @Test
+    void tutorDrivesRealLearningWorkspaceToolAndProjectsSafeEvents() throws Exception {
+        var dataDir = Files.createTempDirectory("tutor-workspace-runtime");
+        RuntimeConfig config = () -> dataDir.toString();
+        var workspaces = new WorkspaceManager(config);
+        var learningJourneys = new FakeJourneyRepository("typescript");
+        var workspaceAccess = new WorkspaceApplicationService(
+                new FakeLearnerRepository(),
+                new FakeParentJourneyRepository(),
+                learningJourneys,
+                null,
+                typeScriptCatalog(),
+                workspaces);
+        var environment = new LocalExecutionEnvironment();
+        var practiceRuntime = new PracticeRuntimeService(
+                environment,
+                new TypeScriptCompiler(environment),
+                new TypeScriptTestRunner(environment),
+                workspaces,
+                new EmptyPracticeTaskRepository());
+        var workspaceTools = new TutorWorkspaceTools(workspaces, workspaceAccess, practiceRuntime);
+        var model = new ToolCallingModel();
+        var runtime = new TutorAgentRuntime(
+                config,
+                new TutorModel(model),
+                dataDir.resolve("agent"),
+                workspaceTools);
+        var service = new TutorSessionService(
+                new TutorContextAssembler(
+                        new FakeLearnerRepository(),
+                        new FakeParentJourneyRepository(),
+                        learningJourneys),
+                runtime);
+        try {
+            var session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            var events = service.streamTurn(
+                            session.sessionId(),
+                            new SendTutorMessageRequest("tool-turn", "请先查看当前 Workspace"))
+                    .collectList()
+                    .block();
+
+            assertTrue(model.sawWorkspaceToolSchema, model.toolSchemaText);
+            assertTrue(model.sawLearningContext);
+            assertTrue(model.sawToolResult, model.toolResultText + " schema=" + model.toolSchemaText);
+            assertEquals(TutorEventType.TURN_STARTED, events.getFirst().type());
+            assertEquals(TutorEventType.TURN_COMPLETED, events.getLast().type());
+            assertTrue(events.stream().anyMatch(event -> event.type() == TutorEventType.TOOL_STARTED));
+            assertTrue(events.stream().anyMatch(event -> event.type() == TutorEventType.TOOL_COMPLETED));
+            assertTrue(events.stream().anyMatch(event -> event.type() == TutorEventType.MESSAGE_DELTA));
+            assertTrue(events.stream().allMatch(event -> Set.of(
+                    TutorEventType.TURN_STARTED,
+                    TutorEventType.ACTIVITY,
+                    TutorEventType.TOOL_STARTED,
+                    TutorEventType.TOOL_COMPLETED,
+                    TutorEventType.MESSAGE_DELTA,
+                    TutorEventType.TURN_COMPLETED).contains(event.type())));
+            assertEquals("已读取当前 Workspace。", events.stream()
+                    .filter(event -> event.type() == TutorEventType.MESSAGE_DELTA)
+                    .findFirst()
+                    .orElseThrow()
+                    .text());
+            assertTrue(events.stream().noneMatch(event -> event.text() != null
+                    && (event.text().contains("src/index.ts")
+                    || event.text().contains("export {};")
+                    || event.text().contains(dataDir.toString())
+                    || event.text().contains("private thought")
+                    || event.text().contains("provider-secret"))));
+            assertTrue(events.stream().filter(event -> event.type() == TutorEventType.TOOL_STARTED)
+                    .allMatch(event -> "已开始工具 read_file".equals(event.text())));
+            assertTrue(events.stream().filter(event -> event.type() == TutorEventType.TOOL_COMPLETED)
+                    .allMatch(event -> "已完成工具 read_file".equals(event.text())));
+        } finally {
+            runtime.close();
+        }
+    }
+
+    private static LanguagePackCatalog typeScriptCatalog() throws Exception {
+        var constructor = LanguagePackCatalog.class.getDeclaredConstructor(Iterable.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance(List.of(new TypeScriptLanguagePack()));
+    }
+
     private static final class FakeModel implements Model {
         private final AtomicInteger calls = new AtomicInteger();
 
@@ -188,6 +284,66 @@ class AgentScopeRuntimeTest {
         @Override
         public String getModelName() {
             return "fake-tutor";
+        }
+    }
+
+    private static final class ToolCallingModel implements Model {
+        private int calls;
+        private boolean sawWorkspaceToolSchema;
+        private String toolSchemaText = "workspace tool schema was not observed";
+        private boolean sawLearningContext;
+        private boolean sawToolResult;
+        private String toolResultText = "tool result was not observed";
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages,
+                List<ToolSchema> tools,
+                GenerateOptions options) {
+            if (calls++ == 0) {
+                sawLearningContext = messages.stream()
+                        .flatMap(message -> message.getContentBlocks(TextBlock.class).stream())
+                        .anyMatch(block -> block.getText().contains("workspace-kind: LEARNING")
+                                && block.getText().contains("workspace-id: 1"));
+                var readFileSchema = tools.stream()
+                        .filter(tool -> "read_file".equals(tool.getName()))
+                        .findFirst();
+                sawWorkspaceToolSchema = readFileSchema.isPresent();
+                toolSchemaText = readFileSchema.map(schema -> schema.getParameters().toString())
+                        .orElse("read_file schema was not observed");
+                return Flux.just(ChatResponse.builder()
+                        .content(List.of(ToolUseBlock.builder()
+                                .id("list-files-1")
+                                .name("read_file")
+                                .input(java.util.Map.of("path", "src/index.ts"))
+                                .content("{\"path\":\"src/index.ts\"}")
+                                .build()))
+                        .finishReason("tool_calls")
+                        .build());
+            }
+            sawToolResult = messages.stream()
+                    .flatMap(message -> message.getContentBlocks(ToolResultBlock.class).stream())
+                    .filter(result -> "read_file".equals(result.getName()))
+                    .peek(result -> toolResultText = result.getOutput().stream()
+                            .filter(block -> block instanceof TextBlock)
+                            .map(block -> ((TextBlock) block).getText())
+                            .findFirst()
+                            .orElse("tool result had no text"))
+                    .anyMatch(result -> result.getOutput().stream().anyMatch(block -> block instanceof TextBlock
+                            && ((TextBlock) block).getText().contains("export {};")));
+            return Flux.just(
+                    ChatResponse.builder()
+                            .content(List.of(ThinkingBlock.builder().thinking("private thought").build()))
+                            .build(),
+                    ChatResponse.builder()
+                            .content(List.of(TextBlock.builder().text("已读取当前 Workspace。").build()))
+                            .finishReason("stop")
+                            .build());
+        }
+
+        @Override
+        public String getModelName() {
+            return "tool-calling-tutor";
         }
     }
 
@@ -230,7 +386,15 @@ class AgentScopeRuntimeTest {
     }
 
     private static final class FakeJourneyRepository implements LearningJourneyRepository {
-        private final LearningJourney journey = journey();
+        private final LearningJourney journey;
+
+        private FakeJourneyRepository() {
+            this("java");
+        }
+
+        private FakeJourneyRepository(String languagePackId) {
+            journey = journey(languagePackId);
+        }
 
         @Override
         public LearningJourney save(LearningJourney journey) {
@@ -251,7 +415,7 @@ class AgentScopeRuntimeTest {
             return Optional.of(journey);
         }
 
-        private static LearningJourney journey() {
+        private static LearningJourney journey(String languagePackId) {
             var at = Instant.parse("2026-01-01T00:00:00Z");
             var unit = LearnUnit.create("java-basics", "Java Basics", "Understand Java", "content", 0, "chapter-1", Set.of());
             var question = com.db117.learnagent.learning.domain.Question.singleChoice(
@@ -260,7 +424,7 @@ class AgentScopeRuntimeTest {
             return LearningJourney.reconstitute(
                     1L,
                     1L,
-                    "java",
+                    languagePackId,
                     "Java Journey",
                     com.db117.learnagent.learning.domain.LearningJourneyStatus.ACTIVE,
                     at,
@@ -271,6 +435,23 @@ class AgentScopeRuntimeTest {
                     List.of(com.db117.learnagent.learning.domain.LearningPathItem.current("java-basics", 0, at)
                             .withId(1L)),
                     List.of());
+        }
+    }
+
+    private static final class EmptyPracticeTaskRepository implements PracticeTaskRepository {
+        @Override
+        public PracticeTask save(PracticeTask task) {
+            return task;
+        }
+
+        @Override
+        public Optional<PracticeTask> findById(long id) {
+            return Optional.empty();
+        }
+
+        @Override
+        public List<PracticeTask> findByLearnUnit(long journeyId, long learnUnitId) {
+            return List.of();
         }
     }
 
