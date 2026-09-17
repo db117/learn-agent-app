@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 @ApplicationScoped
 public final class LocalExecutionEnvironment implements ExecutionEnvironment {
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration DEPENDENCY_INSTALL_TIMEOUT = Duration.ofMinutes(2);
     private static final int MAX_OUTPUT_BYTES = 64 * 1024;
     private static final int MAX_OUTPUT_BYTES_PER_STREAM = MAX_OUTPUT_BYTES / 2;
 
@@ -44,7 +45,38 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
     public ExecutionResult execute(Workspace workspace, ExecutionRequest request) {
         var root = validateWorkspace(workspace);
         var command = command(root, request);
-        return run(root, request.operation(), command);
+        if (requiresTypeScriptToolchain(request.operation()) && !hasTypeScriptToolchain(root)) {
+            // 首次编译或测试前只安装 Workspace 声明的依赖，并禁止依赖脚本执行。
+            var installation = run(root, "dependency installation", dependencyInstallationCommand(),
+                    DEPENDENCY_INSTALL_TIMEOUT);
+            if (!installation.success()) {
+                return new ExecutionResult(
+                        false,
+                        installation.exitCode(),
+                        "TypeScript dependency installation failed:\n" + installation.summary(),
+                        installation.duration());
+            }
+        }
+        return run(root, request.operation().name(), command, timeout);
+    }
+
+    private static boolean requiresTypeScriptToolchain(ExecutionOperation operation) {
+        return operation == ExecutionOperation.COMPILE || operation == ExecutionOperation.RUN_TESTS;
+    }
+
+    private static boolean hasTypeScriptToolchain(Path root) {
+        return hasLocalBinary(root, "tsc") && hasLocalBinary(root, "vitest");
+    }
+
+    private static boolean hasLocalBinary(Path root, String name) {
+        var bin = root.resolve("node_modules").resolve(".bin");
+        return Files.exists(bin.resolve(name), LinkOption.NOFOLLOW_LINKS)
+                || Files.exists(bin.resolve(name + ".cmd"), LinkOption.NOFOLLOW_LINKS)
+                || Files.exists(bin.resolve(name + ".ps1"), LinkOption.NOFOLLOW_LINKS);
+    }
+
+    private static List<String> dependencyInstallationCommand() {
+        return List.of(packageManagerCommand(), "install", "--ignore-scripts", "--no-frozen-lockfile");
     }
 
     private List<String> command(Path root, ExecutionRequest request) {
@@ -88,7 +120,7 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
         return command;
     }
 
-    private ExecutionResult run(Path root, ExecutionOperation operation, List<String> command) {
+    private ExecutionResult run(Path root, String operation, List<String> command, Duration executionTimeout) {
         var startedAt = System.nanoTime();
         try (ExecutorService readers = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
             Process process;
@@ -118,7 +150,7 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
 
             boolean completed;
             try {
-                completed = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+                completed = process.waitFor(executionTimeout.toMillis(), TimeUnit.MILLISECONDS);
             } catch (InterruptedException error) {
                 Thread.currentThread().interrupt();
                 terminate(process);
@@ -132,7 +164,7 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
             var output = output(stdout, stderr);
             var summary = formatSummary(output.stdout(), output.stderr());
             if (!completed) {
-                summary = "execution timed out after " + timeout + "\n" + summary;
+                summary = "execution timed out after " + executionTimeout + "\n" + summary;
             }
             var exitCode = completed ? process.exitValue() : -1;
             return result(completed && exitCode == 0, exitCode, summary, startedAt);
