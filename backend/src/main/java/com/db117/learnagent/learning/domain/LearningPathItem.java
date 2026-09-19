@@ -12,11 +12,11 @@ import java.time.Instant;
  * @param learnUnitCode 当前路径项对应的 LearnUnit 编码
  * @param sequence 路径中的稳定排序值
  * @param status {@code PENDING/CURRENT/COMPLETED/SKIPPED} 生命周期状态
- * @param masteryScore 当前 Journey 内的掌握分数，来源于最佳评估结果
- * @param bestScore 当前 Journey 内历史最高评估分数
+ * @param masteryScore 当前 Journey 内的掌握分数；没有评估时保持为 0
+ * @param bestScore 当前 Journey 内历史最高掌握分数
  * @param practiceVerified 是否存在满足 VerificationPolicy 的 PracticeEvidence
- * @param assessmentPassed 是否存在达到固定及格线的评估结果
- * @param attemptCount 当前 LearnUnit 的评估尝试次数
+ * @param assessmentPassed 历史 Assessment 是否通过；当前 Learn Mode 不再要求该字段
+ * @param attemptCount 历史 Assessment 尝试次数
  * @param passReason 进入 {@code COMPLETED} 的领域原因；未完成时为空
  * @param startedAt 首次进入 {@code CURRENT} 的时间
  * @param completedAt 进入 {@code COMPLETED} 的时间；未完成时为空
@@ -37,7 +37,7 @@ public record LearningPathItem(
         Instant completedAt,
         Instant updatedAt) {
 
-    /** Step 2 的统一及格线；Assessment 和 Mastery 使用同一个确定性阈值。 */
+    /** 保留给历史 Assessment 记录的统一及格线。 */
     public static final int DEFAULT_PASSING_SCORE = 70;
 
     public LearningPathItem {
@@ -69,9 +69,8 @@ public record LearningPathItem(
         if (completedAt != null && updatedAt != null && updatedAt.isBefore(completedAt)) {
             throw new DomainRuleViolation("updatedAt must not precede completedAt");
         }
-        if (status == LearningPathItemStatus.COMPLETED
-                && (!assessmentPassed || !practiceVerified || bestScore < DEFAULT_PASSING_SCORE)) {
-            throw new DomainRuleViolation("completed item needs passing assessment and practice evidence");
+        if (status == LearningPathItemStatus.COMPLETED && !practiceVerified) {
+            throw new DomainRuleViolation("completed item needs practice evidence");
         }
         if (status == LearningPathItemStatus.COMPLETED && completedAt == null) {
             throw new DomainRuleViolation("completed item needs completedAt");
@@ -195,7 +194,7 @@ public record LearningPathItem(
                 startedAt,
                 completedAt,
                 at);
-        return nextAssessmentPassed && practiceVerified ? next.complete(at) : next;
+        return nextAssessmentPassed && practiceVerified ? next.complete(at, "ASSESSMENT_AND_PRACTICE") : next;
     }
 
     public LearningPathItem recordPracticeVerified(Instant at) {
@@ -216,10 +215,10 @@ public record LearningPathItem(
                 startedAt,
                 completedAt,
                 at);
-        return assessmentPassed && bestScore >= DEFAULT_PASSING_SCORE ? next.complete(at) : next;
+        return next.complete(at, "PRACTICE_EVIDENCE");
     }
 
-    private LearningPathItem complete(Instant at) {
+    private LearningPathItem complete(Instant at, String reason) {
         return new LearningPathItem(
                 id,
                 learnUnitCode,
@@ -228,9 +227,9 @@ public record LearningPathItem(
                 masteryScore,
                 bestScore,
                 practiceVerified,
-                true,
+                assessmentPassed,
                 attemptCount,
-                "ASSESSMENT_AND_PRACTICE",
+                reason,
                 startedAt,
                 at,
                 at);

@@ -1,32 +1,16 @@
 package com.db117.learnagent.learning.application;
 
-import com.db117.learnagent.learning.domain.Answer;
-import com.db117.learnagent.learning.domain.Assessment;
-import com.db117.learnagent.learning.domain.AssessmentAttempt;
-import com.db117.learnagent.learning.domain.Chapter;
-import com.db117.learnagent.learning.domain.Journey;
-import com.db117.learnagent.learning.domain.JourneyRepository;
-import com.db117.learnagent.learning.domain.JourneyStatus;
-import com.db117.learnagent.learning.domain.LearnUnit;
-import com.db117.learnagent.learning.domain.Learner;
-import com.db117.learnagent.learning.domain.LearnerRepository;
-import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.learning.domain.LearningJourneyRepository;
-import com.db117.learnagent.learning.domain.Question;
-import com.db117.learnagent.learning.domain.QuestionType;
+import com.db117.learnagent.learning.domain.*;
 import com.db117.learnagent.shared.domain.DomainRuleViolation;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 /**
  * 本地单用户的 Learner/Journey 引导应用服务；只编排 Domain，不调用 AgentScope 或模型。
@@ -35,6 +19,7 @@ import java.util.Set;
 public class JourneyApplicationService {
     private static final String TYPESCRIPT_LANGUAGE_PACK = "typescript";
     private static final int MAX_PLAN_LENGTH = 20_000;
+    private static final ObjectMapper JSON = new ObjectMapper();
     private final LearnerRepository learnerRepository;
     private final JourneyRepository journeyRepository;
     private final LearningJourneyRepository learningJourneyRepository;
@@ -126,10 +111,11 @@ public class JourneyApplicationService {
         }
 
         var normalizedPlan = normalizePlan(plan);
+        var chapters = parsePlan(normalizedPlan);
         LearningJourney saved = null;
         try {
             saved = learningJourneyRepository.save(
-                    createLearningJourney(journey, learner.id(), normalizedPlan));
+                    createLearningJourney(journey, learner.id(), chapters));
             if (saved.id() == null) {
                 throw new IllegalStateException("saved LearningJourney has no id");
             }
@@ -173,29 +159,6 @@ public class JourneyApplicationService {
         }
     }
 
-    /** 接收答案并由 Learning Domain 前的确定性策略计算分数；Tutor/UI 不得提交 score。 */
-    public LearningJourney recordAssessment(long journeyId, AssessmentSubmission submission) {
-        if (submission == null) {
-            throw LearningRequestException.badRequest("INVALID_ASSESSMENT", "评估提交不能为空");
-        }
-        var learningJourney = learningJourneyFor(journeyId);
-        try {
-            var current = learningJourney.currentItem();
-            if (current == null || !current.learnUnitCode().equals(submission.learnUnitCode())) {
-                throw new DomainRuleViolation("assessment must belong to the current LearnUnit");
-            }
-            var assessment = learningJourney.assessmentFor(submission.learnUnitCode());
-            var answers = validateAnswers(assessment, submission.answers());
-            var evaluatedAt = Instant.now(clock);
-            var attempt = AssessmentAttempt.submitted(
-                            learningJourney.id(), submission.learnUnitCode(), answers, evaluatedAt)
-                    .evaluate(score(assessment, answers), evaluatedAt);
-            return learningJourneyRepository.save(learningJourney.recordAssessmentAttempt(attempt));
-        } catch (DomainRuleViolation error) {
-            throw LearningRequestException.badRequest("INVALID_ASSESSMENT", error.getMessage());
-        }
-    }
-
     public Learner requireLearner() {
         return learnerRepository.findCurrent()
                 .orElseThrow(() -> LearningRequestException.conflict(
@@ -213,79 +176,148 @@ public class JourneyApplicationService {
         return normalized;
     }
 
-    private LearningJourney createLearningJourney(Journey journey, long learnerId, String plan) {
-        var chapter = Chapter.create("confirmed-plan", "已确认的学习路径", 0);
-        var segments = planSegments(plan);
+    private LearningJourney createLearningJourney(
+            Journey journey, long learnerId, List<PlanChapter> planChapters) {
+        var chapters = new ArrayList<Chapter>();
         var units = new ArrayList<LearnUnit>();
-        var assessments = new ArrayList<Assessment>();
-        for (int index = 0; index < segments.size(); index++) {
-            var segment = segments.get(index);
-            var code = index == 0 ? "first-lesson" : "lesson-" + (index + 1);
-            var prerequisites = index == 0 ? Set.<String>of() : Set.of(units.get(index - 1).code());
-            var unit = LearnUnit.create(
-                    code,
-                    "第" + (index + 1) + "单元：" + segment,
-                    "掌握本单元：" + segment,
-                    "已确认的规划阶段：\n" + segment,
-                    index,
-                    chapter.code(),
-                    prerequisites);
-            units.add(unit);
-            assessments.add(Assessment.create(
-                    unit.code(),
-                    70,
-                    List.of(Question.singleChoice(
-                            "stage-" + (index + 1),
-                            "当前 LearnUnit 对应的规划阶段是？",
-                            segments,
-                            segment))));
+        String previousUnitCode = null;
+        int unitSequence = 0;
+        for (int chapterIndex = 0; chapterIndex < planChapters.size(); chapterIndex++) {
+            var planChapter = planChapters.get(chapterIndex);
+            var chapter = Chapter.create(planChapter.code(), planChapter.title(), chapterIndex);
+            chapters.add(chapter);
+            for (var planUnit : planChapter.units()) {
+                var prerequisites = previousUnitCode == null ? Set.<String>of() : Set.of(previousUnitCode);
+                units.add(LearnUnit.create(
+                        planUnit.code(),
+                        planUnit.title(),
+                        planUnit.objective(),
+                        lessonContent(planUnit),
+                        unitSequence,
+                        chapter.code(),
+                        prerequisites));
+                previousUnitCode = planUnit.code();
+                unitSequence++;
+            }
         }
         return LearningJourney.create(
                 learnerId,
                 TYPESCRIPT_LANGUAGE_PACK,
                 journey.goalDescription(),
-                List.of(chapter),
+                chapters,
                 units,
-                assessments,
+                List.of(),
                 Instant.now(clock));
     }
 
-    private List<String> planSegments(String plan) {
-        // ponytail: 先按换行和分号拆分阶段；规划草稿有结构化 schema 后再替换为正式解析器。
-        return Arrays.stream(plan.split("\\R+|[；;]"))
-                .map(String::strip)
-                .filter(segment -> !segment.isBlank())
-                .distinct()
-                .toList();
+    /**
+     * 生成当前 Step 6 所需的最小教学快照；Concept/Example 仍属于 Journey 内 LearnUnit 内容，不能写入 Agent State。
+     */
+    private String lessonContent(PlanUnit unit) {
+        return """
+                ## Concept
+                %s
+                
+                ## Example
+                %s
+                
+                ## Practice
+                %s
+                """.formatted(unit.concept(), unit.example(), unit.practice());
     }
 
-    private List<Answer> validateAnswers(Assessment assessment, List<Answer> answers) {
-        var answersByCode = new HashMap<String, Answer>();
-        for (var answer : answers) {
-            if (answer == null || answersByCode.put(answer.questionCode(), answer) != null) {
-                throw new DomainRuleViolation("assessment answers must contain unique question codes");
+    private List<PlanChapter> parsePlan(String plan) {
+        final JsonNode root;
+        try {
+            root = JSON.readTree(plan);
+        } catch (JsonProcessingException error) {
+            throw invalidPlan("规划必须是有效的 JSON");
+        }
+        if (root == null || !root.isObject() || !root.has("chapters") || !root.get("chapters").isArray()) {
+            throw invalidPlan("规划必须包含 chapters 数组");
+        }
+        var chapterNodes = root.get("chapters");
+        if (chapterNodes.isEmpty() || chapterNodes.size() > 50) {
+            throw invalidPlan("chapters 数量必须在 1 到 50 之间");
+        }
+        var chapterCodes = new HashSet<String>();
+        var unitCodes = new HashSet<String>();
+        var chapters = new ArrayList<PlanChapter>();
+        int totalUnits = 0;
+        for (var chapterNode : chapterNodes) {
+            if (!chapterNode.isObject()) {
+                throw invalidPlan("每个 chapter 必须是对象");
             }
-        }
-        var questionCodes = assessment.questions().stream().map(Question::code).toList();
-        if (!answersByCode.keySet().equals(Set.copyOf(questionCodes))) {
-            throw new DomainRuleViolation("assessment answers must cover every question");
-        }
-        for (var question : assessment.questions()) {
-            if (question.type() == QuestionType.CODE) {
-                throw new DomainRuleViolation("CODE assessment requires a deterministic evaluator");
+            var chapterCode = requiredText(chapterNode, "code");
+            if (!chapterCode.matches("[a-z0-9]+(?:-[a-z0-9]+)*") || !chapterCodes.add(chapterCode)) {
+                throw invalidPlan("chapter code 必须是唯一的小写短横线编码");
             }
+            var unitNodes = chapterNode.get("units");
+            if (unitNodes == null || !unitNodes.isArray() || unitNodes.isEmpty() || unitNodes.size() > 50) {
+                throw invalidPlan("每个 chapter 必须包含 1 到 50 个 units");
+            }
+            var units = new ArrayList<PlanUnit>();
+            for (var unitNode : unitNodes) {
+                if (!unitNode.isObject()) {
+                    throw invalidPlan("每个 unit 必须是对象");
+                }
+                var unitCode = requiredText(unitNode, "code");
+                if (!unitCode.matches("[a-z0-9]+(?:-[a-z0-9]+)*") || !unitCodes.add(unitCode)) {
+                    throw invalidPlan("unit code 必须是全局唯一的小写短横线编码");
+                }
+                units.add(new PlanUnit(
+                        unitCode,
+                        requiredText(unitNode, "title"),
+                        requiredText(unitNode, "objective"),
+                        requiredText(unitNode, "concept"),
+                        requiredText(unitNode, "example"),
+                        requiredText(unitNode, "practice")));
+                totalUnits++;
+            }
+            chapters.add(new PlanChapter(chapterCode, requiredText(chapterNode, "title"), List.copyOf(units)));
         }
-        return assessment.questions().stream().map(question -> answersByCode.get(question.code())).toList();
+        if (totalUnits > 50) {
+            throw invalidPlan("units 总数不能超过 50");
+        }
+        return List.copyOf(chapters);
     }
 
-    private int score(Assessment assessment, List<Answer> answers) {
-        var answersByCode = answers.stream().collect(java.util.stream.Collectors.toMap(
-                Answer::questionCode, answer -> answer));
-        var correct = assessment.questions().stream()
-                .filter(question -> question.correctOptionIds()
-                        .equals(answersByCode.get(question.code()).selectedOptionIds()))
-                .count();
-        return (int) Math.round(correct * 100.0 / assessment.questions().size());
+    private String requiredText(JsonNode parent, String field) {
+        var value = parent.get(field);
+        if (value == null || !value.isTextual() || value.asText().isBlank()) {
+            throw invalidPlan("字段 " + field + " 必须是非空文本");
+        }
+        return value.asText().strip();
+    }
+
+    private static LearningRequestException invalidPlan(String message) {
+        return LearningRequestException.badRequest("INVALID_PLAN", message);
+    }
+
+    /** 已确认规划中的一个章节及其有序学习单元。 */
+    private record PlanChapter(
+            /** Journey 内稳定的 Chapter 编码。 */
+            String code,
+            /** 面向学习者展示的章节名称。 */
+            String title,
+            /** 章节内按规划顺序排列的 LearnUnit。 */
+            List<PlanUnit> units) {
+    }
+
+    /** 已确认规划中的单个学习单元；内容快照仍属于当前 LearningJourney。 */
+    private record PlanUnit(
+            /** Journey 内稳定的 LearnUnit 编码。 */
+            String code,
+            /** 面向学习者展示的单元标题。 */
+            String title,
+            /** 当前单元的可验证学习目标。 */
+            String objective,
+            /** Explain 内容快照。 */
+            String concept,
+            /** Example 内容快照。 */
+            String example,
+            /** Practice 任务说明。 */
+            String practice) {
     }
 
     private Journey ownedJourney(long journeyId, long learnerId) {
@@ -320,11 +352,4 @@ public class JourneyApplicationService {
     public record LearningJourneySummary(String status, String currentLearnUnitCode) {
     }
 
-    /** 应用层接收的评估答案；分数和通过状态由本服务确定性计算。 */
-    public record AssessmentSubmission(String learnUnitCode, List<Answer> answers) {
-        public AssessmentSubmission {
-            learnUnitCode = Objects.requireNonNull(learnUnitCode, "learnUnitCode must not be null");
-            answers = List.copyOf(answers == null ? List.of() : answers);
-        }
-    }
 }

@@ -16,59 +16,41 @@ class Step2DomainTest {
     private static final Instant T0 = Instant.parse("2026-01-01T00:00:00Z");
 
     @Test
-    void journeyBuildsStableTopoPathAndSupportsSkippedResume() {
+    void journeyBuildsStableTopoPathAndCompletesSequentially() {
         var journey = journey().withId(100);
 
         assertEquals(List.of("variables", "loops"), journey.pathItems().stream()
                 .map(item -> item.learnUnitCode()).toList());
         assertEquals(LearningPathItemStatus.CURRENT, journey.currentItem().status());
 
-        // 跳到后面时关闭旧 CURRENT；再回到 SKIPPED 时只保留一个 CURRENT。
-        var later = journey.activate("loops", T0.plusSeconds(1));
-        assertEquals(LearningPathItemStatus.SKIPPED, later.pathItems().get(0).status());
-        assertEquals(LearningPathItemStatus.CURRENT, later.pathItems().get(1).status());
-        var back = later.activate("variables", T0.plusSeconds(2));
-        assertEquals(LearningPathItemStatus.SKIPPED, back.pathItems().get(1).status());
-        assertEquals(LearningPathItemStatus.CURRENT, back.currentItem().status());
+        var afterFirst = pass(journey, "variables", 3);
+        assertEquals(LearningJourneyStatus.ACTIVE, afterFirst.status());
+        assertEquals("loops", afterFirst.currentItem().learnUnitCode());
+        assertEquals(80, afterFirst.pathItems().get(0).masteryScore());
 
-        var completedFirst = pass(back, "variables", 3);
-        assertEquals(LearningJourneyStatus.COMPLETED, completedFirst.status());
-        assertTrue(completedFirst.learnUnit("variables") != null);
-        assertEquals(80, completedFirst.pathItems().get(0).masteryScore());
-
-        // 已完成 Journey 仍可显式恢复 SKIPPED 项，完成后再次回到 COMPLETED。
-        var reopened = completedFirst.activate("loops", T0.plusSeconds(6));
-        assertEquals(LearningJourneyStatus.ACTIVE, reopened.status());
-        var completed = pass(reopened, "loops", 7);
+        var completed = pass(afterFirst, "loops", 7);
         assertEquals(LearningJourneyStatus.COMPLETED, completed.status());
         assertEquals(LearningPathItemStatus.COMPLETED, completed.pathItems().get(1).status());
     }
 
     @Test
-    void assessmentAndPracticeAreBothRequiredForMastery() {
+    void practiceEvidenceCompletesTheCurrentLearnUnit() {
         var journey = journey().withId(101);
-        var failedAssessment = AssessmentAttempt.submitted(
-                        101,
-                        "variables",
-                        List.of(Answer.choice("choice", Set.of("yes"))),
-                        T0.plusSeconds(1))
-                .evaluate(69, T0.plusSeconds(2));
-        var afterAssessment = journey.recordAssessmentAttempt(failedAssessment);
+        var afterPractice = journey.recordPracticeVerified("variables", T0.plusSeconds(1));
 
-        assertFalse(afterAssessment.pathItems().get(0).assessmentPassed());
-        assertEquals(69, afterAssessment.pathItems().get(0).masteryScore());
-        var afterPractice = afterAssessment.recordPracticeVerified("variables", T0.plusSeconds(3));
-        assertEquals(LearningPathItemStatus.CURRENT, afterPractice.pathItems().get(0).status());
+        assertEquals(LearningPathItemStatus.COMPLETED, afterPractice.pathItems().get(0).status());
+        assertFalse(afterPractice.pathItems().get(0).assessmentPassed());
+        assertEquals("PRACTICE_EVIDENCE", afterPractice.pathItems().get(0).passReason());
+        assertEquals(new Mastery(0, true), afterPractice.pathItems().get(0).mastery());
+        assertEquals("loops", afterPractice.currentItem().learnUnitCode());
+    }
 
-        var passedAssessment = AssessmentAttempt.submitted(
-                        101,
-                        "variables",
-                        List.of(Answer.choice("choice", Set.of("yes"))),
-                        T0.plusSeconds(4))
-                .evaluate(70, T0.plusSeconds(5));
-        var mastered = afterPractice.recordAssessmentAttempt(passedAssessment);
-        assertEquals(LearningPathItemStatus.COMPLETED, mastered.pathItems().get(0).status());
-        assertEquals(new Mastery(70, true), mastered.pathItems().get(0).mastery());
+    @Test
+    void lockedPathCannotActivateALaterLearnUnit() {
+        var journey = journey().withId(101);
+
+        assertThrows(DomainRuleViolation.class,
+                () -> journey.activate("loops", T0.plusSeconds(1)));
     }
 
     @Test

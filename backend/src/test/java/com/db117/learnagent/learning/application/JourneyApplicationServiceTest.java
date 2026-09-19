@@ -1,12 +1,6 @@
 package com.db117.learnagent.learning.application;
 
-import com.db117.learnagent.learning.domain.Answer;
-import com.db117.learnagent.learning.domain.Journey;
-import com.db117.learnagent.learning.domain.JourneyRepository;
-import com.db117.learnagent.learning.domain.Learner;
-import com.db117.learnagent.learning.domain.LearnerRepository;
-import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.learning.domain.LearningJourneyRepository;
+import com.db117.learnagent.learning.domain.*;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -14,15 +8,112 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
 
 class JourneyApplicationServiceTest {
     private static final Instant CREATED_AT = Instant.parse("2026-01-01T00:00:00Z");
+    private static final String PLAN = """
+            {
+              "chapters": [
+                {
+                  "code": "basics",
+                  "title": "基础",
+                  "units": [
+                    {
+                      "code": "variables",
+                      "title": "变量与类型",
+                      "objective": "能够声明变量并理解基本类型",
+                      "concept": "变量保存数据，类型描述数据形状。",
+                      "example": "export const answer: number = 42;",
+                      "practice": "修复 src/index.ts 中的类型错误。"
+                    },
+                    {
+                      "code": "functions",
+                      "title": "函数",
+                      "objective": "能够声明带类型的函数",
+                      "concept": "函数描述可复用的行为。",
+                      "example": "const add = (a: number, b: number) => a + b;",
+                      "practice": "为函数补充参数和返回值类型。"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+
+    private static final String CHAPTER_PLAN = """
+            {
+              "chapters": [
+                {
+                  "code": "foundations",
+                  "title": "基础",
+                  "units": [
+                    {
+                      "code": "variables",
+                      "title": "变量",
+                      "objective": "能够声明变量",
+                      "concept": "变量保存数据。",
+                      "example": "const answer: number = 42;",
+                      "practice": "完成变量练习。"
+                    },
+                    {
+                      "code": "types",
+                      "title": "类型",
+                      "objective": "能够使用类型",
+                      "concept": "类型描述数据形状。",
+                      "example": "type User = { name: string };",
+                      "practice": "完成类型练习。"
+                    }
+                  ]
+                },
+                {
+                  "code": "functions",
+                  "title": "函数",
+                  "units": [
+                    {
+                      "code": "parameters",
+                      "title": "参数",
+                      "objective": "能够声明参数",
+                      "concept": "参数把数据传入函数。",
+                      "example": "const add = (a: number) => a;",
+                      "practice": "完成参数练习。"
+                    },
+                    {
+                      "code": "returns",
+                      "title": "返回值",
+                      "objective": "能够声明返回值",
+                      "concept": "返回值描述函数结果。",
+                      "example": "const answer = (): number => 42;",
+                      "practice": "完成返回值练习。"
+                    }
+                  ]
+                },
+                {
+                  "code": "async",
+                  "title": "异步",
+                  "units": [
+                    {
+                      "code": "promise",
+                      "title": "Promise",
+                      "objective": "能够使用 Promise",
+                      "concept": "Promise 表示异步结果。",
+                      "example": "const ready: Promise<boolean> = Promise.resolve(true);",
+                      "practice": "完成 Promise 练习。"
+                    },
+                    {
+                      "code": "await",
+                      "title": "Await",
+                      "objective": "能够使用 await",
+                      "concept": "await 等待异步结果。",
+                      "example": "const value = await ready;",
+                      "practice": "完成 await 练习。"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
 
     @Test
     void confirmingPlanningDraftCreatesAndAttachesLearningJourney() {
@@ -38,20 +129,61 @@ class JourneyApplicationServiceTest {
                 learningJourneys,
                 Clock.fixed(CREATED_AT, ZoneOffset.UTC));
 
-        var confirmed = service.confirmPlan(journey.id(), "第一阶段：变量与类型；第二阶段：异步编程");
+        var confirmed = service.confirmPlan(journey.id(), PLAN);
 
         assertNotNull(learningJourneys.saved);
         assertEquals("typescript", learningJourneys.saved.languagePackId());
-        assertEquals("已确认的规划阶段：\n第一阶段：变量与类型",
-                learningJourneys.saved.learnUnits().getFirst().content());
-        assertEquals(List.of("first-lesson", "lesson-2"),
+        assertTrue(learningJourneys.saved.learnUnits().getFirst().content().contains("## Concept"));
+        assertTrue(learningJourneys.saved.learnUnits().getFirst().content().contains("## Example"));
+        assertEquals(List.of("variables", "functions"),
                 learningJourneys.saved.learnUnits().stream().map(value -> value.code()).toList());
+        assertTrue(learningJourneys.saved.assessments().isEmpty());
         assertEquals(learningJourneys.saved.id(), confirmed.learningJourneyId());
         assertEquals(learningJourneys.saved.id(), journeys.attachedLearningJourneyId);
     }
 
     @Test
-    void assessmentAndPracticeAdvanceToTheNextMaterializedUnit() {
+    void confirmingChapterPlanPreservesThreeChaptersAndSixUnits() {
+        var learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
+        var journey = new Journey(
+                7L, learner.id(), "学习 TypeScript", com.db117.learnagent.learning.domain.JourneyStatus.ACTIVE,
+                CREATED_AT, null, null, true);
+        var learningJourneys = new FakeLearningJourneyRepository();
+        var journeys = new FakeJourneyRepository(journey);
+        var service = new JourneyApplicationService(
+                new FakeLearnerRepository(learner),
+                journeys,
+                learningJourneys,
+                Clock.fixed(CREATED_AT, ZoneOffset.UTC));
+
+        service.confirmPlan(journey.id(), CHAPTER_PLAN);
+
+        assertEquals(List.of("foundations", "functions", "async"),
+                learningJourneys.saved.chapters().stream().map(value -> value.code()).toList());
+        assertEquals(List.of("variables", "types", "parameters", "returns", "promise", "await"),
+                learningJourneys.saved.learnUnits().stream().map(value -> value.code()).toList());
+        assertEquals(List.of("foundations", "foundations", "functions", "functions", "async", "async"),
+                learningJourneys.saved.learnUnits().stream().map(value -> value.chapterCode()).toList());
+
+        var afterVariables = service.recordPracticeVerified(journey.id(), "variables");
+        assertEquals("types", afterVariables.currentItem().learnUnitCode());
+        var afterTypes = service.recordPracticeVerified(journey.id(), "types");
+        assertEquals("parameters", afterTypes.currentItem().learnUnitCode());
+        service.recordPracticeVerified(journey.id(), "parameters");
+        var afterReturns = service.recordPracticeVerified(journey.id(), "returns");
+        assertEquals("promise", afterReturns.currentItem().learnUnitCode());
+        service.recordPracticeVerified(journey.id(), "promise");
+        var completed = service.recordPracticeVerified(journey.id(), "await");
+
+        assertEquals("COMPLETED", completed.status().name());
+        assertNull(completed.currentItem());
+        assertEquals(6, completed.pathItems().stream()
+                .filter(item -> item.status().name().equals("COMPLETED"))
+                .count());
+    }
+
+    @Test
+    void practiceAdvancesToTheNextMaterializedUnit() {
         var learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
         var journey = new Journey(
                 7L, learner.id(), "学习 TypeScript", com.db117.learnagent.learning.domain.JourneyStatus.ACTIVE,
@@ -63,17 +195,14 @@ class JourneyApplicationServiceTest {
                 learningJourneys,
                 Clock.fixed(CREATED_AT, ZoneOffset.UTC));
 
-        service.confirmPlan(journey.id(), "第一阶段；第二阶段");
-        var afterAssessment = service.recordAssessment(
-                journey.id(),
-                new JourneyApplicationService.AssessmentSubmission(
-                        "first-lesson",
-                        List.of(Answer.choice("stage-1", Set.of("第一阶段")))));
-        var afterPractice = service.recordPracticeVerified(journey.id(), "first-lesson");
+        service.confirmPlan(journey.id(), PLAN);
+        var afterPractice = service.recordPracticeVerified(journey.id(), "variables");
 
-        assertEquals("first-lesson", afterAssessment.currentItem().learnUnitCode());
-        assertEquals("lesson-2", afterPractice.currentItem().learnUnitCode());
+        assertEquals("functions", afterPractice.currentItem().learnUnitCode());
         assertEquals("ACTIVE", afterPractice.status().name());
+        assertEquals(1, afterPractice.pathItems().stream()
+                .filter(item -> item.status().name().equals("COMPLETED"))
+                .count());
     }
 
     @Test
@@ -90,7 +219,7 @@ class JourneyApplicationServiceTest {
                 Clock.fixed(CREATED_AT, ZoneOffset.UTC));
 
         var error = assertThrows(LearningRequestException.class,
-                () -> service.confirmPlan(journey.id(), "第一阶段"));
+                () -> service.confirmPlan(journey.id(), PLAN));
 
         assertEquals("LEARNING_PATH_LINK_FAILED", error.code());
         assertNull(learningJourneys.saved);

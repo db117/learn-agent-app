@@ -1,7 +1,7 @@
 package com.db117.learnagent.practice;
 
-import com.db117.learnagent.learning.domain.LearningPathItemStatus;
 import com.db117.learnagent.learning.domain.LearningJourneyRepository;
+import com.db117.learnagent.learning.domain.LearningPathItemStatus;
 import com.db117.learnagent.practice.domain.PracticeTaskRepository;
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
@@ -23,16 +23,40 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
 @TestProfile(PracticeRuntimeE2ETest.IsolatedPracticeProfile.class)
 class PracticeRuntimeE2ETest {
     private static final HttpClient HTTP = HttpClient.newHttpClient();
+    private static final String PLAN = """
+            {
+              "chapters": [
+                {
+                  "code": "basics",
+                  "title": "基础",
+                  "units": [
+                    {
+                      "code": "variables",
+                      "title": "变量与类型",
+                      "objective": "能够声明变量并理解基本类型",
+                      "concept": "变量保存数据。",
+                      "example": "export const answer: number = 42;",
+                      "practice": "修复 src/index.ts 中的类型错误。"
+                    },
+                    {
+                      "code": "functions",
+                      "title": "函数",
+                      "objective": "能够声明带类型的函数",
+                      "concept": "函数描述可复用的行为。",
+                      "example": "const add = (a: number, b: number) => a + b;",
+                      "practice": "为函数补充参数和返回值类型。"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
 
     @Inject
     PracticeTaskRepository practiceTasks;
@@ -44,19 +68,26 @@ class PracticeRuntimeE2ETest {
     URL bootstrapUrl;
 
     @Test
-    void completesARealPracticeFailureFixVerificationAndAssessmentFlow() throws Exception {
+    void completesARealPracticeFailureFixAndAdvancesFlow() throws Exception {
         var learner = put("/api/learner", "{\"backgroundSummary\":\"TypeScript learner\"}", 200);
         assertTrue(learner.body().contains("\"id\":"));
 
         var journey = post("/api/journeys", "{\"goalDescription\":\"Practice TypeScript\"}", 200);
         long journeyId = jsonLong(journey.body(), "id");
         post("/api/journeys/" + journeyId + "/confirm-plan",
-                "{\"plan\":\"first stage;second stage\"}", 200);
+                "{\"plan\":" + jsonString(PLAN) + "}", 200);
         long learningJourneyId = jsonLong(
                 get("/api/bootstrap", 200).body(), "learningJourneyId");
+        var learning = get("/api/journeys/" + journeyId + "/learning", 200);
+        assertTrue(learning.body().contains("\"currentLearnUnitContent\":"));
+        assertTrue(learning.body().contains("## Concept"));
+        assertTrue(learning.body().contains("## Example"));
 
         var files = get("/api/journeys/" + journeyId + "/workspace/files", 200);
         assertTrue(files.body().contains("src/index.ts"));
+
+        var initialVerification = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
+        assertTrue(initialVerification.body().contains("\"verified\":false"));
 
         putFile("/api/journeys/" + journeyId + "/workspace/files/src/index.ts",
                 "export const answer: number = \"broken\";", 200);
@@ -78,11 +109,11 @@ class PracticeRuntimeE2ETest {
         long taskId = jsonLong(failedVerification.body(), "taskId");
         assertTrue(failedVerification.body().contains("\"verified\":false"));
         var taskAfterFailure = practiceTasks.findById(taskId).orElseThrow();
-        assertEquals(1, taskAfterFailure.attempts().size());
+        assertEquals(2, taskAfterFailure.attempts().size());
         assertEquals("OPEN", taskAfterFailure.status().name());
-        assertFalse(taskAfterFailure.attempts().getFirst().evidence().compilePassed());
-        assertFalse(taskAfterFailure.attempts().getFirst().evidence().testsPassed());
-        assertNull(taskAfterFailure.attempts().getFirst().evidence().verifiedAt());
+        assertFalse(taskAfterFailure.attempts().getLast().evidence().compilePassed());
+        assertFalse(taskAfterFailure.attempts().getLast().evidence().testsPassed());
+        assertNull(taskAfterFailure.attempts().getLast().evidence().verifiedAt());
 
         putFile("/api/journeys/" + journeyId + "/workspace/files/src/index.ts",
                 "export const answer: number = 42;", 200);
@@ -99,36 +130,21 @@ class PracticeRuntimeE2ETest {
         assertTrue(verified.body().contains("\"status\":\"VERIFIED\""));
         assertSafeVerifyResponse(verified.body());
         var taskAfterVerification = practiceTasks.findById(taskId).orElseThrow();
-        assertEquals(2, taskAfterVerification.attempts().size());
+        assertEquals(3, taskAfterVerification.attempts().size());
         var evidence = taskAfterVerification.attempts().getLast().evidence();
         assertTrue(evidence.compilePassed());
         assertTrue(evidence.testsPassed());
         assertEquals(1, evidence.testCount());
         assertNotNull(evidence.verifiedAt());
 
-        var afterPractice = learningJourneys.findById(learningJourneyId).orElseThrow();
-        assertEquals(LearningPathItemStatus.CURRENT, afterPractice.currentItem().status());
-        assertEquals("first-lesson", afterPractice.currentItem().learnUnitCode());
-        assertTrue(afterPractice.currentItem().practiceVerified());
-        assertFalse(afterPractice.currentItem().assessmentPassed());
-
-        var assessment = post("/api/journeys/" + journeyId + "/assessment",
-                "{\"learnUnitCode\":\"first-lesson\","
-                        + "\"answers\":[{\"questionCode\":\"stage-1\","
-                        + "\"selectedOptionIds\":[\"first stage\"]}]}", 200);
-        assertTrue(assessment.body().contains("\"currentLearnUnitCode\":\"lesson-2\""));
-        assertTrue(assessment.body().contains("\"completedCount\":1"));
-
         var persisted = learningJourneys.findById(learningJourneyId).orElseThrow();
         var completed = persisted.pathItems().getFirst();
         assertEquals(LearningPathItemStatus.COMPLETED, completed.status());
         assertTrue(completed.practiceVerified());
-        assertTrue(completed.assessmentPassed());
-        assertEquals(100, completed.bestScore());
-        assertEquals(1, persisted.assessmentAttempts().size());
-        assertEquals("EVALUATED", persisted.assessmentAttempts().getFirst().status().name());
-        assertEquals(100, persisted.assessmentAttempts().getFirst().score());
-        assertEquals("lesson-2", persisted.currentItem().learnUnitCode());
+        assertFalse(completed.assessmentPassed());
+        assertEquals("PRACTICE_EVIDENCE", completed.passReason());
+        assertTrue(persisted.assessmentAttempts().isEmpty());
+        assertEquals("functions", persisted.currentItem().learnUnitCode());
     }
 
     private HttpResponse<String> get(String path, int expectedStatus) throws Exception {

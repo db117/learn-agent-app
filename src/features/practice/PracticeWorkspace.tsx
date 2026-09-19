@@ -1,4 +1,5 @@
 import {useEffect, useMemo, useState} from "react";
+import {type LearningProgress, LearnModePanel} from "../learn/LearnModePanel";
 import {PracticePanel} from "./PracticePanel";
 import type {PracticeDiagnostic} from "./practiceTypes";
 import {createWorkspaceApi, type WorkspaceFileEntry} from "../workspace/workspaceApi";
@@ -26,31 +27,6 @@ type TestResponse = {
     testCount: number;
 };
 
-type LearningProgress = {
-    journeyId: number;
-    learningJourneyId: number;
-    status: string;
-    currentLearnUnitCode: string | null;
-    currentLearnUnitTitle: string | null;
-    currentLearnUnitObjective: string | null;
-    currentMasteryScore: number;
-    currentBestScore: number;
-    practiceVerified: boolean;
-    assessmentPassed: boolean;
-    completedCount: number;
-    totalCount: number;
-    assessment: {
-        learnUnitCode: string;
-        passingScore: number;
-        questions: Array<{
-            code: string;
-            type: string;
-            prompt: string;
-            optionIds: string[];
-        }>;
-    } | null;
-};
-
 type VerifyResponse = {
     verified: boolean;
     learningJourneyStatus: string;
@@ -73,8 +49,6 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
     const [feedback, setFeedback] = useState<string | null>(null);
     const [progress, setProgress] = useState<LearningProgress | null>(null);
     const [progressLoading, setProgressLoading] = useState(true);
-    const [assessmentAnswers, setAssessmentAnswers] = useState<Record<string, string[]>>({});
-    const [assessing, setAssessing] = useState(false);
 
     useEffect(() => {
         onDirtyChange?.(state.dirty);
@@ -90,7 +64,6 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
             const next = await response.json() as LearningProgress;
             if (!signal?.aborted) {
                 setProgress(next);
-                setAssessmentAnswers({});
             }
         } catch (error: unknown) {
             if (!signal?.aborted) setFeedback(error instanceof Error ? error.message : "无法读取学习进度");
@@ -234,7 +207,7 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
             setFeedback(result.advanced
                 ? "Practice 已通过，已进入下一个 LearnUnit。"
                 : result.verified
-                    ? "Practice 已通过，请完成当前单元的 Assessment。"
+                    ? "Practice 已记录。"
                     : "Practice 尚未通过，请根据编译和测试结果继续修改。");
             onProgressChanged?.(result.learningJourneyStatus, result.currentLearnUnitCode);
             await loadProgress();
@@ -245,66 +218,8 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
         }
     };
 
-    const chooseAnswer = (questionCode: string, optionId: string, multiple: boolean) => {
-        setAssessmentAnswers((current) => {
-            const selected = current[questionCode] ?? [];
-            const next = multiple
-                ? selected.includes(optionId)
-                    ? selected.filter((value) => value !== optionId)
-                    : [...selected, optionId]
-                : [optionId];
-            return {...current, [questionCode]: next};
-        });
-    };
-
-    const submitAssessment = async () => {
-        const assessment = progress?.assessment;
-        if (!assessment || !progress.currentLearnUnitCode || assessing) return;
-        const hasUnsupportedQuestion = assessment.questions.some((question) => question.type === "CODE");
-        const missingAnswer = assessment.questions.some(
-            (question) => (assessmentAnswers[question.code] ?? []).length === 0,
-        );
-        if (hasUnsupportedQuestion || missingAnswer) {
-            setFeedback(hasUnsupportedQuestion
-                ? "当前 Assessment 的编码题需要后续确定性评估器。"
-                : "请先回答全部 Assessment 问题。");
-            return;
-        }
-        setAssessing(true);
-        setFeedback(null);
-        try {
-            const response = await fetch(`${BACKEND_URL}/api/journeys/${journeyId}/assessment`, {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({
-                    learnUnitCode: progress.currentLearnUnitCode,
-                    answers: assessment.questions.map((question) => ({
-                        questionCode: question.code,
-                        selectedOptionIds: assessmentAnswers[question.code] ?? [],
-                        workspaceReference: null,
-                    })),
-                }),
-            });
-            if (!response.ok) throw new Error("Assessment 提交失败");
-            const next = await response.json() as LearningProgress;
-            setProgress(next);
-            setAssessmentAnswers({});
-            setFeedback(next.status === "COMPLETED"
-                ? "Assessment 通过，学习路径已完成。"
-                : next.currentLearnUnitCode !== progress.currentLearnUnitCode
-                    ? "Assessment 通过，已进入下一个 LearnUnit。"
-                    : next.assessmentPassed
-                        ? "Assessment 已通过，请完成 Practice。"
-                        : "Assessment 未通过，可以重新提交。 ");
-            onProgressChanged?.(next.status, next.currentLearnUnitCode);
-        } catch (error: unknown) {
-            setFeedback(error instanceof Error ? error.message : "无法提交 Assessment");
-        } finally {
-            setAssessing(false);
-        }
-    };
-
     return <>
+        <LearnModePanel progress={progress} loading={progressLoading}/>
         <PracticePanel
             files={files}
             selectedPath={state.selectedPath}
@@ -334,48 +249,6 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
                 <h3 id="learning-complete-title">学习路径已完成</h3>
                 <p>已完成 {progress.completedCount} / {progress.totalCount} 个 LearnUnit。</p>
             </section>
-        ) : progress?.assessment && (
-            <section className="status-card" aria-labelledby="assessment-title">
-                <div className="card-heading">
-                    <h3 id="assessment-title">Independent Assessment</h3>
-                    <span className="journey-status">及格线 {progress.assessment.passingScore}</span>
-                </div>
-                <p className="planning-note">
-                    当前：{progress.currentLearnUnitTitle ?? progress.currentLearnUnitCode}
-                    {progress.practiceVerified ? " · Practice 已通过" : " · 先完成 Practice"}
-                </p>
-                {progress.assessmentPassed ? (
-                    <p className="form-feedback" role="status">Assessment 已通过，请完成 Practice。</p>
-                ) : (
-                    <div className="assessment-list">
-                        {progress.assessment.questions.map((question) => {
-                            const multiple = question.type === "MULTIPLE_CHOICE";
-                            const selected = assessmentAnswers[question.code] ?? [];
-                            return (
-                                <fieldset key={question.code} className="assessment-question">
-                                    <legend>{question.prompt}</legend>
-                                    {question.type === "CODE" ? (
-                                        <p className="session-status">编码题将在确定性代码评估器接入后开放。</p>
-                                    ) : question.optionIds.map((optionId) => (
-                                        <label key={optionId}>
-                                            <input
-                                                type={multiple ? "checkbox" : "radio"}
-                                                name={question.code}
-                                                checked={selected.includes(optionId)}
-                                                onChange={() => chooseAnswer(question.code, optionId, multiple)}
-                                            />
-                                            {optionId}
-                                        </label>
-                                    ))}
-                                </fieldset>
-                            );
-                        })}
-                        <button type="button" onClick={() => void submitAssessment()} disabled={assessing}>
-                            {assessing ? "提交中…" : "提交 Assessment"}
-                        </button>
-                    </div>
-                )}
-            </section>
-        )}
+        ) : null}
     </>;
 }

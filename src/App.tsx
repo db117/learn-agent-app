@@ -2,7 +2,36 @@ import {useEffect, useRef, useState} from "react";
 import {PracticeWorkspace} from "./features/practice/PracticeWorkspace";
 
 const BACKEND_URL = "http://127.0.0.1:18080";
-const PLANNING_PROMPT = "请根据我的 Learner 背景和 Journey 目标，先提出一版学习路径草案。请说明阶段、顺序、每阶段目标，并列出需要我确认或调整的地方。";
+const PLANNING_PROMPT = `请根据我的 Learner 背景和 Journey 目标生成学习路径，生成 3 个 chapters，每个 chapter 恰好包含 2 个 units，共 6 个 LearnUnit。
+只返回一个 JSON 对象，不要 Markdown、代码围栏、解释或额外文字。格式必须是：
+{
+  "chapters": [
+    {
+      "code": "lowercase-kebab-case",
+      "title": "章节标题",
+      "units": [
+        {
+          "code": "lowercase-kebab-case",
+          "title": "学习单元标题",
+          "objective": "完成本单元后能做到什么",
+          "concept": "Explain 内容",
+          "example": "Example 内容或代码",
+          "practice": "需要学习者完成的 Practice"
+        },
+        {
+          "code": "another-unit",
+          "title": "另一个学习单元",
+          "objective": "完成本单元后能做到什么",
+          "concept": "Explain 内容",
+          "example": "Example 内容或代码",
+          "practice": "需要学习者完成的 Practice"
+        }
+      ]
+    }
+  ]
+}
+每个 unit 是一个 LearnUnit；章节和单元必须按学习顺序排列。不要生成 Assessment。用户开始某个单元后，TutorAgent 再向用户讲解 Concept、Example 和 Practice；Practice 通过后才完成该单元。`;
+const LEARNING_PROMPT = "开始当前 LearnUnit。请根据当前单元目标，先用清晰的 Concept 和 Example 讲解，再明确说明 Practice 要求；等待学习者完成 Practice 后再推进，不要提前标记完成。";
 
 type Health = Record<string, unknown>;
 type SessionMode = "PLANNING" | "LEARNING";
@@ -98,6 +127,7 @@ export default function App() {
     const [learningCompleted, setLearningCompleted] = useState(false);
     const [planningJourneyId, setPlanningJourneyId] = useState<number | null>(null);
     const [pendingPlanningPrompt, setPendingPlanningPrompt] = useState(false);
+    const [pendingLearningPrompt, setPendingLearningPrompt] = useState(false);
     const [confirmingPlan, setConfirmingPlan] = useState(false);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [sessionMode, setSessionMode] = useState<SessionMode | null>(null);
@@ -204,6 +234,7 @@ export default function App() {
             setSessionMode(session.mode);
             setCurrentLearnUnit(session.currentLearnUnitCode);
             setMessages(session.messages);
+            setPendingLearningPrompt(session.mode === "LEARNING" && session.messages.length === 0);
             setActivity(session.restored ? "已恢复 Tutor Session" : "Tutor Session 已准备");
         } catch (requestError) {
             if (targetKey && sessionTargetRef.current === targetKey) sessionTargetRef.current = null;
@@ -319,6 +350,7 @@ export default function App() {
             setMessages([]);
             setDraft("");
             setPlanningJourneyId(null);
+            setPendingLearningPrompt(false);
             setLearningCompleted(false);
             setJourneyFeedback("学习路径已保存，正在进入第一课。");
             setActivity("学习路径已确认，正在进入第一课");
@@ -394,6 +426,16 @@ export default function App() {
         setPendingPlanningPrompt(false);
         void sendMessage(PLANNING_PROMPT);
     }, [pendingPlanningPrompt, sessionId, sessionMode, loadingSession, sending, messages.length]);
+
+    useEffect(() => {
+        if (!pendingLearningPrompt || !sessionId || sessionMode !== "LEARNING" || loadingSession || sending) return;
+        if (messages.length > 0) {
+            setPendingLearningPrompt(false);
+            return;
+        }
+        setPendingLearningPrompt(false);
+        void sendMessage(LEARNING_PROMPT);
+    }, [pendingLearningPrompt, sessionId, sessionMode, loadingSession, sending, messages.length]);
 
     const cancelMessage = async () => {
         if (!sessionId || !sending) return;
@@ -665,8 +707,9 @@ export default function App() {
                                 点击生成会先请 TutorAgent 提出一版草案；你可以继续对话调整，内容尚未保存为正式学习路径。
                             </p>
                         ) : (
-                            <p className="planning-note" role="note">当前 Journey 已有 LearningJourney，TutorAgent
-                                将在现有路径上继续学习。</p>
+                            <p className="planning-note" role="note">当前 Journey 已有 LearningJourney；进入当前
+                                LearnUnit 后，TutorAgent
+                                会生成本单元的讲解和 Practice。</p>
                         )}
                         {visibleSessionMode === "PLANNING" && planningDraftMessage && (
                             <div className="journey-actions">

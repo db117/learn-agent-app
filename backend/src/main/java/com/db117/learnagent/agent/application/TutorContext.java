@@ -38,10 +38,6 @@ public record TutorContext(
         int bestScore,
         /** 当前路径项是否已有通过的 Practice 证据。 */
         boolean practiceVerified,
-        /** 当前路径项是否已有通过的 Assessment 结果。 */
-        boolean assessmentPassed,
-        /** 当前路径项评估尝试次数。 */
-        int attemptCount,
         /** 当前 Journey 已完成或跳过的路径项数量。 */
         int completedItemCount,
         /** 当前 Journey 路径项总数。 */
@@ -71,8 +67,7 @@ public record TutorContext(
         if (masteryScore < 0 || masteryScore > 100 || bestScore < 0 || bestScore > 100) {
             throw new IllegalArgumentException("scores must be between 0 and 100");
         }
-        if (attemptCount < 0 || completedItemCount < 0 || totalItemCount < 0
-                || completedItemCount > totalItemCount) {
+        if (completedItemCount < 0 || totalItemCount < 0 || completedItemCount > totalItemCount) {
             throw new IllegalArgumentException("invalid progress summary");
         }
         workspace = Objects.requireNonNull(workspace, "workspace must not be null");
@@ -96,8 +91,6 @@ public record TutorContext(
                 mastery-score: %d
                 best-score: %d
                 practice-verified: %s
-                assessment-passed: %s
-                assessment-attempts: %d
                 journey-progress: %d/%d
                 workspace-kind: %s
                 workspace-id: %s
@@ -117,8 +110,6 @@ public record TutorContext(
                 masteryScore,
                 bestScore,
                 practiceVerified,
-                assessmentPassed,
-                attemptCount,
                 completedItemCount,
                 totalItemCount,
                 workspace.kind(),

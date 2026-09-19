@@ -8,20 +8,10 @@ import com.db117.learnagent.learning.application.JourneyApplicationService;
 import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.learning.domain.LearningJourney;
 import com.db117.learnagent.practice.application.PracticeRuntimeService;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.PracticeTaskRepository;
-import com.db117.learnagent.practice.domain.PracticeTaskStatus;
-import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.practice.domain.*;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.BadRequestException;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.NotFoundException;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 
 import java.time.Instant;
@@ -33,6 +23,7 @@ import java.util.Objects;
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 public final class PracticeResource {
+    private static final String TYPESCRIPT_STARTER_SOURCE = "export {};";
     private final WorkspaceApplicationService workspaces;
     private final PracticeRuntimeService runtime;
     private final PracticeTaskRepository practiceTasks;
@@ -114,7 +105,7 @@ public final class PracticeResource {
                         "练习：" + unit.title(),
                         unit.objective(),
                         1,
-                        "",
+                        TYPESCRIPT_STARTER_SOURCE,
                         new VerificationPolicy(true, true, false, false),
                         Instant.now())));
         var result = runtime.verify(task, workspaces.learningWorkspace(journeyId));

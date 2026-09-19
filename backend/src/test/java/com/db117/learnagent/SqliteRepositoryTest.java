@@ -1,26 +1,8 @@
 package com.db117.learnagent;
 
-import com.db117.learnagent.learning.domain.Answer;
-import com.db117.learnagent.learning.domain.Assessment;
-import com.db117.learnagent.learning.domain.AssessmentAttempt;
-import com.db117.learnagent.learning.domain.Chapter;
-import com.db117.learnagent.learning.domain.Journey;
-import com.db117.learnagent.learning.domain.LearnUnit;
-import com.db117.learnagent.learning.domain.Learner;
-import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.learning.domain.LearningPathItemStatus;
-import com.db117.learnagent.learning.domain.Question;
-import com.db117.learnagent.persistence.sqlite.SqliteJourneyRepository;
-import com.db117.learnagent.persistence.sqlite.SqliteLearnerRepository;
-import com.db117.learnagent.persistence.sqlite.SqliteLearningJourneyRepository;
-import com.db117.learnagent.persistence.sqlite.SqlitePracticeTaskRepository;
-import com.db117.learnagent.persistence.sqlite.SqliteProjectRepository;
-import com.db117.learnagent.persistence.sqlite.SqliteSchemaInitializer;
-import com.db117.learnagent.practice.domain.PracticeAttempt;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.RuntimeResult;
-import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.learning.domain.*;
+import com.db117.learnagent.persistence.sqlite.*;
+import com.db117.learnagent.practice.domain.*;
 import com.db117.learnagent.project.domain.Project;
 import com.db117.learnagent.project.domain.ProjectEvidence;
 import com.db117.learnagent.project.domain.ProjectMilestone;
@@ -33,12 +15,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class SqliteRepositoryTest {
     private static final Instant T0 = Instant.parse("2026-02-01T00:00:00Z");
@@ -77,11 +54,11 @@ class SqliteRepositoryTest {
             assertEquals("EVALUATED", evaluatedRoundTrip.assessmentAttempts().get(0).status().name());
             assertEquals(80, evaluatedJourney.pathItems().get(0).masteryScore());
             var movedJourney = journeyRepository.save(
-                    evaluatedJourney.activate("loops", T0.plusSeconds(3)));
+                    evaluatedJourney.recordPracticeVerified("variables", T0.plusSeconds(3)));
             var movedRoundTrip = journeyRepository.findActiveByLearnerAndLanguage(
                     learner.id(), "java").orElseThrow();
             assertEquals(movedJourney.id(), movedRoundTrip.id());
-            assertEquals(LearningPathItemStatus.SKIPPED, movedRoundTrip.pathItems().get(0).status());
+            assertEquals(LearningPathItemStatus.COMPLETED, movedRoundTrip.pathItems().get(0).status());
 
             var learnUnitId = savedJourney.learnUnit("variables").id();
             var task = PracticeTask.create(

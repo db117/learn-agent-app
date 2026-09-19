@@ -266,6 +266,10 @@ public final class LearningJourney {
         if (target.status() == LearningPathItemStatus.COMPLETED) {
             throw new DomainRuleViolation("completed item cannot be activated: " + learnUnitCode);
         }
+        if (target.status() == LearningPathItemStatus.PENDING) {
+            throw new DomainRuleViolation("pending item is locked until the previous item is completed: "
+                    + learnUnitCode);
+        }
 
         var nextItems = new ArrayList<>(pathItems);
         for (int index = 0; index < nextItems.size(); index++) {
@@ -296,7 +300,7 @@ public final class LearningJourney {
         return advanceAfterClose(nextItems, at);
     }
 
-    /** 将已验证的 Practice 证据纳入当前项，满足双重条件后自动完成并推进。 */
+    /** 将已验证的 Practice 证据纳入当前项，完成当前课并推进。 */
     public LearningJourney recordPracticeVerified(String learnUnitCode, Instant at) {
         var item = item(learnUnitCode);
         var nextItem = item.recordPracticeVerified(at);
@@ -429,14 +433,14 @@ public final class LearningJourney {
                 nextAttempts);
     }
 
-    /** 验证 Journey 内内容、路径和一对一 Assessment 关系，阻止半有效聚合落库。 */
+    /** 验证 Journey 内内容、路径和可选历史 Assessment 关系，阻止半有效聚合落库。 */
     private static void validateContent(
             List<Chapter> chapters,
             List<LearnUnit> learnUnits,
             List<Assessment> assessments,
             List<LearningPathItem> pathItems) {
-        if (chapters.isEmpty() || learnUnits.isEmpty() || assessments.isEmpty()) {
-            throw new DomainRuleViolation("journey content must contain chapters, LearnUnits and assessments");
+        if (chapters.isEmpty() || learnUnits.isEmpty()) {
+            throw new DomainRuleViolation("journey content must contain chapters and LearnUnits");
         }
         var chapterCodes = uniqueCodes(chapters.stream().map(Chapter::code).toList(), "chapter code");
         var unitCodes = uniqueCodes(learnUnits.stream().map(LearnUnit::code).toList(), "LearnUnit code");
@@ -451,11 +455,8 @@ public final class LearningJourney {
         var assessmentUnits = new HashSet<String>();
         for (Assessment assessment : assessments) {
             if (!unitCodes.contains(assessment.learnUnitCode()) || !assessmentUnits.add(assessment.learnUnitCode())) {
-                throw new DomainRuleViolation("each LearnUnit must have exactly one Assessment");
+                throw new DomainRuleViolation("Assessment must reference a unique LearnUnit");
             }
-        }
-        if (!assessmentUnits.equals(unitCodes)) {
-            throw new DomainRuleViolation("each LearnUnit must have exactly one Assessment");
         }
         if (pathItems.size() != learnUnits.size()
                 || !new HashSet<>(pathItems.stream().map(LearningPathItem::learnUnitCode).toList()).equals(unitCodes)) {

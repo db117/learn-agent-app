@@ -2,13 +2,7 @@ package com.db117.learnagent.agent.application;
 
 import com.db117.learnagent.agent.api.TutorSessionMode;
 import com.db117.learnagent.agent.domain.WorkspaceBinding;
-import com.db117.learnagent.learning.domain.Journey;
-import com.db117.learnagent.learning.domain.JourneyRepository;
-import com.db117.learnagent.learning.domain.JourneyStatus;
-import com.db117.learnagent.learning.domain.LearnerRepository;
-import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.learning.domain.LearningJourneyRepository;
-import com.db117.learnagent.learning.domain.LearningPathItemStatus;
+import com.db117.learnagent.learning.domain.*;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -70,8 +64,6 @@ public class TutorContextAssembler {
                 0,
                 0,
                 false,
-                false,
-                0,
                 0,
                 0,
                 TutorSessionMode.PLANNING,
@@ -121,8 +113,6 @@ public class TutorContextAssembler {
                 currentItem.masteryScore(),
                 currentItem.bestScore(),
                 currentItem.practiceVerified(),
-                currentItem.assessmentPassed(),
-                currentItem.attemptCount(),
                 completedCount,
                 journey.pathItems().size(),
                 TutorSessionMode.LEARNING,

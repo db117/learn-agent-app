@@ -1,10 +1,10 @@
 package com.db117.learnagent.persistence.sqlite;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
-import javax.sql.DataSource;
 
 /**
  * 创建并验证 Step 3.5 的 clean-slate SQLite 结构。
@@ -13,7 +13,7 @@ import javax.sql.DataSource;
  */
 public final class SqliteSchemaInitializer {
     public static final String SCHEMA_MARKER = "learn-agent-app-v2";
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
     public static final String SCHEMA_SOURCE = "step-3-journey-bootstrap";
 
     private static final List<String> REQUIRED_TABLES = List.of(
@@ -61,17 +61,29 @@ public final class SqliteSchemaInitializer {
     }
 
     private void verifySchema(Connection connection) throws SQLException {
-        // 只接受本应用创建的精确版本；缺表或标记不匹配都应尽早失败。
+        // 只接受本应用创建的标记；已知版本差异由受控迁移处理，未知版本仍尽早失败。
+        int version;
         try (var statement = connection.prepareStatement(
                 "SELECT marker, schema_version, source FROM schema_metadata WHERE id = 1");
              ResultSet result = statement.executeQuery()) {
             if (!result.next()
                     || !SCHEMA_MARKER.equals(result.getString("marker"))
-                    || SCHEMA_VERSION != result.getInt("schema_version")
                     || !SCHEMA_SOURCE.equals(result.getString("source"))) {
                 throw new IllegalStateException("database schema marker is not recognized");
             }
+            version = result.getInt("schema_version");
         }
+        if (version == 3) {
+            migratePracticeCompletionConstraint(connection);
+            version = SCHEMA_VERSION;
+        }
+        if (version != SCHEMA_VERSION) {
+            throw new IllegalStateException("database schema marker is not recognized");
+        }
+        verifyRequiredTables(connection);
+    }
+
+    private void verifyRequiredTables(Connection connection) throws SQLException {
         for (String table : REQUIRED_TABLES) {
             if (!tableExists(connection, table)) {
                 throw new IllegalStateException("recognized schema is missing table: " + table);
@@ -220,7 +232,7 @@ public final class SqliteSchemaInitializer {
                     CHECK (mastery_score = best_score),
                     CHECK (assessment_passed = 0 OR best_score >= 70),
                     CHECK (status <> 'COMPLETED'
-                        OR (practice_verified = 1 AND assessment_passed = 1 AND completed_at IS NOT NULL)),
+                        OR (practice_verified = 1 AND completed_at IS NOT NULL)),
                     UNIQUE (journey_id, learn_unit_id),
                     FOREIGN KEY (journey_id, learn_unit_id) REFERENCES learn_unit(journey_id, id)
                 )
@@ -335,6 +347,65 @@ public final class SqliteSchemaInitializer {
             statement.setString(1, SCHEMA_MARKER);
             statement.setInt(2, SCHEMA_VERSION);
             statement.setString(3, SCHEMA_SOURCE);
+            statement.executeUpdate();
+        }
+    }
+
+    /** v3 只放宽完成条件；迁移只重建受影响的路径表并保留全部记录。 */
+    private void migratePracticeCompletionConstraint(Connection connection) throws SQLException {
+        execute(connection, "DROP VIEW IF EXISTS mastery");
+        execute(connection, "DROP INDEX IF EXISTS uq_current_path_item");
+        execute(connection, "ALTER TABLE learning_path_item RENAME TO learning_path_item_v3");
+        execute(connection, """
+                CREATE TABLE learning_path_item (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    journey_id INTEGER NOT NULL REFERENCES learning_journey(id) ON DELETE CASCADE,
+                    learn_unit_id INTEGER NOT NULL,
+                    learn_unit_code TEXT NOT NULL,
+                    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+                    status TEXT NOT NULL CHECK (status IN ('PENDING', 'CURRENT', 'COMPLETED', 'SKIPPED')),
+                    mastery_score INTEGER NOT NULL CHECK (mastery_score BETWEEN 0 AND 100),
+                    best_score INTEGER NOT NULL CHECK (best_score BETWEEN 0 AND 100),
+                    practice_verified INTEGER NOT NULL CHECK (practice_verified IN (0, 1)),
+                    assessment_passed INTEGER NOT NULL CHECK (assessment_passed IN (0, 1)),
+                    attempt_count INTEGER NOT NULL CHECK (attempt_count >= 0),
+                    pass_reason TEXT,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    updated_at TEXT NOT NULL,
+                    CHECK (mastery_score = best_score),
+                    CHECK (assessment_passed = 0 OR best_score >= 70),
+                    CHECK (status <> 'COMPLETED'
+                        OR (practice_verified = 1 AND completed_at IS NOT NULL)),
+                    UNIQUE (journey_id, learn_unit_id),
+                    FOREIGN KEY (journey_id, learn_unit_id) REFERENCES learn_unit(journey_id, id)
+                )
+                """);
+        execute(connection, """
+                INSERT INTO learning_path_item(
+                    id, journey_id, learn_unit_id, learn_unit_code, sequence, status,
+                    mastery_score, best_score, practice_verified, assessment_passed,
+                    attempt_count, pass_reason, started_at, completed_at, updated_at)
+                SELECT id, journey_id, learn_unit_id, learn_unit_code, sequence, status,
+                       mastery_score, best_score, practice_verified, assessment_passed,
+                       attempt_count, pass_reason, started_at, completed_at, updated_at
+                FROM learning_path_item_v3
+                """);
+        execute(connection, "DROP TABLE learning_path_item_v3");
+        execute(connection, """
+                CREATE UNIQUE INDEX uq_current_path_item
+                ON learning_path_item(journey_id)
+                WHERE status = 'CURRENT'
+                """);
+        execute(connection, """
+                CREATE VIEW mastery AS
+                SELECT journey_id, learn_unit_id, mastery_score AS score,
+                       CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END AS mastered
+                FROM learning_path_item
+                """);
+        try (var statement = connection.prepareStatement(
+                "UPDATE schema_metadata SET schema_version = ? WHERE id = 1")) {
+            statement.setInt(1, SCHEMA_VERSION);
             statement.executeUpdate();
         }
     }

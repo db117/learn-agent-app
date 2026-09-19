@@ -1,14 +1,6 @@
 package com.db117.learnagent;
 
-import com.db117.learnagent.learning.domain.Assessment;
-import com.db117.learnagent.learning.domain.Chapter;
-import com.db117.learnagent.learning.domain.Journey;
-import com.db117.learnagent.learning.domain.JourneyRepository;
-import com.db117.learnagent.learning.domain.LearnUnit;
-import com.db117.learnagent.learning.domain.Learner;
-import com.db117.learnagent.learning.domain.LearnerRepository;
-import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.learning.domain.LearningJourneyRepository;
+import com.db117.learnagent.learning.domain.*;
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -24,14 +16,40 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
 class RuntimeSkeletonTest {
     private static final HttpClient HTTP = HttpClient.newHttpClient();
     private static final Instant CREATED_AT = Instant.parse("2026-01-01T00:00:00Z");
+    private static final String PLAN = """
+            {
+              "chapters": [
+                {
+                  "code": "basics",
+                  "title": "基础",
+                  "units": [
+                    {
+                      "code": "variables",
+                      "title": "变量与类型",
+                      "objective": "能够声明变量并理解基本类型",
+                      "concept": "变量保存数据。",
+                      "example": "export const answer: number = 42;",
+                      "practice": "修复变量的类型错误。"
+                    },
+                    {
+                      "code": "functions",
+                      "title": "函数",
+                      "objective": "能够声明带类型的函数",
+                      "concept": "函数描述可复用的行为。",
+                      "example": "const add = (a: number, b: number) => a + b;",
+                      "practice": "为函数补充类型。"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
 
     @Inject
     LearnerRepository learnerRepository;
@@ -100,14 +118,13 @@ class RuntimeSkeletonTest {
         var selected = journeyRepository.selectCurrent(
                 journeyRepository.save(Journey.create(learner.id(), "Confirm a TypeScript plan", CREATED_AT)).id(),
                 learner.id());
-        var plan = "第一阶段：变量与类型；第二阶段：异步编程";
         var confirmUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/confirm-plan");
 
         var response = HTTP.send(
                 HttpRequest.newBuilder(confirmUrl.toURI())
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(
-                                "{\"plan\":\"" + plan + "\"}", StandardCharsets.UTF_8))
+                                "{\"plan\":" + jsonString(PLAN) + "}", StandardCharsets.UTF_8))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
 
@@ -116,14 +133,14 @@ class RuntimeSkeletonTest {
         assertNotNull(linked.learningJourneyId());
         assertTrue(response.body().contains("\"learningJourneyId\":" + linked.learningJourneyId()));
         var learningJourney = learningJourneyRepository.findById(linked.learningJourneyId()).orElseThrow();
-        assertEquals("已确认的规划阶段：\n第一阶段：变量与类型",
-                learningJourney.learnUnits().getFirst().content());
+        assertTrue(learningJourney.learnUnits().getFirst().content().contains("## Concept"));
+        assertTrue(learningJourney.learnUnits().getFirst().content().contains("## Example"));
         assertEquals(2, learningJourney.learnUnits().size());
-        assertEquals("first-lesson", learningJourney.currentItem().learnUnitCode());
+        assertEquals("variables", learningJourney.currentItem().learnUnitCode());
     }
 
     @Test
-    void confirmedPathExposesCurrentAssessmentAndAcceptsDeterministicAnswer() throws Exception {
+    void confirmedPathCompletesAndAdvancesAfterPracticeEvidence() throws Exception {
         var learner = learnerRepository.findCurrent().orElseGet(() -> learnerRepository.save(
                 Learner.create("Progress tester", "TypeScript developer", CREATED_AT)));
         var selected = journeyRepository.selectCurrent(
@@ -134,31 +151,23 @@ class RuntimeSkeletonTest {
                 HttpRequest.newBuilder(confirmUrl.toURI())
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(
-                                "{\"plan\":\"第一阶段；第二阶段\"}", StandardCharsets.UTF_8))
+                                "{\"plan\":" + jsonString(PLAN) + "}", StandardCharsets.UTF_8))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
+
+        var confirmed = journeyRepository.findById(selected.id()).orElseThrow();
+        var learningBeforePractice = learningJourneyRepository
+                .findById(confirmed.learningJourneyId()).orElseThrow();
+        learningJourneyRepository.save(
+                learningBeforePractice.recordPracticeVerified("variables", Instant.now().plusSeconds(1)));
 
         var learningUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/learning");
         var progress = HTTP.send(
                 HttpRequest.newBuilder(learningUrl.toURI()).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(HttpURLConnection.HTTP_OK, progress.statusCode());
-        assertTrue(progress.body().contains("\"currentLearnUnitCode\":\"first-lesson\""));
-        assertTrue(progress.body().contains("\"assessment\":"));
-
-        var assessmentUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/assessment");
-        var evaluated = HTTP.send(
-                HttpRequest.newBuilder(assessmentUrl.toURI())
-                        .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString(
-                                "{\"learnUnitCode\":\"first-lesson\","
-                                        + "\"answers\":[{\"questionCode\":\"stage-1\","
-                                        + "\"selectedOptionIds\":[\"第一阶段\"]}]}",
-                                StandardCharsets.UTF_8))
-                        .build(),
-                HttpResponse.BodyHandlers.ofString());
-        assertEquals(HttpURLConnection.HTTP_OK, evaluated.statusCode());
-        assertTrue(evaluated.body().contains("\"assessmentPassed\":true"));
+        assertTrue(progress.body().contains("\"currentLearnUnitCode\":\"functions\""), progress.body());
+        assertTrue(progress.body().contains("\"completedCount\":1"), progress.body());
     }
 
     @Test
@@ -208,11 +217,15 @@ class RuntimeSkeletonTest {
         var chapter = Chapter.create("basics", "Basics", 0);
         var unit = LearnUnit.create(
                 "variables", "Variables", "Use values", "Variables content", 0, "basics", Set.of());
-        var assessment = Assessment.create(
-                "variables", 70, List.of(com.db117.learnagent.learning.domain.Question.singleChoice(
-                        "choice", "Choose", List.of("yes", "no"), "yes")));
         return LearningJourney.create(
                 learnerId, "typescript", "TypeScript Journey",
-                List.of(chapter), List.of(unit), List.of(assessment), CREATED_AT);
+                List.of(chapter), List.of(unit), List.of(), CREATED_AT);
+    }
+
+    private static String jsonString(String value) {
+        return "\"" + value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n") + "\"";
     }
 }

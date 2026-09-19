@@ -1,20 +1,8 @@
 package com.db117.learnagent.practice.application;
 
-import com.db117.learnagent.execution.ExecutionEnvironment;
-import com.db117.learnagent.execution.ExecutionOperation;
-import com.db117.learnagent.execution.ExecutionRequest;
-import com.db117.learnagent.execution.ExecutionResult;
-import com.db117.learnagent.execution.TypeScriptCompileResult;
-import com.db117.learnagent.execution.TypeScriptCompiler;
-import com.db117.learnagent.execution.TypeScriptTestResult;
-import com.db117.learnagent.execution.TypeScriptTestRunner;
+import com.db117.learnagent.execution.*;
 import com.db117.learnagent.learning.application.LearningRequestException;
-import com.db117.learnagent.practice.domain.PracticeAttempt;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.PracticeTaskRepository;
-import com.db117.learnagent.practice.domain.RuntimeResult;
-import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.practice.domain.*;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.Workspace;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -87,7 +75,10 @@ public final class PracticeRuntimeService {
                 RuntimeResult.NOT_RUN,
                 submittedFiles,
                 null);
-        var verifiedAt = currentTask.verificationPolicy().accepts(candidate) ? Instant.now() : null;
+        var verifiedAt = currentTask.verificationPolicy().accepts(candidate)
+                && changedFromStarter(currentTask, currentWorkspace)
+                ? Instant.now()
+                : null;
         var evidence = new PracticeEvidence(
                 candidate.compilePassed(),
                 candidate.testsPassed(),
@@ -99,6 +90,19 @@ public final class PracticeRuntimeService {
         var saved = practiceTasks.save(currentTask.recordAttempt(
                 PracticeAttempt.submit(evidence, Instant.now())));
         return new PracticeVerification(saved, compile, tests, evidence);
+    }
+
+    /** Step 6 的 TypeScript 练习必须先改变初始源码，避免 starter 测试本身伪造完成证据。 */
+    private boolean changedFromStarter(PracticeTask task, Workspace workspace) {
+        if (task.starterTemplate().isBlank()) {
+            return true;
+        }
+        try {
+            return !task.starterTemplate().equals(
+                    workspaceManager.readFile(workspace, "src/index.ts").content());
+        } catch (IOException error) {
+            return false;
+        }
     }
 
     /** 当前 Step 5 只具备 compile/tests 的固定验收能力；不为未实现的检查伪造 Evidence。 */
