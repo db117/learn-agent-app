@@ -225,11 +225,15 @@ public final class WorkspaceManager {
         if (relative.getNameCount() == 0) {
             return false;
         }
+        for (var part : relative) {
+            if (part.toString().equals("node_modules")) {
+                return true;
+            }
+        }
         var first = relative.getName(0).toString();
-        return first.equals("node_modules")
-                || (workspace.reference().kind() == WorkspaceKind.LEARNING
+        return workspace.reference().kind() == WorkspaceKind.LEARNING
                 && relative.getNameCount() == 1
-                && first.equals("pnpm-lock.yaml"));
+                && first.equals("pnpm-lock.yaml");
     }
 
     private static WorkspaceFileEntry entry(Workspace workspace, Path path) {

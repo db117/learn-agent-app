@@ -54,7 +54,9 @@ class TutorWorkspaceToolsTest {
         toolkit.registerTool(tools);
 
         assertEquals(
-                java.util.Set.of("list_files", "read_file", "write_file", "compile", "run_tests", "run_program"),
+                java.util.Set.of(
+                        "list_files", "read_file", "write_file", "initialize_npm_project",
+                        "install_typescript", "compile_project", "compile", "run_tests", "run_program"),
                 toolkit.getToolNames());
     }
 

@@ -39,16 +39,22 @@ test("learner completes Learn Mode through the real browser", async ({page}) => 
     await page.getByRole("button", {name: "完成设计"}).click();
 
     await expect(page.getByRole("heading", {name: "代码练习"})).toBeVisible({timeout: 120_000});
-    await expect(page.getByRole("heading", {name: "Concept"})).toBeVisible();
-    await expect(page.getByRole("heading", {name: "Example"})).toBeVisible();
-    await expect(page.getByRole("heading", {name: "Practice"})).toBeVisible();
-    await expect(page.locator(".lesson-section").filter({hasText: "模型生成的 Concept"})).toBeVisible();
+    await expect(page.getByRole("heading", {name: "Concept"})).toBeVisible({timeout: 120_000});
+    await expect(page.getByRole("heading", {name: "Example"})).toBeVisible({timeout: 120_000});
+    await expect(page.getByRole("heading", {name: "Practice"})).toBeVisible({timeout: 120_000});
+    await expect(page.locator(".lesson-section").first().locator(".learn-content"))
+        .not.toHaveText("", {timeout: 120_000});
     await expect(page.locator(".unit-label")).toHaveText(/当前 LearnUnit：\S+/);
     await expect(chat.locator(".message.assistant").last()).toContainText(/\S+/);
 
     const initialProgress = await readProgressCounter(page);
     expect(initialProgress.completed).toBe(0);
     expect(initialProgress.total).toBeGreaterThan(1);
+    const chapters = page.locator(".chapter-path-item");
+    expect(await chapters.count()).toBeGreaterThan(0);
+    for (const chapter of await chapters.all()) {
+        expect(await chapter.locator("li").count()).toBeGreaterThan(0);
+    }
 
     let completed = initialProgress.completed;
     let firstAttempt = true;

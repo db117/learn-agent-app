@@ -11,7 +11,7 @@ import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.LearningWorkspace;
 import io.agentscope.core.tool.Tool;
 import io.agentscope.core.tool.ToolParam;
-import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.context.Dependent;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Objects;
 
 /** TutorAgent 的最小 Workspace/Execution 工具集；不提供任意 shell 或 Domain 写入能力。 */
-@ApplicationScoped
+@Dependent
 public final class TutorWorkspaceTools {
     private final WorkspaceManager workspaces;
     private final WorkspaceApplicationService workspaceAccess;
@@ -80,6 +80,35 @@ public final class TutorWorkspaceTools {
         } catch (IOException error) {
             throw new IllegalStateException("无法写入 Workspace 文件", error);
         }
+    }
+
+    @Tool(
+            name = "initialize_npm_project",
+            description = "在当前 Learning Workspace 内创建项目目录并执行固定 npm init -y；不接受 shell 参数。")
+    public String initializeNpmProject(
+            TutorContext context,
+            @ToolParam(name = "project_path", description = "Workspace 内 POSIX 项目目录") String projectPath) {
+        var result = practiceRuntime.initializeNpmProject(learningWorkspace(context), projectPath);
+        return executionResult("initialize_npm_project", result);
+    }
+
+    @Tool(
+            name = "install_typescript",
+            description = "在指定 Workspace 子项目内固定执行 npm install --save-dev typescript；安装脚本被禁用。")
+    public String installTypeScript(
+            TutorContext context,
+            @ToolParam(name = "project_path", description = "Workspace 内 POSIX 项目目录") String projectPath) {
+        var result = practiceRuntime.installTypeScript(learningWorkspace(context), projectPath);
+        return executionResult("install_typescript", result);
+    }
+
+    @Tool(
+            name = "compile_project",
+            description = "在指定 Workspace 子项目内固定执行 npx tsc，并按 tsconfig.json 生成 JavaScript；返回诊断。")
+    public String compileProject(
+            TutorContext context,
+            @ToolParam(name = "project_path", description = "Workspace 内 POSIX 项目目录") String projectPath) {
+        return compileResult(practiceRuntime.compileProject(learningWorkspace(context), projectPath));
     }
 
     @Tool(

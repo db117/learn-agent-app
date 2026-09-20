@@ -10,7 +10,7 @@ import com.db117.learnagent.practice.application.ChoiceQuestionGenerator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.tool.Tool;
-import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.context.Dependent;
 import jakarta.inject.Inject;
 
 import java.util.LinkedHashMap;
@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /** 把生成类 Skill 接到现有 typed Generator/Application Service；不直接修改 Domain。 */
-@ApplicationScoped
+@Dependent
 public final class TutorGenerationTools {
     private final JourneyApplicationService journeys;
     private final LearnUnitContentService contentService;

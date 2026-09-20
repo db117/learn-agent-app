@@ -31,6 +31,13 @@ public final class TypeScriptCompiler {
         return new TypeScriptCompileResult(execution, parseDiagnostics(execution.summary()));
     }
 
+    /** 在指定 Workspace 子项目中执行会生成 JavaScript 的固定 npx tsc。 */
+    public TypeScriptCompileResult compileProject(Workspace workspace, String projectPath) {
+        var execution = executionEnvironment.execute(
+                workspace, new ExecutionRequest(ExecutionOperation.COMPILE_PROJECT, List.of(projectPath)));
+        return new TypeScriptCompileResult(execution, parseDiagnostics(execution.summary()));
+    }
+
     private static List<TypeScriptDiagnostic> parseDiagnostics(String summary) {
         if (summary == null || summary.isBlank()) {
             return List.of();

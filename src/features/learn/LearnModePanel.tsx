@@ -1,3 +1,5 @@
+import {MarkdownMessage} from "../agent/MarkdownMessage";
+
 export type LearningProgress = {
     journeyId: number;
     learningJourneyId: number;
@@ -94,7 +96,9 @@ function LessonContent({content}: { content: string }) {
         {sections.map((section) => (
             <article className="lesson-section" key={section.title}>
                 <h4>{section.title}</h4>
-                <pre className="learn-content">{section.content}</pre>
+                <div className="learn-content">
+                    <MarkdownMessage text={section.content}/>
+                </div>
             </article>
         ))}
     </section>;

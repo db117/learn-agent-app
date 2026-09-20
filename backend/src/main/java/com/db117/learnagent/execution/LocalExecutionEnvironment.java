@@ -44,6 +44,10 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
     @Override
     public ExecutionResult execute(Workspace workspace, ExecutionRequest request) {
         var root = validateWorkspace(workspace);
+        if (request == null) {
+            throw new IllegalArgumentException("request must not be null");
+        }
+        var workingDirectory = workingDirectory(root, request);
         var command = command(root, request);
         if (requiresTypeScriptToolchain(request.operation()) && !hasTypeScriptToolchain(root)) {
             // 首次编译或测试前只安装 Workspace 声明的依赖，并禁止依赖脚本执行。
@@ -57,7 +61,10 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
                         installation.duration());
             }
         }
-        return run(root, request.operation().name(), command, timeout);
+        var executionTimeout = request.operation() == ExecutionOperation.INSTALL_TYPESCRIPT
+                ? DEPENDENCY_INSTALL_TIMEOUT
+                : timeout;
+        return run(workingDirectory, request.operation().name(), command, executionTimeout);
     }
 
     private static boolean requiresTypeScriptToolchain(ExecutionOperation operation) {
@@ -80,10 +87,12 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
     }
 
     private List<String> command(Path root, ExecutionRequest request) {
-        if (request == null) {
-            throw new IllegalArgumentException("request must not be null");
-        }
         return switch (request.operation()) {
+            case INITIALIZE_NPM_PROJECT -> List.of(npmCommand(), "init", "--yes");
+            case INSTALL_TYPESCRIPT -> List.of(
+                    npmCommand(), "install", "--save-dev", "typescript",
+                    "--ignore-scripts", "--no-audit", "--no-fund");
+            case COMPILE_PROJECT -> List.of(npxCommand(), "--no-install", "tsc");
             case COMPILE -> commandWithPaths(List.of(packageManagerCommand(), "exec", "tsc", "--noEmit"), root,
                     request.arguments());
             case RUN_TESTS -> commandWithPaths(List.of(packageManagerCommand(), "exec", "vitest", "run"), root,
@@ -98,6 +107,45 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
         return System.getProperty("os.name", "")
                 .toLowerCase(Locale.ROOT)
                 .contains("win") ? "pnpm.cmd" : "pnpm";
+    }
+
+    static String npmCommand() {
+        return System.getProperty("os.name", "")
+                .toLowerCase(Locale.ROOT)
+                .contains("win") ? "npm.cmd" : "npm";
+    }
+
+    static String npxCommand() {
+        return System.getProperty("os.name", "")
+                .toLowerCase(Locale.ROOT)
+                .contains("win") ? "npx.cmd" : "npx";
+    }
+
+    private static Path workingDirectory(Path root, ExecutionRequest request) {
+        if (!usesProjectDirectory(request.operation())) {
+            return root;
+        }
+        if (request.arguments().size() != 1) {
+            throw new IllegalArgumentException(request.operation() + " requires one project path");
+        }
+        var project = root.resolve(relativePath(root, request.arguments().getFirst())).normalize();
+        if (request.operation() == ExecutionOperation.INITIALIZE_NPM_PROJECT) {
+            try {
+                Files.createDirectories(project);
+            } catch (IOException error) {
+                throw new IllegalArgumentException("project directory cannot be created", error);
+            }
+        }
+        if (!Files.isDirectory(project, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("project path must be a directory");
+        }
+        return project;
+    }
+
+    private static boolean usesProjectDirectory(ExecutionOperation operation) {
+        return operation == ExecutionOperation.INITIALIZE_NPM_PROJECT
+                || operation == ExecutionOperation.INSTALL_TYPESCRIPT
+                || operation == ExecutionOperation.COMPILE_PROJECT;
     }
 
     private static List<String> commandWithPaths(List<String> fixedCommand, Path root,

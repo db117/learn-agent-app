@@ -1,20 +1,8 @@
 package com.db117.learnagent.practice.application;
 
-import com.db117.learnagent.execution.ExecutionEnvironment;
-import com.db117.learnagent.execution.ExecutionOperation;
-import com.db117.learnagent.execution.ExecutionRequest;
-import com.db117.learnagent.execution.ExecutionResult;
-import com.db117.learnagent.execution.TypeScriptCompileResult;
-import com.db117.learnagent.execution.TypeScriptCompiler;
-import com.db117.learnagent.execution.TypeScriptTestResult;
-import com.db117.learnagent.execution.TypeScriptTestRunner;
+import com.db117.learnagent.execution.*;
 import com.db117.learnagent.learning.application.LearningRequestException;
-import com.db117.learnagent.practice.domain.PracticeAttempt;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.PracticeTaskRepository;
-import com.db117.learnagent.practice.domain.RuntimeResult;
-import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.practice.domain.*;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.Workspace;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -53,6 +41,25 @@ public final class PracticeRuntimeService {
     /** 在当前 Workspace 中执行 TypeScript 编译；编译器参数由 Language Pack/ExecutionEnvironment 固定。 */
     public TypeScriptCompileResult compile(Workspace workspace) {
         return compiler.compile(requireWorkspace(workspace), List.of());
+    }
+
+    /** 在 Workspace 子项目中执行固定 npx tsc，并生成 tsconfig.json 声明的输出文件。 */
+    public TypeScriptCompileResult compileProject(Workspace workspace, String projectPath) {
+        return compiler.compileProject(requireWorkspace(workspace), projectPath);
+    }
+
+    /** 在 Workspace 内创建子项目并执行固定 npm init -y。 */
+    public ExecutionResult initializeNpmProject(Workspace workspace, String projectPath) {
+        return executionEnvironment.execute(
+                requireWorkspace(workspace),
+                new ExecutionRequest(ExecutionOperation.INITIALIZE_NPM_PROJECT, List.of(projectPath)));
+    }
+
+    /** 在 Workspace 子项目内只安装 TypeScript，禁止依赖安装脚本。 */
+    public ExecutionResult installTypeScript(Workspace workspace, String projectPath) {
+        return executionEnvironment.execute(
+                requireWorkspace(workspace),
+                new ExecutionRequest(ExecutionOperation.INSTALL_TYPESCRIPT, List.of(projectPath)));
     }
 
     /** 在当前 Workspace 中执行 Vitest；测试路径为空表示运行项目默认测试集合。 */

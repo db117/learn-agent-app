@@ -25,7 +25,7 @@ public class LearningOutlineGenerator {
             只能返回一个 JSON 对象，不要 Markdown、解释或额外文字。
             JSON 格式必须是：
             {"chapters":[{"code":"basics","title":"章节标题","units":[{"code":"intro","title":"单元标题","objective":"可验证目标"}]}]}
-            chapters 至少一个；每个 chapter 至少一个 unit；code 使用唯一的小写短横线编码。
+            根据学习目标范围、学习者背景和可验证性自主决定 chapters 与 units 的数量，不要默认固定数量或为了凑数拆分；chapters 至少一个，每个 chapter 至少一个 unit；code 使用唯一的小写短横线编码。
             只生成标题和目标，不生成 Concept、Example、Practice 内容，不声称已保存或完成学习路径。
             """;
     private static final int MAX_RESPONSE_LENGTH = 20_000;

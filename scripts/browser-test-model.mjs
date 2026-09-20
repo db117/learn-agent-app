@@ -2,22 +2,32 @@ import http from "node:http";
 
 const port = 19090;
 const plan = JSON.stringify({
-    chapters: [{
-        code: "basics",
-        title: "基础",
-        units: [
-            {
-                code: "variables",
-                title: "变量与类型",
-                objective: "能够声明变量并理解基本类型",
-            },
-            {
-                code: "functions",
-                title: "函数",
-                objective: "能够声明带类型的函数",
-            },
-        ],
-    }],
+    chapters: [
+        {
+            code: "foundations",
+            title: "基础",
+            units: [
+                {code: "variables", title: "变量与类型", objective: "能够声明变量并理解基本类型"},
+                {code: "functions", title: "函数", objective: "能够声明带类型的函数"},
+            ],
+        },
+        {
+            code: "collections",
+            title: "数据组织",
+            units: [
+                {code: "arrays", title: "数组", objective: "能够使用类型安全的数组"},
+                {code: "objects", title: "对象", objective: "能够描述对象结构"},
+            ],
+        },
+        {
+            code: "runtime",
+            title: "运行时实践",
+            units: [
+                {code: "modules", title: "模块", objective: "能够组织并导入 TypeScript 模块"},
+                {code: "compile-and-run", title: "编译与运行", objective: "能够编译并运行 TypeScript 程序"},
+            ],
+        },
+    ],
 });
 
 function textContent(value) {

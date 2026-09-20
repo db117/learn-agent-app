@@ -1,11 +1,7 @@
 package com.db117.learnagent.workspace;
 
 import com.db117.learnagent.config.RuntimeConfig;
-import com.db117.learnagent.language.LanguageMetadata;
-import com.db117.learnagent.language.LanguagePack;
-import com.db117.learnagent.language.Toolchain;
-import com.db117.learnagent.language.WorkspaceTemplate;
-import com.db117.learnagent.language.WorkspaceTemplateProvider;
+import com.db117.learnagent.language.*;
 import com.db117.learnagent.language.typescript.TypeScriptLanguagePack;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.WorkspaceFileEntry;
@@ -19,10 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class WorkspaceManagerTest {
     @TempDir
@@ -95,6 +88,19 @@ class WorkspaceManagerTest {
 
         assertEquals(List.of("package.json", "src/index.test.mjs", "src/index.ts", "tsconfig.json",
                 "vitest.config.mjs"), manager.listFiles(workspace).stream()
+                .map(WorkspaceFileEntry::path)
+                .toList());
+    }
+
+    @Test
+    void hidesNestedNodeModulesFromTheWorkspaceFileList() throws IOException {
+        var manager = manager();
+        var workspace = manager.ensureProjectWorkspace(13);
+        Files.createDirectories(workspace.root().resolve("ts-runtime-practice/node_modules/.bin"));
+        Files.writeString(workspace.root().resolve("ts-runtime-practice/node_modules/.bin/tsc"), "binary");
+        manager.writeFile(workspace, "ts-runtime-practice/src/index.ts", "export {};");
+
+        assertEquals(List.of("ts-runtime-practice/src/index.ts"), manager.listFiles(workspace).stream()
                 .map(WorkspaceFileEntry::path)
                 .toList());
     }

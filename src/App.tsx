@@ -1,8 +1,9 @@
 import {useEffect, useRef, useState} from "react";
+import {MarkdownMessage} from "./features/agent/MarkdownMessage";
 import {PracticeWorkspace} from "./features/practice/PracticeWorkspace";
 
 const BACKEND_URL = "http://127.0.0.1:18080";
-const PLANNING_PROMPT = `请根据我的 Learner 背景和 Journey 目标生成学习路径，生成 3 个 chapters，每个 chapter 恰好包含 2 个 units，共 6 个 LearnUnit。
+const PLANNING_PROMPT = `请根据我的 Learner 背景和 Journey 目标生成学习路径。请由你根据学习目标的范围、难度、学习者背景和可验证性自主决定 chapters 的数量，以及每个 chapter 的 units 数量；不要假设固定数量，也不要为了凑数拆分内容。
 只返回一个 JSON 对象，不要 Markdown、代码围栏、解释或额外文字。格式必须是：
 {
   "chapters": [
@@ -743,7 +744,11 @@ export default function App() {
                                 <div className={`message ${message.role}`}
                                      key={`${message.timestamp ?? "message"}-${index}`}>
                                     <span>{message.role === "user" ? "你" : "TutorAgent"}</span>
-                                    <p>{message.text || (sending ? "正在组织回答…" : "")}</p>
+                                    {message.role === "assistant" ? (
+                                        <MarkdownMessage text={message.text || (sending ? "正在组织回答…" : "")}/>
+                                    ) : (
+                                        <p>{message.text}</p>
+                                    )}
                                 </div>
                             ))}
                         </div>
