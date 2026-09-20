@@ -209,7 +209,9 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
                 : result.verified
                     ? "Practice 已记录。"
                     : "Practice 尚未通过，请根据编译和测试结果继续修改。");
-            onProgressChanged?.(result.learningJourneyStatus, result.currentLearnUnitCode);
+            if (result.verified) {
+                onProgressChanged?.(result.learningJourneyStatus, result.currentLearnUnitCode);
+            }
             await loadProgress();
         } catch (error: unknown) {
             setFeedback(error instanceof Error ? error.message : "无法验证 Practice");

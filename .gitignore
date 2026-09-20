@@ -12,4 +12,5 @@ backend/.mvn/wrapper/maven-wrapper.jar
 *.db-wal
 .DS_Store
 .idea/
-
+playwright-report/
+test-results/

@@ -30,3 +30,7 @@ pnpm check
 
 当前本地 `pnpm check` 已通过，包含前端 8 个单测和后端 70 个测试；这不代表
 Sandbox/Permission、macOS arm64、真实 OpenAI provider 或完整 lint/runtime 能力已验收。
+
+浏览器 E2E：首次运行先安装 Playwright Chromium，然后执行 `pnpm e2e:browser`。测试会启动
+Vite、Quarkus、隔离临时 SQLite 和本地确定性 Tutor Model；浏览器通过真实页面完成规划、Tutor
+讲解、Practice 失败与修复、Session rollover 以及路径完成，不依赖真实 OpenAI 凭据。
