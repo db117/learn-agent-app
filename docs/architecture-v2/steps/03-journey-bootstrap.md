@@ -26,11 +26,12 @@ Bootstrap 不止负责创建 Journey，还负责把已确认的路径交给学�
   → 创建 PLANNING Tutor Session
   → Tutor 生成规划草稿
   → 用户确认规划
-  → 按规划草稿的章节顺序物化多个 LearnUnit 和 LearningPathItem
+  → 按规划草稿的章节顺序物化只有大纲字段的多个 LearnUnit 和 LearningPathItem
   → 保存 LearningJourney，并将 learningJourneyId 挂回 Journey
   → Bootstrap 重新读取 Journey
   → 发现 learningJourneyId 后初始化 Learning Workspace
   → 创建或恢复 LEARNING Tutor Session
+  → 进入当前 LearnUnit，应用层按需生成并保存 Concept/Example/Practice 内容
   → TutorContextAssembler 加载当前 LearningPathItem 和 current LearnUnit
   → 应用自动发送开始提示，触发首个 Tutor 学习回合
 ```
@@ -39,7 +40,7 @@ Journey、LearningJourney、LearnUnit 和 LearningPathItem 都是 Learning Domai
 Domain State；PLANNING/LEARNING Session、规划草稿、Tutor 上下文和消息都是 Agent State。Session
 只能读取已确认的路径，不能直接写入 Journey、LearningJourney、mastery 或 completion。
 
-确认规划时，应用层负责将规划草稿中的有序段落/阶段物化为完整的有序路径，而不是只生成一个占位单元。
+确认规划时，应用层负责将规划草稿中的有序段落/阶段物化为只有大纲的完整有序路径，而不是只生成一个占位单元。
 生成 LearningJourney 后先保存，再挂回 Journey。当前不引入并发控制或通用跨聚合事务；如果挂接失败，应用层
 清理本次新建的 LearningJourney 并保留 Journey 的 `learningJourneyId` 为空，之后允许用户重试。只有挂接成功
 后，Bootstrap 才能进入 LEARNING 模式。
@@ -48,8 +49,8 @@ Domain State；PLANNING/LEARNING Session、规划草稿、Tutor 上下文和消�
 Tutor 的首个学习回合。完成当前单元后，Learning Domain 根据 PracticeEvidence 决定是否推进到下一个
 `PENDING` LearningPathItem；Bootstrap 不自行推进学习状态。
 
-本阶段不实现完整的 LLM 内容生成；只约定确认后的规划如何物化为 LearningJourney、LearnUnit 和
-LearningPathItem，后续步骤负责学习内容与任务的具体运行。本阶段也不把规划草稿直接当作 Domain State。
+本阶段只约定确认后的大纲如何物化为 LearningJourney、LearnUnit 和 LearningPathItem；学习内容由 Learn Mode
+在进入当前 LearnUnit 后按需生成。本阶段也不把规划草稿直接当作 Domain State。
 
 **DoD：**本地数据库可恢复 Learner、Journey 和当前选择；首次打开不再要求手填 ID；Tutor 可以在无当前
 LearnUnit 时进入规划模式；确认后可恢复完整有序的 LearningJourney；Bootstrap 可据此初始化 Workspace、

@@ -1,5 +1,6 @@
 package com.db117.learnagent.persistence.sqlite;
 
+import com.db117.learnagent.practice.domain.ChoiceQuestion;
 import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -42,6 +43,17 @@ final class SqliteJson {
             return MAPPER.readValue(value, VerificationPolicy.class);
         } catch (JsonProcessingException error) {
             throw new IllegalStateException("Unable to decode verification policy", error);
+        }
+    }
+
+    static ChoiceQuestion choiceQuestion(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return MAPPER.readValue(value, ChoiceQuestion.class);
+        } catch (JsonProcessingException error) {
+            throw new IllegalStateException("Unable to decode choice question", error);
         }
     }
 }

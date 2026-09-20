@@ -142,10 +142,18 @@ class RuntimeSkeletonTest {
         assertNotNull(linked.learningJourneyId());
         assertTrue(response.body().contains("\"learningJourneyId\":" + linked.learningJourneyId()));
         var learningJourney = learningJourneyRepository.findById(linked.learningJourneyId()).orElseThrow();
-        assertTrue(learningJourney.learnUnits().getFirst().content().contains("## Concept"));
-        assertTrue(learningJourney.learnUnits().getFirst().content().contains("## Example"));
+        assertEquals("", learningJourney.learnUnits().getFirst().content());
         assertEquals(2, learningJourney.learnUnits().size());
         assertEquals("variables", learningJourney.currentItem().learnUnitCode());
+
+        var learningUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/learning");
+        var learning = HTTP.send(
+                HttpRequest.newBuilder(learningUrl.toURI()).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(HttpURLConnection.HTTP_OK, learning.statusCode());
+        assertTrue(learning.body().contains("模型生成的 Concept"));
+        assertTrue(learningJourneyRepository.findById(linked.learningJourneyId()).orElseThrow()
+                .learnUnits().getFirst().content().contains("## Concept"));
     }
 
     @Test

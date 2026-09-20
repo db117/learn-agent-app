@@ -13,7 +13,7 @@ import javax.sql.DataSource;
  */
 public final class SqliteSchemaInitializer {
     public static final String SCHEMA_MARKER = "learn-agent-app-v2";
-    public static final int SCHEMA_VERSION = 5;
+    public static final int SCHEMA_VERSION = 7;
     public static final String SCHEMA_SOURCE = "step-3-journey-bootstrap";
 
     private static final List<String> REQUIRED_TABLES = List.of(
@@ -216,6 +216,7 @@ public final class SqliteSchemaInitializer {
                     description TEXT NOT NULL,
                     difficulty INTEGER NOT NULL CHECK (difficulty >= 0),
                     starter_template TEXT NOT NULL,
+                    choice_question TEXT,
                     verification_policy TEXT NOT NULL,
                     status TEXT NOT NULL CHECK (status IN ('OPEN', 'VERIFIED')),
                     created_at TEXT NOT NULL,
@@ -239,7 +240,8 @@ public final class SqliteSchemaInitializer {
                     lint_passed INTEGER NOT NULL CHECK (lint_passed IN (0, 1)),
                     runtime_result TEXT NOT NULL CHECK (runtime_result IN ('NOT_RUN', 'PASSED', 'FAILED')),
                     submitted_files TEXT NOT NULL,
-                    verified_at TEXT
+                    verified_at TEXT,
+                    choice_correct INTEGER NOT NULL CHECK (choice_correct IN (0, 1))
                 )
                 """);
         execute(connection, """

@@ -16,6 +16,7 @@ import java.util.List;
  * @param runtimeResult 运行检查结果；未要求或未执行时可为 {@code NOT_RUN}
  * @param submittedFiles 提交文件的路径或 Artifact 引用，不是文件内容
  * @param verifiedAt 产生验证结果的时间；没有结果时可为空
+ * @param choiceCorrect 选择题答案是否正确
  */
 public record PracticeEvidence(
         boolean compilePassed,
@@ -24,7 +25,19 @@ public record PracticeEvidence(
         boolean lintPassed,
         RuntimeResult runtimeResult,
         List<String> submittedFiles,
-        Instant verifiedAt) {
+        Instant verifiedAt,
+        boolean choiceCorrect) {
+
+    public PracticeEvidence(
+            boolean compilePassed,
+            boolean testsPassed,
+            int testCount,
+            boolean lintPassed,
+            RuntimeResult runtimeResult,
+            List<String> submittedFiles,
+            Instant verifiedAt) {
+        this(compilePassed, testsPassed, testCount, lintPassed, runtimeResult, submittedFiles, verifiedAt, false);
+    }
 
     public PracticeEvidence {
         if (testCount < 0) {

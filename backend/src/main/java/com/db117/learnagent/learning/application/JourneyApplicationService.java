@@ -205,7 +205,7 @@ public class JourneyApplicationService {
                         planUnit.code(),
                         planUnit.title(),
                         planUnit.objective(),
-                        lessonContent(planUnit),
+                        "",
                         unitSequence,
                         chapter.code(),
                         prerequisites));
@@ -222,26 +222,10 @@ public class JourneyApplicationService {
                 Instant.now(clock));
     }
 
-    /**
-     * 生成当前 Step 6 所需的最小教学快照；Concept/Example 仍属于 Journey 内 LearnUnit 内容，不能写入 Agent State。
-     */
-    private String lessonContent(PlanUnit unit) {
-        return """
-                ## Concept
-                %s
-                
-                ## Example
-                %s
-                
-                ## Practice
-                %s
-                """.formatted(unit.concept(), unit.example(), unit.practice());
-    }
-
     private List<PlanChapter> parsePlan(String plan) {
         final JsonNode root;
         try {
-            root = JSON.readTree(plan);
+            root = parseJsonObject(plan);
         } catch (JsonProcessingException error) {
             throw invalidPlan("规划必须是有效的 JSON");
         }
@@ -280,10 +264,7 @@ public class JourneyApplicationService {
                 units.add(new PlanUnit(
                         unitCode,
                         requiredText(unitNode, "title"),
-                        requiredText(unitNode, "objective"),
-                        requiredText(unitNode, "concept"),
-                        requiredText(unitNode, "example"),
-                        requiredText(unitNode, "practice")));
+                        requiredText(unitNode, "objective")));
                 totalUnits++;
             }
             chapters.add(new PlanChapter(chapterCode, requiredText(chapterNode, "title"), List.copyOf(units)));
@@ -292,6 +273,19 @@ public class JourneyApplicationService {
             throw invalidPlan("units 总数不能超过 50");
         }
         return List.copyOf(chapters);
+    }
+
+    private JsonNode parseJsonObject(String plan) throws JsonProcessingException {
+        try {
+            return JSON.readTree(plan);
+        } catch (JsonProcessingException error) {
+            var start = plan.indexOf('{');
+            var end = plan.lastIndexOf('}');
+            if (start < 0 || end <= start) {
+                throw error;
+            }
+            return JSON.readTree(plan.substring(start, end + 1));
+        }
     }
 
     private String requiredText(JsonNode parent, String field) {
@@ -320,22 +314,16 @@ public class JourneyApplicationService {
     }
 
     /**
-     * 已确认规划中的单个学习单元；内容快照仍属于当前 LearningJourney。
+     * 已确认规划中的单个学习单元；教学内容在进入 LearnUnit 后才生成。
      *
      * @param code Journey 内稳定的 LearnUnit 编码
      * @param title 面向学习者展示的单元标题
      * @param objective 当前单元的可验证学习目标
-     * @param concept Explain 内容快照
-     * @param example Example 内容快照
-     * @param practice Practice 任务说明
      */
     private record PlanUnit(
             String code,
             String title,
-            String objective,
-            String concept,
-            String example,
-            String practice) {
+            String objective) {
     }
 
     private Journey ownedJourney(long journeyId, long learnerId) {

@@ -13,6 +13,8 @@ import com.db117.learnagent.execution.TypeScriptCompiler;
 import com.db117.learnagent.execution.TypeScriptTestRunner;
 import com.db117.learnagent.language.LanguagePackCatalog;
 import com.db117.learnagent.language.typescript.TypeScriptLanguagePack;
+import com.db117.learnagent.learning.application.LearnUnitContentGenerator;
+import com.db117.learnagent.learning.application.LearnUnitContentService;
 import com.db117.learnagent.learning.domain.Chapter;
 import com.db117.learnagent.learning.domain.Journey;
 import com.db117.learnagent.learning.domain.JourneyRepository;
@@ -59,7 +61,7 @@ class AgentScopeRuntimeTest {
         var model = new FakeModel();
         var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(model), root.resolve("agent"));
         var service = new TutorSessionService(
-                new TutorContextAssembler(
+                contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(),
                         new FakeJourneyRepository()),
@@ -109,7 +111,7 @@ class AgentScopeRuntimeTest {
         var root = Files.createTempDirectory("tutor-no-model");
         var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(null), root.resolve("agent"));
         var service = new TutorSessionService(
-                new TutorContextAssembler(
+                contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(),
                         new FakeJourneyRepository()),
@@ -131,7 +133,7 @@ class AgentScopeRuntimeTest {
         var model = new FailingModel();
         var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(model), root.resolve("agent"));
         var service = new TutorSessionService(
-                new TutorContextAssembler(
+                contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(),
                         new FakeJourneyRepository()),
@@ -163,7 +165,7 @@ class AgentScopeRuntimeTest {
         var root = Files.createTempDirectory("tutor-planning");
         var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(null), root.resolve("agent"));
         var service = new TutorSessionService(
-                new TutorContextAssembler(
+                contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(2L),
                         new FakeJourneyRepository()),
@@ -186,7 +188,7 @@ class AgentScopeRuntimeTest {
         var learningJourneys = new MutableLearningJourneyRepository(twoUnitJourney());
         var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(null), root.resolve("agent"));
         var service = new TutorSessionService(
-                new TutorContextAssembler(
+                contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(),
                         learningJourneys),
@@ -240,7 +242,7 @@ class AgentScopeRuntimeTest {
                 dataDir.resolve("agent"),
                 workspaceTools);
         var service = new TutorSessionService(
-                new TutorContextAssembler(
+                contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(),
                         learningJourneys),
@@ -395,6 +397,19 @@ class AgentScopeRuntimeTest {
         public String getModelName() {
             return "failing-tutor";
         }
+    }
+
+    private TutorContextAssembler contextAssembler(
+            LearnerRepository learners,
+            JourneyRepository journeys,
+            LearningJourneyRepository learningJourneys) {
+        return new TutorContextAssembler(
+                learners,
+                journeys,
+                learningJourneys,
+                new LearnUnitContentService(
+                        learningJourneys,
+                        new LearnUnitContentGenerator(new TutorModel(null))));
     }
 
     private static final class FakeLearnerRepository implements LearnerRepository {

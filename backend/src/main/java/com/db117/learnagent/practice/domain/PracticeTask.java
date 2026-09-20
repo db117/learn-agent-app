@@ -7,7 +7,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Practice 聚合根；失败尝试保留历史，首个通过证据使任务进入 VERIFIED。 */
+/** Practice 聚合根；失败尝试保留历史，首个通过证据使任务进入 VERIFIED。选择题快照随任务固定。 */
 public final class PracticeTask {
     private final Long id;
     private final long journeyId;
@@ -18,6 +18,7 @@ public final class PracticeTask {
     private final String description;
     private final int difficulty;
     private final String starterTemplate;
+    private final ChoiceQuestion choiceQuestion;
     private final VerificationPolicy verificationPolicy;
     private final PracticeTaskStatus status;
     private final Instant createdAt;
@@ -33,6 +34,7 @@ public final class PracticeTask {
             String description,
             int difficulty,
             String starterTemplate,
+            ChoiceQuestion choiceQuestion,
             VerificationPolicy verificationPolicy,
             PracticeTaskStatus status,
             Instant createdAt,
@@ -54,6 +56,13 @@ public final class PracticeTask {
         }
         this.difficulty = difficulty;
         this.starterTemplate = starterTemplate == null ? "" : starterTemplate;
+        this.choiceQuestion = choiceQuestion;
+        if ("CHOICE".equals(this.type) && choiceQuestion == null) {
+            throw new DomainRuleViolation("choice task needs a choice question");
+        }
+        if (!"CHOICE".equals(this.type) && choiceQuestion != null) {
+            throw new DomainRuleViolation("only choice task can have a choice question");
+        }
         this.verificationPolicy = verificationPolicy == null
                 ? throwRule("verificationPolicy must not be null")
                 : verificationPolicy;
@@ -91,6 +100,36 @@ public final class PracticeTask {
                 description,
                 difficulty,
                 starterTemplate,
+                null,
+                verificationPolicy,
+                PracticeTaskStatus.OPEN,
+                createdAt,
+                List.of());
+    }
+
+    public static PracticeTask create(
+            long journeyId,
+            long learnUnitId,
+            String languagePackId,
+            String type,
+            String title,
+            String description,
+            int difficulty,
+            String starterTemplate,
+            ChoiceQuestion choiceQuestion,
+            VerificationPolicy verificationPolicy,
+            Instant createdAt) {
+        return new PracticeTask(
+                null,
+                journeyId,
+                learnUnitId,
+                languagePackId,
+                type,
+                title,
+                description,
+                difficulty,
+                starterTemplate,
+                choiceQuestion,
                 verificationPolicy,
                 PracticeTaskStatus.OPEN,
                 createdAt,
@@ -112,6 +151,39 @@ public final class PracticeTask {
             PracticeTaskStatus status,
             Instant createdAt,
             List<PracticeAttempt> attempts) {
+        return reconstitute(
+                id,
+                journeyId,
+                learnUnitId,
+                languagePackId,
+                type,
+                title,
+                description,
+                difficulty,
+                starterTemplate,
+                null,
+                verificationPolicy,
+                status,
+                createdAt,
+                attempts);
+    }
+
+    /** 仅由持久化适配器恢复包含选择题快照的已有聚合。 */
+    public static PracticeTask reconstitute(
+            long id,
+            long journeyId,
+            long learnUnitId,
+            String languagePackId,
+            String type,
+            String title,
+            String description,
+            int difficulty,
+            String starterTemplate,
+            ChoiceQuestion choiceQuestion,
+            VerificationPolicy verificationPolicy,
+            PracticeTaskStatus status,
+            Instant createdAt,
+            List<PracticeAttempt> attempts) {
         return new PracticeTask(
                 DomainChecks.id(id, "id"),
                 journeyId,
@@ -122,6 +194,7 @@ public final class PracticeTask {
                 description,
                 difficulty,
                 starterTemplate,
+                choiceQuestion,
                 verificationPolicy,
                 status,
                 createdAt,
@@ -164,6 +237,10 @@ public final class PracticeTask {
         return starterTemplate;
     }
 
+    public ChoiceQuestion choiceQuestion() {
+        return choiceQuestion;
+    }
+
     public VerificationPolicy verificationPolicy() {
         return verificationPolicy;
     }
@@ -203,6 +280,7 @@ public final class PracticeTask {
                 description,
                 difficulty,
                 starterTemplate,
+                choiceQuestion,
                 verificationPolicy,
                 nextStatus,
                 createdAt,
@@ -220,6 +298,7 @@ public final class PracticeTask {
                 description,
                 difficulty,
                 starterTemplate,
+                choiceQuestion,
                 verificationPolicy,
                 status,
                 createdAt,

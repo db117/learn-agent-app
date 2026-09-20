@@ -267,6 +267,29 @@ public final class LearningJourney {
                 : copy(id, chapters, learnUnits, nextItems, status, completedAt);
     }
 
+    /** 只允许为当前学习项写入进入阶段后生成的教学内容。 */
+    public LearningJourney materializeLearnUnitContent(String learnUnitCode, String content) {
+        var current = currentItem();
+        if (current == null || !current.learnUnitCode().equals(learnUnitCode)) {
+            throw new DomainRuleViolation("content must belong to the current LearnUnit");
+        }
+        var generatedContent = DomainChecks.text(content, "content");
+        var nextUnits = new ArrayList<LearnUnit>();
+        boolean found = false;
+        for (var unit : learnUnits) {
+            if (unit.code().equals(learnUnitCode)) {
+                nextUnits.add(unit.withContent(generatedContent));
+                found = true;
+            } else {
+                nextUnits.add(unit);
+            }
+        }
+        if (!found) {
+            throw new DomainRuleViolation("unknown LearnUnit: " + learnUnitCode);
+        }
+        return copy(id, chapters, nextUnits, pathItems, status, completedAt);
+    }
+
     /** 关闭当前项后只自动推进 PENDING，不擅自重新打开 SKIPPED。 */
     private LearningJourney advanceAfterClose(List<LearningPathItem> closedItems, Instant at) {
         var nextItems = new ArrayList<>(closedItems);

@@ -43,18 +43,12 @@ class PracticeRuntimeE2ETest {
                     {
                       "code": "variables",
                       "title": "变量与类型",
-                      "objective": "能够声明变量并理解基本类型",
-                      "concept": "变量保存数据。",
-                      "example": "export const answer: number = 42;",
-                      "practice": "修复 src/index.ts 中的类型错误。"
+                      "objective": "能够声明变量并理解基本类型"
                     },
                     {
                       "code": "functions",
                       "title": "函数",
-                      "objective": "能够声明带类型的函数",
-                      "concept": "函数描述可复用的行为。",
-                      "example": "const add = (a: number, b: number) => a + b;",
-                      "practice": "为函数补充参数和返回值类型。"
+                      "objective": "能够声明带类型的函数"
                     }
                   ]
                 }
@@ -93,7 +87,7 @@ class PracticeRuntimeE2ETest {
         var initialVerification = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
         assertTrue(initialVerification.body().contains("\"verified\":false"));
         long taskId = jsonLong(initialVerification.body(), "taskId");
-        assertEquals("修复 src/index.ts 中的类型错误。",
+        assertEquals("模型生成的 Practice：完成「变量与类型」对应的练习。",
                 practiceTasks.findById(taskId).orElseThrow().description());
 
         putFile("/api/journeys/" + journeyId + "/workspace/files/src/index.ts",
@@ -143,12 +137,45 @@ class PracticeRuntimeE2ETest {
         assertEquals(1, evidence.testCount());
         assertNotNull(evidence.verifiedAt());
 
+        var choiceStart = post("/api/journeys/" + journeyId + "/practice/choice/start", null, 200);
+        long choiceTaskId = jsonLong(choiceStart.body(), "taskId");
+        assertTrue(choiceStart.body().contains("\"prompt\":"));
+        assertTrue(choiceStart.body().contains("\"options\":"));
+        assertTrue(choiceStart.body().contains("模型生成题目"));
+        assertFalse(choiceStart.body().contains("correctOptionId"));
+        var createdChoiceTask = practiceTasks.findById(choiceTaskId).orElseThrow();
+        assertEquals("CHOICE", createdChoiceTask.type());
+        assertTrue(createdChoiceTask.choiceQuestion().prompt().contains("模型生成题目"));
+
+        var wrongChoice = post(
+                "/api/journeys/" + journeyId + "/practice/choice/" + choiceTaskId + "/verify",
+                "{\"optionId\":\"b\"}",
+                200);
+        assertTrue(wrongChoice.body().contains("\"verified\":false"));
+        assertTrue(wrongChoice.body().contains("\"choiceCorrect\":false"));
+        assertSafeVerifyResponse(wrongChoice.body());
+        assertEquals("functions", learningJourneys.findById(learningJourneyId).orElseThrow()
+                .currentItem().learnUnitCode());
+
+        var correctChoice = post(
+                "/api/journeys/" + journeyId + "/practice/choice/" + choiceTaskId + "/verify",
+                "{\"optionId\":\"a\"}",
+                200);
+        assertTrue(correctChoice.body().contains("\"verified\":true"));
+        assertTrue(correctChoice.body().contains("\"choiceCorrect\":true"));
+        assertSafeVerifyResponse(correctChoice.body());
+        var choiceTask = practiceTasks.findById(choiceTaskId).orElseThrow();
+        assertEquals("VERIFIED", choiceTask.status().name());
+        assertEquals(2, choiceTask.attempts().size());
+        assertTrue(choiceTask.attempts().getLast().evidence().choiceCorrect());
+
         var persisted = learningJourneys.findById(learningJourneyId).orElseThrow();
-        var completed = persisted.pathItems().getFirst();
-        assertEquals(LearningPathItemStatus.COMPLETED, completed.status());
-        assertTrue(completed.practiceVerified());
-        assertEquals("PRACTICE_EVIDENCE", completed.passReason());
-        assertEquals("functions", persisted.currentItem().learnUnitCode());
+        assertEquals("COMPLETED", persisted.status().name());
+        assertEquals(LearningPathItemStatus.COMPLETED, persisted.pathItems().getFirst().status());
+        assertEquals(LearningPathItemStatus.COMPLETED, persisted.pathItems().getLast().status());
+        assertTrue(persisted.pathItems().getLast().practiceVerified());
+        assertEquals("PRACTICE_EVIDENCE", persisted.pathItems().getLast().passReason());
+        assertNull(persisted.currentItem());
     }
 
     private HttpResponse<String> get(String path, int expectedStatus) throws Exception {
@@ -204,7 +231,8 @@ class PracticeRuntimeE2ETest {
     private static void assertSafeVerifyResponse(String body) {
         var fields = Set.of(
                 "taskId", "status", "verified", "compilePassed", "testsPassed", "testCount",
-                "submittedFiles", "verifiedAt", "learningJourneyStatus", "currentLearnUnitCode", "advanced");
+                "submittedFiles", "verifiedAt", "learningJourneyStatus", "currentLearnUnitCode", "advanced",
+                "choiceCorrect");
         for (var field : fields) {
             assertTrue(body.contains("\"" + field + "\":"), () -> "Missing VerifyResponse field: " + field);
         }

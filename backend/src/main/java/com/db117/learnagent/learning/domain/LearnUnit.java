@@ -13,7 +13,7 @@ import java.util.Set;
  * @param code Journey 内稳定且唯一的 LearnUnit 编码
  * @param title LearnUnit 的展示标题
  * @param objective 学习者完成本单元后应达到的目标
- * @param content 大模型为当前 Journey 生成的内容快照
+ * @param content 进入当前 LearnUnit 后由大模型生成的内容快照；路径确认时可以为空
  * @param sequence 用于没有前置关系时的确定性排序
  * @param chapterCode 当前 Journey 内所属 Chapter 的编码
  * @param prerequisiteCodes 当前 Journey 内必须先满足的 LearnUnit 编码集合
@@ -35,7 +35,10 @@ public record LearnUnit(
         code = DomainChecks.text(code, "code");
         title = DomainChecks.text(title, "title");
         objective = DomainChecks.text(objective, "objective");
-        content = DomainChecks.text(content, "content");
+        if (content == null) {
+            throw new DomainRuleViolation("content must not be null");
+        }
+        content = content.strip();
         chapterCode = DomainChecks.text(chapterCode, "chapterCode");
         if (sequence < 0) {
             throw new DomainRuleViolation("sequence must not be negative");
@@ -81,6 +84,19 @@ public record LearnUnit(
                 title,
                 objective,
                 content,
+                sequence,
+                chapterCode,
+                prerequisiteCodes);
+    }
+
+    /** 返回写入当前 LearnUnit 的教学内容快照；不改变标题、目标或路径关系。 */
+    public LearnUnit withContent(String generatedContent) {
+        return new LearnUnit(
+                id,
+                code,
+                title,
+                objective,
+                generatedContent,
                 sequence,
                 chapterCode,
                 prerequisiteCodes);

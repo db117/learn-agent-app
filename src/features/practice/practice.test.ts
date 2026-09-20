@@ -62,4 +62,23 @@ describe("PracticePanel", () => {
         expect(markup).toContain("TS2322");
         expect(markup).toContain("failed to start COMPILE: pnpm.cmd");
     });
+
+    it("renders a choice question without exposing an answer field", () => {
+        const markup = renderToStaticMarkup(createElement(PracticePanel, panelProps({
+            choiceQuestion: {
+                taskId: 7,
+                title: "选择题：变量",
+                prompt: "下列哪项符合本单元目标？",
+                options: [
+                    {id: "objective", label: "理解变量类型"},
+                    {id: "distractor", label: "配置数据库"},
+                ],
+            },
+            selectedChoiceId: "objective",
+        })));
+        expect(markup).toContain("开始选择题");
+        expect(markup).toContain("下列哪项符合本单元目标？");
+        expect(markup).toContain("理解变量类型");
+        expect(markup).not.toContain("correctOptionId");
+    });
 });

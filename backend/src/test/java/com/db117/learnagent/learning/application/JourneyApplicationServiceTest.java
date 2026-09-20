@@ -18,7 +18,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JourneyApplicationServiceTest {
     private static final Instant CREATED_AT = Instant.parse("2026-01-01T00:00:00Z");
@@ -124,6 +123,29 @@ class JourneyApplicationServiceTest {
             }
             """;
 
+    private static final String OUTLINE_PLAN = """
+            {
+              "chapters": [
+                {
+                  "code": "basics",
+                  "title": "基础",
+                  "units": [
+                    {
+                      "code": "variables",
+                      "title": "变量与类型",
+                      "objective": "能够声明变量并理解基本类型"
+                    },
+                    {
+                      "code": "functions",
+                      "title": "函数",
+                      "objective": "能够声明带类型的函数"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+
     @Test
     void confirmingPlanningDraftCreatesAndAttachesLearningJourney() {
         var learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
@@ -142,12 +164,31 @@ class JourneyApplicationServiceTest {
 
         assertNotNull(learningJourneys.saved);
         assertEquals("typescript", learningJourneys.saved.languagePackId());
-        assertTrue(learningJourneys.saved.learnUnits().getFirst().content().contains("## Concept"));
-        assertTrue(learningJourneys.saved.learnUnits().getFirst().content().contains("## Example"));
+        assertEquals("", learningJourneys.saved.learnUnits().getFirst().content());
         assertEquals(List.of("variables", "functions"),
                 learningJourneys.saved.learnUnits().stream().map(value -> value.code()).toList());
         assertEquals(learningJourneys.saved.id(), confirmed.learningJourneyId());
         assertEquals(learningJourneys.saved.id(), journeys.attachedLearningJourneyId);
+    }
+
+    @Test
+    void confirmingMarkdownWrappedPlanningDraftExtractsJsonObject() {
+        var learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
+        var journey = new Journey(
+                7L, learner.id(), "学习 TypeScript", com.db117.learnagent.learning.domain.JourneyStatus.ACTIVE,
+                CREATED_AT, null, null, true);
+        var learningJourneys = new FakeLearningJourneyRepository();
+        var journeys = new FakeJourneyRepository(journey);
+        var service = new JourneyApplicationService(
+                new FakeLearnerRepository(learner),
+                journeys,
+                learningJourneys,
+                Clock.fixed(CREATED_AT, ZoneOffset.UTC));
+
+        service.confirmPlan(journey.id(), "模型回答：\n```json\n" + PLAN + "\n```\n");
+
+        assertEquals(List.of("variables", "functions"),
+                learningJourneys.saved.learnUnits().stream().map(value -> value.code()).toList());
     }
 
     @Test
@@ -188,6 +229,26 @@ class JourneyApplicationServiceTest {
         assertEquals(6, completed.pathItems().stream()
                 .filter(item -> item.status().name().equals("COMPLETED"))
                 .count());
+    }
+
+    @Test
+    void confirmingPlanMaterializesOnlyTheLearningOutline() {
+        var learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
+        var journey = new Journey(
+                7L, learner.id(), "学习 TypeScript", com.db117.learnagent.learning.domain.JourneyStatus.ACTIVE,
+                CREATED_AT, null, null, true);
+        var learningJourneys = new FakeLearningJourneyRepository();
+        var service = new JourneyApplicationService(
+                new FakeLearnerRepository(learner),
+                new FakeJourneyRepository(journey),
+                learningJourneys,
+                Clock.fixed(CREATED_AT, ZoneOffset.UTC));
+
+        service.confirmPlan(journey.id(), OUTLINE_PLAN);
+
+        assertEquals("变量与类型", learningJourneys.saved.learnUnits().getFirst().title());
+        assertEquals("能够声明变量并理解基本类型", learningJourneys.saved.learnUnits().getFirst().objective());
+        assertEquals("", learningJourneys.saved.learnUnits().getFirst().content());
     }
 
     @Test

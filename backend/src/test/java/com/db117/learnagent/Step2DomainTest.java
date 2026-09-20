@@ -78,6 +78,28 @@ class Step2DomainTest {
     }
 
     @Test
+    void outlineLearnUnitCanReceiveContentWhenLearningStarts() {
+        var outline = LearnUnit.create("a", "A", "Learn A", "", 0, "basics", Set.of());
+
+        var materialized = outline.withContent("## Concept\nA concept\n## Practice\nDo A");
+
+        assertEquals("", outline.content());
+        assertEquals("Do A", materialized.practiceInstruction());
+    }
+
+    @Test
+    void learningJourneyCanPersistContentForItsCurrentUnit() {
+        var journey = journey().withId(101);
+
+        var materialized = journey.materializeLearnUnitContent(
+                "variables", "## Concept\nVariables\n## Practice\nFix variables");
+
+        assertEquals("## Concept\nVariables\n## Practice\nFix variables",
+                materialized.learnUnit("variables").content());
+        assertEquals("Loops content", materialized.learnUnit("loops").content());
+    }
+
+    @Test
     void practiceKeepsFailedEvidenceAndStopsAfterVerification() {
         var policy = new VerificationPolicy(true, true, false, false);
         var task = PracticeTask.create(

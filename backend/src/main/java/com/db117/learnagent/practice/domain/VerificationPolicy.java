@@ -9,15 +9,25 @@ import com.db117.learnagent.shared.domain.DomainRuleViolation;
  * @param requireTests 是否必须有通过的测试且至少执行一个测试
  * @param requireLint 是否必须通过 Lint
  * @param requireRuntime 是否必须运行通过
+ * @param requireChoice 是否必须选择正确答案
  */
 public record VerificationPolicy(
         boolean requireCompile,
         boolean requireTests,
         boolean requireLint,
-        boolean requireRuntime) {
+        boolean requireRuntime,
+        boolean requireChoice) {
+
+    public VerificationPolicy(
+            boolean requireCompile,
+            boolean requireTests,
+            boolean requireLint,
+            boolean requireRuntime) {
+        this(requireCompile, requireTests, requireLint, requireRuntime, false);
+    }
 
     public VerificationPolicy {
-        if (!requireCompile && !requireTests && !requireLint && !requireRuntime) {
+        if (!requireCompile && !requireTests && !requireLint && !requireRuntime && !requireChoice) {
             throw new DomainRuleViolation("verification policy must require at least one check");
         }
     }
@@ -33,6 +43,9 @@ public record VerificationPolicy(
         if (requireLint && !evidence.lintPassed()) {
             return false;
         }
-        return !requireRuntime || evidence.runtimeResult() == RuntimeResult.PASSED;
+        if (requireRuntime && evidence.runtimeResult() != RuntimeResult.PASSED) {
+            return false;
+        }
+        return !requireChoice || evidence.choiceCorrect();
     }
 }

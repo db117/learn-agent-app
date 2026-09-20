@@ -43,6 +43,18 @@ POST /api/journeys/{journeyId}/practice/verify
 → React PracticeWorkspace
 ```
 
+选择题使用同一条 Practice REST 链路，但答案判定在后端完成：
+
+```text
+POST /api/journeys/{journeyId}/practice/choice/start
+→ ChoiceStartResponse（只含题干和选项）
+→ React PracticeWorkspace
+→ POST /api/journeys/{journeyId}/practice/choice/{taskId}/verify
+→ VerifyResponse
+```
+
+ChoiceStartResponse 不返回正确选项；选择题和编码题都通过 PracticeEvidence 回写 Learning Domain。
+
 `VerifyResponse` 只包含验证摘要、相对提交文件和 Learning Domain 推进结果；验证
 成功时才会写入 `PracticeEvidence` 并推动领域状态，失败时不会推进领域状态。当前
 没有把这条 REST 链路复制到 Tutor Session 的 SSE 总线：这样既没有稳定的 SSE 消费者，
@@ -52,6 +64,10 @@ POST /api/journeys/{journeyId}/practice/verify
 `TutorEvent`。只有在出现明确的跨组件 SSE 消费场景后，才将 `practice.verified`
 加入 `TutorEventType`，并通过同一安全投影提供；不得直接暴露 AgentScope raw event、
 宿主路径、完整日志、提示词、答案、secret 或私有推理。
+
+规划确认只保存 LearnUnit 大纲；进入 Learn Mode 时，`GET /api/journeys/{journeyId}/learning`
+和 LEARNING Session 的上下文装配会触发当前 LearnUnit 内容的按需生成。生成后的
+Concept、Example、Practice 作为 Domain 内容快照返回，后续 Practice REST 只读取该快照。
 
 ## 不展示 Chain-of-Thought
 

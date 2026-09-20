@@ -10,17 +10,11 @@ const plan = JSON.stringify({
                 code: "variables",
                 title: "变量与类型",
                 objective: "能够声明变量并理解基本类型",
-                concept: "变量保存数据，并且可以通过类型约束减少错误。",
-                example: "export const answer: number = 42;",
-                practice: "修复 src/index.ts 中的类型错误。",
             },
             {
                 code: "functions",
                 title: "函数",
                 objective: "能够声明带类型的函数",
-                concept: "函数描述可复用的行为。",
-                example: "const add = (a: number, b: number) => a + b;",
-                practice: "为函数补充参数和返回值类型。",
             },
         ],
     }],
@@ -36,6 +30,25 @@ function textContent(value) {
 function responseContent(body) {
     const messages = Array.isArray(body.messages) ? body.messages : [];
     const prompt = textContent(messages);
+    if (prompt.includes("CHOICE_QUESTION_GENERATION")) {
+        return JSON.stringify({
+            prompt: "模型生成选择题：请判断本单元的核心目标。",
+            options: [
+                {id: "a", label: "完成当前 LearnUnit 的学习目标。"},
+                {id: "b", label: "只修改无关的界面样式。"},
+                {id: "c", label: "跳过当前学习目标。"},
+                {id: "d", label: "删除本单元的练习。"},
+            ],
+            correctOptionId: "d",
+        });
+    }
+    if (prompt.includes("LEARN_UNIT_CONTENT_GENERATION")) {
+        return JSON.stringify({
+            concept: "模型生成的 Concept：理解当前 LearnUnit 的核心概念。",
+            example: "export const answer: number = 42;",
+            practice: "模型生成的 Practice：完成当前 LearnUnit 的编码练习。",
+        });
+    }
     if (prompt.includes("session-mode: PLANNING")) return plan;
     const current = prompt.match(/current-learn-unit:\s*([^\s<]+)/)?.[1] ?? "current";
     return `已进入 ${current}。Concept、Example 和 Practice 已准备好，请完成当前练习后再继续。`;

@@ -11,11 +11,13 @@
 
 ## 目标与范围
 
-在真实 Practice 基础上重建课程系统。LearnUnit 关联 Concept、Example、PracticeTask。
+在真实 Practice 基础上重建课程系统。规划确认时只物化 LearnUnit 的 code、title、objective 大纲；进入当前 LearnUnit
+后，应用层调用模型生成并保存 Concept、Example 和 Practice 内容快照。LearnUnit 关联这些内容和 PracticeTask；PracticeTask
+可以是编码题或选择题。
 
 ## 完整学习闭环
 
-学习 Runtime 读取 Bootstrap 已确认的 LearningJourney，复用当前 `LEARNING Tutor Session`，并从当前
+学习 Runtime 读取 Bootstrap 已确认的 LearningJourney，进入当前 LearnUnit 时先生成或复用内容快照，再复用当前
 `LearningPathItem` 加载 current LearnUnit。路径按章节顺序展开；进入一个空的 LEARNING Session 时，应用自动
 发送当前单元的开始提示。Session 可以组织 Explain、Example、Practice 的交互，但不拥有学习进度。
 
@@ -32,6 +34,7 @@ ExecutionEnvironment 的客观验证结果回写。Tutor、UI 和 AgentScope Ses
 开始提示。未完成的后续项保持锁定；若当前项已完成且不存在下一个 `PENDING` 项，LearningJourney 进入
 `COMPLETED`，Journey 自身仍只管理 `ACTIVE/ARCHIVED` 生命周期。
 
-**DoD：**至少一个 TypeScript LearnUnit 可以完成 Explain → Example → Practice → PracticeEvidence 的整条链路；
+**DoD：**至少一个 TypeScript LearnUnit 可以完成 Explain → Example → Practice → PracticeEvidence 的整条链路；编码题和选择题都必须通过同一条
+Learning Domain 进度链路，
 PracticeEvidence 通过后，能继续加载下一个 LearnUnit，或在路径末尾恢复为 LearningJourney `COMPLETED`；
 全程不让 Agent State 取代 Domain State。

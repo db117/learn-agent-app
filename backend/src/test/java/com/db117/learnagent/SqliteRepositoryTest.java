@@ -139,6 +139,27 @@ class SqliteRepositoryTest {
     }
 
     @Test
+    void journeyRepositoryPersistsContentGeneratedAfterPathConfirmation() {
+        var dataSource = dataSource();
+        try (var anchor = dataSource.getConnection()) {
+            new SqliteSchemaInitializer(dataSource).initialize();
+            var learnerRepository = new SqliteLearnerRepository(dataSource);
+            var journeyRepository = new SqliteLearningJourneyRepository(dataSource);
+            var learner = learnerRepository.save(Learner.create("Alice", "Java engineer", T0));
+            var saved = journeyRepository.save(outlineJourney(learner.id()));
+
+            journeyRepository.save(saved.materializeLearnUnitContent(
+                    "variables", "## Concept\nVariables\n## Practice\nFix variables"));
+
+            var loaded = journeyRepository.findById(saved.id()).orElseThrow();
+            assertEquals("## Concept\nVariables\n## Practice\nFix variables",
+                    loaded.learnUnit("variables").content());
+        } catch (SQLException error) {
+            throw new IllegalStateException(error);
+        }
+    }
+
+    @Test
     void initializerRejectsUnknownExistingBusinessTables() throws SQLException {
         var dataSource = dataSource();
         try (var connection = dataSource.getConnection()) {
@@ -167,6 +188,19 @@ class SqliteRepositoryTest {
                 "Java Journey",
                 List.of(chapter),
                 List.of(loops, variables),
+                T0);
+    }
+
+    private LearningJourney outlineJourney(long learnerId) {
+        var chapter = Chapter.create("basics", "Basics", 0);
+        var variables = LearnUnit.create(
+                "variables", "Variables", "Use values", "", 0, "basics", Set.of());
+        return LearningJourney.create(
+                learnerId,
+                "java",
+                "Java Journey",
+                List.of(chapter),
+                List.of(variables),
                 T0);
     }
 }

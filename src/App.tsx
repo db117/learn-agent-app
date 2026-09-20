@@ -13,24 +13,18 @@ const PLANNING_PROMPT = `请根据我的 Learner 背景和 Journey 目标生成�
         {
           "code": "lowercase-kebab-case",
           "title": "学习单元标题",
-          "objective": "完成本单元后能做到什么",
-          "concept": "Explain 内容",
-          "example": "Example 内容或代码",
-          "practice": "需要学习者完成的 Practice"
+          "objective": "完成本单元后能做到什么"
         },
         {
           "code": "another-unit",
           "title": "另一个学习单元",
-          "objective": "完成本单元后能做到什么",
-          "concept": "Explain 内容",
-          "example": "Example 内容或代码",
-          "practice": "需要学习者完成的 Practice"
+          "objective": "完成本单元后能做到什么"
         }
       ]
     }
   ]
 }
-每个 unit 是一个 LearnUnit；章节和单元必须按学习顺序排列。用户开始某个单元后，TutorAgent 再向用户讲解 Concept、Example 和 Practice；Practice 通过后才完成该单元。`;
+每个 unit 只描述学习大纲，不要生成 Concept、Example、Practice 或任何题目内容；用户进入某个 LearnUnit 后，系统再通过大模型生成该阶段的 Concept、Example 和 Practice。章节和单元必须按学习顺序排列。Practice 通过后才完成该单元。`;
 const LEARNING_PROMPT = "开始当前 LearnUnit。请根据当前单元目标，先用清晰的 Concept 和 Example 讲解，再明确说明 Practice 要求；等待学习者完成 Practice 后再推进，不要提前标记完成。";
 
 type Health = Record<string, unknown>;

@@ -2,6 +2,7 @@ package com.db117.learnagent.agent.application;
 
 import com.db117.learnagent.agent.api.TutorSessionMode;
 import com.db117.learnagent.agent.domain.WorkspaceBinding;
+import com.db117.learnagent.learning.application.LearnUnitContentService;
 import com.db117.learnagent.learning.domain.Journey;
 import com.db117.learnagent.learning.domain.JourneyRepository;
 import com.db117.learnagent.learning.domain.JourneyStatus;
@@ -18,15 +19,18 @@ public class TutorContextAssembler {
     private final LearnerRepository learnerRepository;
     private final JourneyRepository journeyRepository;
     private final LearningJourneyRepository learningJourneyRepository;
+    private final LearnUnitContentService learnUnitContent;
 
     @Inject
     public TutorContextAssembler(
             LearnerRepository learnerRepository,
             JourneyRepository journeyRepository,
-            LearningJourneyRepository learningJourneyRepository) {
+            LearningJourneyRepository learningJourneyRepository,
+            LearnUnitContentService learnUnitContent) {
         this.learnerRepository = learnerRepository;
         this.journeyRepository = journeyRepository;
         this.learningJourneyRepository = learningJourneyRepository;
+        this.learnUnitContent = learnUnitContent;
     }
 
     public TutorContext assemble(long learnerId, long journeyId) {
@@ -80,6 +84,7 @@ public class TutorContextAssembler {
         if (journey.learnerId() != learnerId) {
             throw TutorRequestException.notFound("JOURNEY_NOT_FOUND", "学习路径不存在");
         }
+        journey = learnUnitContent.ensureCurrentContent(journey);
         return buildLearningContext(learnerId, parent, journey);
     }
 

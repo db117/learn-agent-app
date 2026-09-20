@@ -1,10 +1,17 @@
 package com.db117.learnagent.learning.api;
 
 import com.db117.learnagent.learning.application.JourneyApplicationService;
+import com.db117.learnagent.learning.application.LearnUnitContentService;
 import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import com.db117.learnagent.workspace.application.WorkspaceInitializationException;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
 /** Learner/Journey 引导 API；UI 只操作用户目标，不直接接触 AgentScope。 */
@@ -14,12 +21,15 @@ import jakarta.ws.rs.core.MediaType;
 public class JourneyResource {
     private final JourneyApplicationService journeys;
     private final WorkspaceApplicationService workspaces;
+    private final LearnUnitContentService learnUnitContent;
 
     public JourneyResource(
             JourneyApplicationService journeys,
-            WorkspaceApplicationService workspaces) {
+            WorkspaceApplicationService workspaces,
+            LearnUnitContentService learnUnitContent) {
         this.journeys = journeys;
         this.workspaces = workspaces;
+        this.learnUnitContent = learnUnitContent;
     }
 
     @GET
@@ -76,7 +86,9 @@ public class JourneyResource {
     @GET
     @Path("/journeys/{journeyId}/learning")
     public LearningProgressResponse learning(@PathParam("journeyId") long journeyId) {
-        return LearningProgressResponse.from(journeyId, journeys.learningJourneyFor(journeyId));
+        return LearningProgressResponse.from(
+                journeyId,
+                learnUnitContent.ensureCurrentContent(journeys.learningJourneyFor(journeyId)));
     }
 
 }

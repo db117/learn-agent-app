@@ -14,9 +14,10 @@ Agentic Programming Learning Environment（智能编程学习环境）。
 
 - Learner：本地当前用户的背景能力档案；背景描述由用户确认，是 Tutor 使用背景的唯一事实源。
 - Journey：Learner 要学习或完成的目标描述；一个 Learner 可以拥有多个 Journey，同时只有一个当前 Journey。
-- LearnUnit：学习者需要学会什么；具体内容由大模型为单个 LearningJourney 生成，以 Journey 内稳定 `code` 标识，不跨 Journey
-  共享，创建后不可原地修改。
-- PracticeTask：学习者需要构建或修复什么；一个 LearnUnit 可以有多个 PracticeTask，一个通过验证的任务即可满足练习条件。
+- LearnUnit：学习者需要学会什么；规划确认时只保存大纲，进入当前 LearnUnit 后再由大模型生成 Concept、Example 和 Practice，
+  以 Journey 内稳定 `code` 标识，不跨 Journey 共享，内容快照生成后不可原地修改。
+- PracticeTask：学习者需要构建、修复或回答什么；类型可为编码题或选择题。一个 LearnUnit 可以有多个
+  PracticeTask，一个通过验证的任务即可满足练习条件。
 - Skill：Agent 在重复场景中应如何工作。
 - LanguagePack：面向一种编程语言的产品级支持包。
 - Domain State：权威的学习事实。
@@ -27,9 +28,9 @@ Agentic Programming Learning Environment（智能编程学习环境）。
   `SKIPPED`，目标项转为 `CURRENT`；`SKIPPED` 可以再次激活后完成。
 - Chapter：Journey 内 LearnUnit 的有序分组，不跨 Journey 共享。
 - PracticeAttempt：一次独立的练习提交记录。
-- PracticeEvidence：练习提交产生的客观、可验证证据，包含编译、测试、Lint、运行结果、提交文件和验证时间；是否通过由
+- PracticeEvidence：练习提交产生的客观、可验证证据，包含编译、测试、Lint、运行结果、提交文件、选择题判定和验证时间；是否通过由
   `verificationPolicy` 确定性判定。
-- VerificationPolicy：PracticeTask 要求的固定检查项，包括编译、测试、Lint 和运行。
+- VerificationPolicy：PracticeTask 要求的固定检查项，包括编译、测试、Lint、运行和选择题答案。
 - Project：与一个 LearningJourney 一一对应的真实项目，拥有必需且唯一的 `journeyId`。
 - ProjectMilestone：归属于一个 Project 的领域进度节点，不等同于 Agent Plan。
 - Mastery：由通过的 PracticeEvidence 按确定性规则计算出的掌握状态；按 `journeyId + learnUnitId` 隔离。
@@ -40,7 +41,7 @@ Agentic Programming Learning Environment（智能编程学习环境）。
 - TutorAgent：唯一面向用户的主编排 Agent。
 
 PracticeAttempt 与 PracticeEvidence 是不可变历史记录；重试或重新提交会形成新的历史记录，不覆盖既有记录。
-LearnUnit 和 Chapter 作为 Journey 内内容快照创建后不可原地修改；重新生成会产生新的内容对象。
+LearnUnit 和 Chapter 的大纲在确认规划时创建；LearnUnit 进入当前阶段后补写一次内容快照，之后不可原地修改；重新生成会产生新的内容对象。
 LearningJourney 在全部 LearningPathItem 完成或跳过时可以完成；显式恢复跳过项时可以重新进入 `ACTIVE`。Journey 自身只管理目标的
 `ACTIVE/ARCHIVED` 生命周期，不复制 LearningJourney 的完成事实。
 Practice 只能针对 `CURRENT` 的 LearningPathItem 验证；`SKIPPED` 必须先恢复，`COMPLETED` 拒绝新验证。

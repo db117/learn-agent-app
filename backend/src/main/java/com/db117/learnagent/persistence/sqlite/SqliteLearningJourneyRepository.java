@@ -126,7 +126,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
     }
 
     private LearningJourney updateExisting(Connection connection, LearningJourney journey) throws SQLException {
-        // 已有内容快照只读；更新阶段只写聚合状态和路径进度。
+        // 已有路径结构保持不变；进入 LearnUnit 后允许补写一次教学内容快照。
         long journeyId = journey.id();
         try (var statement = connection.prepareStatement(
                 "UPDATE learning_journey SET title = ?, status = ?, completed_at = ? "
@@ -140,6 +140,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
             SqliteSupport.requireUpdated(statement.executeUpdate(), "learning journey", journeyId);
         }
         requirePersistedContent(journey);
+        updateLearnUnitContent(connection, journeyId, journey.learnUnits());
         var unitIds = journey.learnUnits().stream().collect(java.util.stream.Collectors.toMap(
                 LearnUnit::code, LearnUnit::id));
         var persistedItems = updatePathItems(connection, journeyId, unitIds, journey.pathItems());
@@ -160,6 +161,19 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         if (journey.chapters().stream().anyMatch(chapter -> chapter.id() == null)
                 || journey.learnUnits().stream().anyMatch(unit -> unit.id() == null)) {
             throw new IllegalStateException("persisted journey content cannot be replaced or added");
+        }
+    }
+
+    private void updateLearnUnitContent(Connection connection, long journeyId, List<LearnUnit> units)
+            throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "UPDATE learn_unit SET content = ? WHERE id = ? AND journey_id = ?")) {
+            for (var unit : units) {
+                statement.setString(1, unit.content());
+                statement.setLong(2, unit.id());
+                statement.setLong(3, journeyId);
+                SqliteSupport.requireUpdated(statement.executeUpdate(), "learn unit", unit.id());
+            }
         }
     }
 
