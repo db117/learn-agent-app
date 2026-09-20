@@ -430,41 +430,57 @@ public class TutorSessionService {
         return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
+    /**
+     * 创建 Session 请求中的 Domain 标识和运行模式。
+     *
+     * @param learnerId 请求中的 Learner Domain ID
+     * @param journeyId 请求中的 Journey Domain ID
+     * @param mode 规划或学习模式
+     */
     private record SessionIds(
-            /** 请求中的 Learner Domain ID。 */
             long learnerId,
-            /** 请求中的 Journey Domain ID。 */
             long journeyId,
-            /** 规划或学习模式。 */
             TutorSessionMode mode) {
     }
 
+    /**
+     * 已完成边界校验的 Tutor 消息输入。
+     *
+     * @param turnId 已规范化的客户端 Turn ID
+     * @param text 经边界校验的学习者输入
+     */
     private record MessageInput(
-            /** 已规范化的客户端 Turn ID。 */
             String turnId,
-            /** 经边界校验的学习者输入。 */
             String text) {
     }
 
+    /**
+     * Tutor Session 与 Domain 上下文的稳定绑定。
+     *
+     * @param sessionId 稳定的 Session ID
+     * @param userId AgentScope 状态存储使用的用户分区
+     * @param learnerId 绑定的 Learner Domain ID
+     * @param journeyId 绑定的 Journey Domain ID
+     * @param mode 绑定的 Tutor Session 模式
+     * @param currentLearnUnitCode 创建绑定时的当前 LearnUnit 编码
+     */
     private record SessionBinding(
-            /** 稳定的 Session ID。 */
             String sessionId,
-            /** AgentScope 状态存储使用的用户分区。 */
             String userId,
-            /** 绑定的 Learner Domain ID。 */
             long learnerId,
-            /** 绑定的 Journey Domain ID。 */
             long journeyId,
-            /** 绑定的 Tutor Session 模式。 */
             TutorSessionMode mode,
-            /** 创建绑定时的当前 LearnUnit 编码。 */
             String currentLearnUnitCode) {
     }
 
+    /**
+     * Agent State 中已记录的 Turn 快照。
+     *
+     * @param status Agent State 中记录的 Turn 终态
+     * @param answer 已完成 Turn 的公开回答；失败或取消时为空
+     */
     private record TurnSnapshot(
-            /** Agent State 中记录的 Turn 终态。 */
             String status,
-            /** 已完成 Turn 的公开回答；失败或取消时为空。 */
             String answer) {
     }
 

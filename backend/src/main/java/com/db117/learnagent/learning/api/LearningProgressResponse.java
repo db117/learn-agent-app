@@ -6,33 +6,36 @@ import com.db117.learnagent.learning.domain.LearningPathItemStatus;
 import java.util.List;
 import java.util.Objects;
 
-/** Learning Session 使用的稳定进度投影；PracticeEvidence 是当前课程的完成依据。 */
+/**
+ * Learning Session 使用的稳定进度投影；PracticeEvidence 是当前课程的完成依据。
+ *
+ * @param journeyId URL 中父 Journey 的主键
+ * @param learningJourneyId 已确认 LearningJourney 的主键
+ * @param status LearningJourney 的 ACTIVE/COMPLETED 状态
+ * @param currentLearnUnitCode 当前 LearnUnit 编码；路径完成后为空
+ * @param currentLearnUnitTitle 当前 LearnUnit 标题；路径完成后为空
+ * @param currentLearnUnitObjective 当前 LearnUnit 目标；路径完成后为空
+ * @param currentLearnUnitContent 当前 LearnUnit 的 Concept/Example 内容快照；路径完成后为空
+ * @param currentMasteryScore 当前项的最佳评估分数
+ * @param currentBestScore 当前项的历史最高评估分数
+ * @param practiceVerified 当前项是否已有通过的 PracticeEvidence
+ * @param completedCount 已完成的路径项数量
+ * @param totalCount 路径项总数
+ * @param chapters 按课程顺序投影的章节和单元状态；UI 不需要读取 Agent State
+ */
 public record LearningProgressResponse(
-        /** URL 中父 Journey 的主键。 */
         long journeyId,
-        /** 已确认 LearningJourney 的主键。 */
         long learningJourneyId,
-        /** LearningJourney 的 ACTIVE/COMPLETED 状态。 */
         String status,
-        /** 当前 LearnUnit 编码；路径完成后为空。 */
         String currentLearnUnitCode,
-        /** 当前 LearnUnit 标题；路径完成后为空。 */
         String currentLearnUnitTitle,
-        /** 当前 LearnUnit 目标；路径完成后为空。 */
         String currentLearnUnitObjective,
-        /** 当前 LearnUnit 的 Concept/Example 内容快照；路径完成后为空。 */
         String currentLearnUnitContent,
-        /** 当前项的最佳评估分数。 */
         int currentMasteryScore,
-        /** 当前项的历史最高评估分数。 */
         int currentBestScore,
-        /** 当前项是否已有通过的 PracticeEvidence。 */
         boolean practiceVerified,
-        /** 已完成的路径项数量。 */
         int completedCount,
-        /** 路径项总数。 */
         int totalCount,
-        /** 按课程顺序投影的章节和单元状态；UI 不需要读取 Agent State。 */
         List<ChapterProgress> chapters) {
 
     public static LearningProgressResponse from(long journeyId, LearningJourney journey) {
@@ -73,28 +76,34 @@ public record LearningProgressResponse(
                 chapters);
     }
 
-    /** 一个章节在当前 LearningJourney 中的只读路径投影。 */
+    /**
+     * 一个章节在当前 LearningJourney 中的只读路径投影。
+     *
+     * @param code 章节编码
+     * @param title 章节标题
+     * @param units 章节内按顺序排列的单元状态
+     */
     public record ChapterProgress(
-            /** 章节编码。 */
             String code,
-            /** 章节标题。 */
             String title,
-            /** 章节内按顺序排列的单元状态。 */
             List<UnitProgress> units) {
         public ChapterProgress {
             units = List.copyOf(units == null ? List.of() : units);
         }
     }
 
-    /** 一个 LearnUnit 在当前 Journey 中的只读状态。 */
+    /**
+     * 一个 LearnUnit 在当前 Journey 中的只读状态。
+     *
+     * @param code LearnUnit 编码
+     * @param title LearnUnit 标题
+     * @param status PENDING、CURRENT、COMPLETED 或 SKIPPED
+     * @param practiceVerified 是否已有通过的 PracticeEvidence
+     */
     public record UnitProgress(
-            /** LearnUnit 编码。 */
             String code,
-            /** LearnUnit 标题。 */
             String title,
-            /** PENDING、CURRENT、COMPLETED 或 SKIPPED。 */
             String status,
-            /** 是否已有通过的 PracticeEvidence。 */
             boolean practiceVerified) {
     }
 }

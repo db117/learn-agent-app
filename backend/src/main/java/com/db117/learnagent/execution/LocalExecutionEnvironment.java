@@ -287,19 +287,25 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
         return error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
     }
 
-    /** 单个输出流的有限快照。 */
+    /**
+     * 单个输出流的有限快照。
+     *
+     * @param text 已保存的 UTF-8 文本
+     * @param truncated 是否因超过 32 KiB 流上限而截断
+     */
     private record CapturedOutput(
-            /** 已保存的 UTF-8 文本。 */
             String text,
-            /** 是否因超过 32 KiB 流上限而截断。 */
             boolean truncated) {
     }
 
-    /** 两条输出流的读取结果，避免 stderr 写满时阻塞 stdout。 */
+    /**
+     * 两条输出流的读取结果，避免 stderr 写满时阻塞 stdout。
+     *
+     * @param stdout 标准输出快照
+     * @param stderr 标准错误快照
+     */
     private record ProcessOutput(
-            /** 标准输出快照。 */
             CapturedOutput stdout,
-            /** 标准错误快照。 */
             CapturedOutput stderr) {
     }
 }

@@ -1,8 +1,20 @@
 package com.db117.learnagent.practice.application;
 
-import com.db117.learnagent.execution.*;
+import com.db117.learnagent.execution.ExecutionEnvironment;
+import com.db117.learnagent.execution.ExecutionOperation;
+import com.db117.learnagent.execution.ExecutionRequest;
+import com.db117.learnagent.execution.ExecutionResult;
+import com.db117.learnagent.execution.TypeScriptCompileResult;
+import com.db117.learnagent.execution.TypeScriptCompiler;
+import com.db117.learnagent.execution.TypeScriptTestResult;
+import com.db117.learnagent.execution.TypeScriptTestRunner;
 import com.db117.learnagent.learning.application.LearningRequestException;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.Workspace;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -135,15 +147,18 @@ public final class PracticeRuntimeService {
         return Objects.requireNonNull(workspace, "workspace must not be null");
     }
 
-    /** 一次验证的 Runtime 结果和最终写入的 Evidence。 */
+    /**
+     * 一次验证的 Runtime 结果和最终写入的 Evidence。
+     *
+     * @param task 追加 Attempt 后的 PracticeTask 快照
+     * @param compile 本次编译结果
+     * @param tests 本次测试结果
+     * @param evidence 按 PracticeTask 策略计算出的客观证据
+     */
     public record PracticeVerification(
-            /** 追加 Attempt 后的 PracticeTask 快照。 */
             PracticeTask task,
-            /** 本次编译结果。 */
             TypeScriptCompileResult compile,
-            /** 本次测试结果。 */
             TypeScriptTestResult tests,
-            /** 按 PracticeTask 策略计算出的客观证据。 */
             PracticeEvidence evidence) {
         public PracticeVerification {
             task = Objects.requireNonNull(task, "task must not be null");

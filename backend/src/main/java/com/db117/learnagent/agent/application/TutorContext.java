@@ -6,45 +6,48 @@ import com.db117.learnagent.learning.domain.LearningPathItemStatus;
 
 import java.util.Objects;
 
-/** 每个 Turn 重新装配的只读 Domain 投影；不把 Agent State 反向写回 Learning Domain。 */
+/**
+ * 每个 Turn 重新装配的只读 Domain 投影；不把 Agent State 反向写回 Learning Domain。
+ *
+ * @param learnerId Learner 的 Domain ID
+ * @param learnerDisplayName Learner 展示名称
+ * @param learnerBackgroundSummary Learner 自己确认的背景能力描述
+ * @param journeyId Journey 的 Domain ID
+ * @param journeyTitle LearningJourney 标题；规划模式尚未生成时为空
+ * @param journeyGoalDescription 用户确认的 Journey 目标原文
+ * @param languagePackId 当前学习路径使用的 Language Pack；规划模式尚未选择时为空
+ * @param currentLearnUnitCode 当前路径项对应的 LearnUnit 编码；规划模式尚未生成时为空
+ * @param currentLearnUnitTitle 当前 LearnUnit 标题；规划模式尚未生成时为空
+ * @param currentObjective 当前 LearnUnit 学习目标；规划模式尚未生成时为空
+ * @param currentContent 当前 LearnUnit 内容快照；规划模式尚未生成时为空
+ * @param currentStatus 当前路径项状态；规划模式尚未生成时为空
+ * @param masteryScore 当前路径项掌握分数
+ * @param bestScore 当前路径项历史最高评估分数
+ * @param practiceVerified 当前路径项是否已有通过的 Practice 证据
+ * @param completedItemCount 当前 Journey 已完成或跳过的路径项数量
+ * @param totalItemCount 当前 Journey 路径项总数
+ * @param mode 当前 Session 的规划或学习模式
+ * @param workspace 当前只读 Runtime 工作区身份
+ */
 public record TutorContext(
-        /** Learner 的 Domain ID。 */
         long learnerId,
-        /** Learner 展示名称。 */
         String learnerDisplayName,
-        /** Learner 自己确认的背景能力描述。 */
         String learnerBackgroundSummary,
-        /** Journey 的 Domain ID。 */
         long journeyId,
-        /** LearningJourney 标题；规划模式尚未生成时为空。 */
         String journeyTitle,
-        /** 用户确认的 Journey 目标原文。 */
         String journeyGoalDescription,
-        /** 当前学习路径使用的 Language Pack；规划模式尚未选择时为空。 */
         String languagePackId,
-        /** 当前路径项对应的 LearnUnit 编码；规划模式尚未生成时为空。 */
         String currentLearnUnitCode,
-        /** 当前 LearnUnit 标题；规划模式尚未生成时为空。 */
         String currentLearnUnitTitle,
-        /** 当前 LearnUnit 学习目标；规划模式尚未生成时为空。 */
         String currentObjective,
-        /** 当前 LearnUnit 内容快照；规划模式尚未生成时为空。 */
         String currentContent,
-        /** 当前路径项状态；规划模式尚未生成时为空。 */
         LearningPathItemStatus currentStatus,
-        /** 当前路径项掌握分数。 */
         int masteryScore,
-        /** 当前路径项历史最高评估分数。 */
         int bestScore,
-        /** 当前路径项是否已有通过的 Practice 证据。 */
         boolean practiceVerified,
-        /** 当前 Journey 已完成或跳过的路径项数量。 */
         int completedItemCount,
-        /** 当前 Journey 路径项总数。 */
         int totalItemCount,
-        /** 当前 Session 的规划或学习模式。 */
         TutorSessionMode mode,
-        /** 当前只读 Runtime 工作区身份。 */
         WorkspaceBinding workspace) {
 
     public TutorContext {

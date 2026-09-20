@@ -49,12 +49,16 @@ final class TutorEventMapper {
         return List.copyOf(projections);
     }
 
+    /**
+     * AgentScope 事件的安全投影。
+     *
+     * @param type 面向 UI 的稳定事件类型
+     * @param text 不包含工具输入和完整输出的活动文本
+     * @param errorCode 失败时的稳定错误码
+     */
     record Projection(
-            /** 面向 UI 的稳定事件类型。 */
             TutorEventType type,
-            /** 不包含工具输入和完整输出的活动文本。 */
             String text,
-            /** 失败时的稳定错误码。 */
             String errorCode) {
     }
 }

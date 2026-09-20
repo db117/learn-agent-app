@@ -2,11 +2,14 @@ package com.db117.learnagent.agent.domain;
 
 import java.util.Objects;
 
-/** Agent Runtime 当前绑定的工作区身份；不把宿主机路径暴露给 Tutor 或客户端。 */
+/**
+ * Agent Runtime 当前绑定的工作区身份；不把宿主机路径暴露给 Tutor 或客户端。
+ *
+ * @param kind 工作区类型；Agent Runtime 与 Learning Workspace 使用不同类型
+ * @param id 工作区在 Runtime 内的稳定标识
+ */
 public record WorkspaceBinding(
-        /** 工作区类型；Agent Runtime 与 Learning Workspace 使用不同类型。 */
         String kind,
-        /** 工作区在 Runtime 内的稳定标识。 */
         String id) {
 
     public WorkspaceBinding {

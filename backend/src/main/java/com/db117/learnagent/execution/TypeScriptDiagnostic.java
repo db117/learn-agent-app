@@ -2,19 +2,22 @@ package com.db117.learnagent.execution;
 
 import java.util.Objects;
 
-/** TypeScript 编译器输出的稳定诊断字段，不保存代码片段或完整日志。 */
+/**
+ * TypeScript 编译器输出的稳定诊断字段，不保存代码片段或完整日志。
+ *
+ * @param file 产生诊断的 Workspace 相对文件路径
+ * @param line 诊断所在行号，从 1 开始
+ * @param column 诊断所在列号，从 1 开始
+ * @param code TypeScript 诊断编号，例如 {@code TS2322}
+ * @param severity 诊断严重级别
+ * @param message 面向 Tutor 和 UI 的单条诊断消息
+ */
 public record TypeScriptDiagnostic(
-        /** 产生诊断的 Workspace 相对文件路径。 */
         String file,
-        /** 诊断所在行号，从 1 开始。 */
         int line,
-        /** 诊断所在列号，从 1 开始。 */
         int column,
-        /** TypeScript 诊断编号，例如 {@code TS2322}。 */
         String code,
-        /** 诊断严重级别。 */
         Severity severity,
-        /** 面向 Tutor 和 UI 的单条诊断消息。 */
         String message) {
 
     public TypeScriptDiagnostic {

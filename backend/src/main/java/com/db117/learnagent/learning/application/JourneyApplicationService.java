@@ -1,6 +1,14 @@
 package com.db117.learnagent.learning.application;
 
-import com.db117.learnagent.learning.domain.*;
+import com.db117.learnagent.learning.domain.Chapter;
+import com.db117.learnagent.learning.domain.Journey;
+import com.db117.learnagent.learning.domain.JourneyRepository;
+import com.db117.learnagent.learning.domain.JourneyStatus;
+import com.db117.learnagent.learning.domain.LearnUnit;
+import com.db117.learnagent.learning.domain.Learner;
+import com.db117.learnagent.learning.domain.LearnerRepository;
+import com.db117.learnagent.learning.domain.LearningJourney;
+import com.db117.learnagent.learning.domain.LearningJourneyRepository;
 import com.db117.learnagent.shared.domain.DomainRuleViolation;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -10,7 +18,12 @@ import jakarta.inject.Inject;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 本地单用户的 Learner/Journey 引导应用服务；只编排 Domain，不调用 AgentScope 或模型。
@@ -294,29 +307,35 @@ public class JourneyApplicationService {
         return LearningRequestException.badRequest("INVALID_PLAN", message);
     }
 
-    /** 已确认规划中的一个章节及其有序学习单元。 */
+    /**
+     * 已确认规划中的一个章节及其有序学习单元。
+     *
+     * @param code Journey 内稳定的 Chapter 编码
+     * @param title 面向学习者展示的章节名称
+     * @param units 章节内按规划顺序排列的 LearnUnit
+     */
     private record PlanChapter(
-            /** Journey 内稳定的 Chapter 编码。 */
             String code,
-            /** 面向学习者展示的章节名称。 */
             String title,
-            /** 章节内按规划顺序排列的 LearnUnit。 */
             List<PlanUnit> units) {
     }
 
-    /** 已确认规划中的单个学习单元；内容快照仍属于当前 LearningJourney。 */
+    /**
+     * 已确认规划中的单个学习单元；内容快照仍属于当前 LearningJourney。
+     *
+     * @param code Journey 内稳定的 LearnUnit 编码
+     * @param title 面向学习者展示的单元标题
+     * @param objective 当前单元的可验证学习目标
+     * @param concept Explain 内容快照
+     * @param example Example 内容快照
+     * @param practice Practice 任务说明
+     */
     private record PlanUnit(
-            /** Journey 内稳定的 LearnUnit 编码。 */
             String code,
-            /** 面向学习者展示的单元标题。 */
             String title,
-            /** 当前单元的可验证学习目标。 */
             String objective,
-            /** Explain 内容快照。 */
             String concept,
-            /** Example 内容快照。 */
             String example,
-            /** Practice 任务说明。 */
             String practice) {
     }
 

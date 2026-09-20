@@ -8,10 +8,20 @@ import com.db117.learnagent.learning.application.JourneyApplicationService;
 import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.learning.domain.LearningJourney;
 import com.db117.learnagent.practice.application.PracticeRuntimeService;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.practice.domain.PracticeTaskStatus;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
 import java.time.Instant;
@@ -126,17 +136,20 @@ public final class PracticeResource {
         return journeys.recordPracticeVerified(journeyId, learnUnitCode);
     }
 
-    /** 编译结果及可定位的 TypeScript 诊断。 */
+    /**
+     * 编译结果及可定位的 TypeScript 诊断。
+     *
+     * @param success tsc 进程是否成功
+     * @param exitCode tsc 退出码
+     * @param summary 有限 stdout/stderr 摘要
+     * @param durationMillis 执行耗时毫秒数
+     * @param diagnostics 编译器诊断列表
+     */
     public record CompileResponse(
-            /** tsc 进程是否成功。 */
             boolean success,
-            /** tsc 退出码。 */
             int exitCode,
-            /** 有限 stdout/stderr 摘要。 */
             String summary,
-            /** 执行耗时毫秒数。 */
             long durationMillis,
-            /** 编译器诊断列表。 */
             List<TypeScriptDiagnostic> diagnostics) {
         static CompileResponse from(TypeScriptCompileResult result) {
             var execution = result.execution();
@@ -146,19 +159,22 @@ public final class PracticeResource {
         }
     }
 
-    /** Vitest 结果及实际测试数量。 */
+    /**
+     * Vitest 结果及实际测试数量。
+     *
+     * @param success Vitest 进程是否成功
+     * @param exitCode Vitest 退出码
+     * @param summary 有限 stdout/stderr 摘要
+     * @param durationMillis 执行耗时毫秒数
+     * @param testCount 实际执行的测试数量
+     * @param passed 是否满足“进程成功且至少一个测试”的 Runtime 条件
+     */
     public record TestResponse(
-            /** Vitest 进程是否成功。 */
             boolean success,
-            /** Vitest 退出码。 */
             int exitCode,
-            /** 有限 stdout/stderr 摘要。 */
             String summary,
-            /** 执行耗时毫秒数。 */
             long durationMillis,
-            /** 实际执行的测试数量。 */
             int testCount,
-            /** 是否满足“进程成功且至少一个测试”的 Runtime 条件。 */
             boolean passed) {
         static TestResponse from(TypeScriptTestResult result) {
             var execution = result.execution();
@@ -168,26 +184,32 @@ public final class PracticeResource {
         }
     }
 
-    /** 运行 Workspace 内 Node 脚本的请求。 */
+    /**
+     * 运行 Workspace 内 Node 脚本的请求。
+     *
+     * @param scriptPath Workspace 内的 POSIX 相对脚本路径
+     * @param arguments 传给脚本的普通参数，不包含 shell 片段
+     */
     public record ProgramRequest(
-            /** Workspace 内的 POSIX 相对脚本路径。 */
             String scriptPath,
-            /** 传给脚本的普通参数，不包含 shell 片段。 */
             List<String> arguments) {
         public ProgramRequest {
             arguments = List.copyOf(arguments == null ? List.of() : arguments);
         }
     }
 
-    /** Node 脚本的有限执行摘要。 */
+    /**
+     * Node 脚本的有限执行摘要。
+     *
+     * @param success 进程是否成功
+     * @param exitCode 进程退出码
+     * @param summary 有限 stdout/stderr 摘要
+     * @param durationMillis 执行耗时毫秒数
+     */
     public record ProgramResponse(
-            /** 进程是否成功。 */
             boolean success,
-            /** 进程退出码。 */
             int exitCode,
-            /** 有限 stdout/stderr 摘要。 */
             String summary,
-            /** 执行耗时毫秒数。 */
             long durationMillis) {
         static ProgramResponse from(ExecutionResult result) {
             return new ProgramResponse(
@@ -195,29 +217,32 @@ public final class PracticeResource {
         }
     }
 
-    /** PracticeTask 验证后公开的 Domain 摘要。 */
+    /**
+     * PracticeTask 验证后公开的 Domain 摘要。
+     *
+     * @param taskId PracticeTask 的稳定主键
+     * @param status 验证后的任务状态
+     * @param verified 本次 Evidence 是否满足任务策略
+     * @param compilePassed 编译是否通过
+     * @param testsPassed 测试是否通过
+     * @param testCount 实际测试数量
+     * @param submittedFiles 本次验证涉及的文件路径
+     * @param verifiedAt 通过验证时的时间；失败时为空
+     * @param learningJourneyStatus 回写 Learning Domain 后的 LearningJourney 状态
+     * @param currentLearnUnitCode 当前 LearningPathItem 对应的 LearnUnit；路径完成后为空
+     * @param advanced 本次验证是否使路径推进到了下一个单元
+     */
     public record VerifyResponse(
-            /** PracticeTask 的稳定主键。 */
             long taskId,
-            /** 验证后的任务状态。 */
             String status,
-            /** 本次 Evidence 是否满足任务策略。 */
             boolean verified,
-            /** 编译是否通过。 */
             boolean compilePassed,
-            /** 测试是否通过。 */
             boolean testsPassed,
-            /** 实际测试数量。 */
             int testCount,
-            /** 本次验证涉及的文件路径。 */
             List<String> submittedFiles,
-            /** 通过验证时的时间；失败时为空。 */
             Instant verifiedAt,
-            /** 回写 Learning Domain 后的 LearningJourney 状态。 */
             String learningJourneyStatus,
-            /** 当前 LearningPathItem 对应的 LearnUnit；路径完成后为空。 */
             String currentLearnUnitCode,
-            /** 本次验证是否使路径推进到了下一个单元。 */
             boolean advanced) {
         static VerifyResponse from(
                 PracticeTask task,
