@@ -38,7 +38,7 @@ Goal → Plan → Milestones → Build → Research → Debug → Review → Eva
 
 TutorAgent 负责：理解上下文、教学、加载 Skill、使用 Tool、读取 Workspace、创建 Plan、请求 Permission、委派 Subagent、汇总结果。
 
-TutorAgent 不负责直接修改 score、mastery、completion，也不能绕过 Assessment。
+TutorAgent 不负责直接修改 mastery、completion，也不能绕过 PracticeEvidence 验证。
 
 ## 核心成功链路
 
@@ -54,5 +54,5 @@ TutorAgent 不负责直接修改 score、mastery、completion，也不能绕过 
 → 用户修改
 → run_tests
 → PracticeEvidence 写入 Domain
-→ 独立 Assessment
+→ 当前 LearnUnit 完成并推进下一项
 ```

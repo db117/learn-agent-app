@@ -1,6 +1,11 @@
 package com.db117.learnagent.learning.application;
 
-import com.db117.learnagent.learning.domain.*;
+import com.db117.learnagent.learning.domain.Journey;
+import com.db117.learnagent.learning.domain.JourneyRepository;
+import com.db117.learnagent.learning.domain.Learner;
+import com.db117.learnagent.learning.domain.LearnerRepository;
+import com.db117.learnagent.learning.domain.LearningJourney;
+import com.db117.learnagent.learning.domain.LearningJourneyRepository;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -9,7 +14,11 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JourneyApplicationServiceTest {
     private static final Instant CREATED_AT = Instant.parse("2026-01-01T00:00:00Z");
@@ -137,7 +146,6 @@ class JourneyApplicationServiceTest {
         assertTrue(learningJourneys.saved.learnUnits().getFirst().content().contains("## Example"));
         assertEquals(List.of("variables", "functions"),
                 learningJourneys.saved.learnUnits().stream().map(value -> value.code()).toList());
-        assertTrue(learningJourneys.saved.assessments().isEmpty());
         assertEquals(learningJourneys.saved.id(), confirmed.learningJourneyId());
         assertEquals(learningJourneys.saved.id(), journeys.attachedLearningJourneyId);
     }

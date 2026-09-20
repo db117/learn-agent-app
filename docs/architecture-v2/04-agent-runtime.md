@@ -41,10 +41,9 @@ Summarize
 不能直接：
 
 ```text
-update score
 mark unit completed
 change mastery
-skip assessment
+skip current learning item
 write database arbitrarily
 write outside workspace
 run arbitrary shell

@@ -52,6 +52,17 @@ public record LearnUnit(
         prerequisiteCodes = Set.copyOf(prerequisites);
     }
 
+    /** 从 Step 6 的内容快照提取 Practice 说明；旧快照没有该段时回退到学习目标。 */
+    public String practiceInstruction() {
+        var heading = "## Practice";
+        var headingIndex = content.indexOf(heading);
+        if (headingIndex < 0) {
+            return objective;
+        }
+        var instruction = content.substring(headingIndex + heading.length()).strip();
+        return instruction.isBlank() ? objective : instruction;
+    }
+
     public static LearnUnit create(
             String code,
             String title,

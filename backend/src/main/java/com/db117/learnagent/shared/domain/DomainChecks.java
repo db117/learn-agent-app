@@ -21,13 +21,6 @@ public final class DomainChecks {
         return value;
     }
 
-    public static int score(int value) {
-        if (value < 0 || value > 100) {
-            throw new DomainRuleViolation("score must be between 0 and 100");
-        }
-        return value;
-    }
-
     public static long id(long value, String field) {
         if (value <= 0) {
             throw new DomainRuleViolation(field + " must be positive");

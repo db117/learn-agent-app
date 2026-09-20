@@ -65,7 +65,7 @@
 
 1. 不兼容旧架构，不保留历史包袱。
 2. Domain State 与 Agent State 永久分离。
-3. Learning Domain 是 score、mastery、completion、assessment 的唯一权威。
+3. Learning Domain 是 mastery、completion 和 PracticeEvidence 的唯一权威。
 4. Agent 负责如何帮助用户，不直接篡改学习事实。
 5. AgentScope 提供 Runtime；应用层不重复造 Session/Skill/Memory/Plan/Subagent Runtime。
 6. Workspace 是核心概念。

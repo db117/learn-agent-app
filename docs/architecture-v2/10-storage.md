@@ -10,10 +10,6 @@ learning_journey
 chapter
 learn_unit
 learning_path_item
-assessment
-question
-assessment_attempt
-answer
 mastery
 practice_task
 practice_attempt
@@ -39,7 +35,7 @@ agent_session
 ## 文件与数据库边界
 
 数据库：metadata、状态、关系、结构化 evidence、时间戳。LearningJourney、LearnUnit、LearningPathItem、
-Assessment、AssessmentAttempt、PracticeEvidence 和完成/掌握结果属于 Domain State；AgentScope 的 session、
+PracticeEvidence 和完成/掌握结果属于 Domain State；AgentScope 的 session、
 memory、plan、消息和规划草稿属于 Agent State，不写入这些领域事实表。
 
 本地单用户的目标引导至少保存：
@@ -54,12 +50,12 @@ journey.learning_journey_id
 
 Journey 可以先没有 LearningJourney，且此时 `learningJourneyId` 为空；规划草稿和 Tutor 对话继续由 AgentScope
 Runtime 管理，确认后才写入路径事实。确认规划时，应用层按草稿的有序段落/阶段保存多个 LearnUnit、
-LearningPathItem 和 Assessment，再把新 LearningJourney 的 ID 挂回 Journey。后续 Bootstrap 通过该 ID 初始化
+LearningPathItem，再把新 LearningJourney 的 ID 挂回 Journey。后续 Bootstrap 通过该 ID 初始化
 Workspace，并创建/恢复 LEARNING Tutor Session；Session 只读取当前 LearnUnit。
 
-AssessmentAttempt、PracticeAttempt 和 PracticeEvidence 是不可变历史记录；重试产生新记录。Learning Domain
-根据 Assessment score 与通过的 PracticeEvidence 更新当前项的 completion/mastery，并推进下一个 `PENDING`
-项；没有下一个项时将 LearningJourney 置为 `COMPLETED`。
+PracticeAttempt 和 PracticeEvidence 是不可变历史记录；重试产生新记录。Learning Domain 根据通过的
+PracticeEvidence 更新当前项的 completion/mastery，并推进下一个 `PENDING` 项；没有下一个项时将 LearningJourney 置为
+`COMPLETED`。
 
 当前单用户流程不引入并发控制或通用跨聚合事务。确认规划的写入顺序是“保存 LearningJourney，再挂回 Journey”；
 若挂接失败，应用层清理本次新建的 LearningJourney，Journey 保持未挂接状态并允许重试。这里的清理是本流程的

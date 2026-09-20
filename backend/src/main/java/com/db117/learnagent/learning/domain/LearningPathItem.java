@@ -12,11 +12,7 @@ import java.time.Instant;
  * @param learnUnitCode 当前路径项对应的 LearnUnit 编码
  * @param sequence 路径中的稳定排序值
  * @param status {@code PENDING/CURRENT/COMPLETED/SKIPPED} 生命周期状态
- * @param masteryScore 当前 Journey 内的掌握分数；没有评估时保持为 0
- * @param bestScore 当前 Journey 内历史最高掌握分数
  * @param practiceVerified 是否存在满足 VerificationPolicy 的 PracticeEvidence
- * @param assessmentPassed 历史 Assessment 是否通过；当前 Learn Mode 不再要求该字段
- * @param attemptCount 历史 Assessment 尝试次数
  * @param passReason 进入 {@code COMPLETED} 的领域原因；未完成时为空
  * @param startedAt 首次进入 {@code CURRENT} 的时间
  * @param completedAt 进入 {@code COMPLETED} 的时间；未完成时为空
@@ -27,18 +23,11 @@ public record LearningPathItem(
         String learnUnitCode,
         int sequence,
         LearningPathItemStatus status,
-        int masteryScore,
-        int bestScore,
         boolean practiceVerified,
-        boolean assessmentPassed,
-        int attemptCount,
         String passReason,
         Instant startedAt,
         Instant completedAt,
         Instant updatedAt) {
-
-    /** 保留给历史 Assessment 记录的统一及格线。 */
-    public static final int DEFAULT_PASSING_SCORE = 70;
 
     public LearningPathItem {
         if (id != null && id <= 0) {
@@ -49,17 +38,6 @@ public record LearningPathItem(
             throw new DomainRuleViolation("sequence must not be negative");
         }
         status = status == null ? throwRule("status must not be null") : status;
-        DomainChecks.score(masteryScore);
-        DomainChecks.score(bestScore);
-        if (masteryScore != bestScore) {
-            throw new DomainRuleViolation("masteryScore must equal bestScore");
-        }
-        if (assessmentPassed && bestScore < DEFAULT_PASSING_SCORE) {
-            throw new DomainRuleViolation("assessmentPassed needs a passing bestScore");
-        }
-        if (attemptCount < 0) {
-            throw new DomainRuleViolation("attemptCount must not be negative");
-        }
         if (passReason != null && passReason.isBlank()) {
             passReason = null;
         }
@@ -87,11 +65,7 @@ public record LearningPathItem(
                 learnUnitCode,
                 sequence,
                 LearningPathItemStatus.PENDING,
-                0,
-                0,
                 false,
-                false,
-                0,
                 null,
                 null,
                 null,
@@ -108,20 +82,16 @@ public record LearningPathItem(
                 learnUnitCode,
                 sequence,
                 status,
-                masteryScore,
-                bestScore,
                 practiceVerified,
-                assessmentPassed,
-                attemptCount,
                 passReason,
                 startedAt,
                 completedAt,
                 updatedAt);
     }
 
-    /** 返回当前路径项的只读掌握投影；掌握状态仍由本路径项的完成条件决定。 */
+    /** 返回当前路径项的只读掌握投影；掌握状态由已验证 Practice 的完成条件决定。 */
     public Mastery mastery() {
-        return new Mastery(masteryScore, status == LearningPathItemStatus.COMPLETED);
+        return new Mastery(status == LearningPathItemStatus.COMPLETED);
     }
 
     /** PENDING 或可恢复的 SKIPPED 才能进入 CURRENT；COMPLETED 永不回退。 */
@@ -133,11 +103,7 @@ public record LearningPathItem(
                     learnUnitCode,
                     sequence,
                     LearningPathItemStatus.CURRENT,
-                    masteryScore,
-                    bestScore,
                     practiceVerified,
-                    assessmentPassed,
-                    attemptCount,
                     passReason,
                     startedAt == null ? at : startedAt,
                     null,
@@ -147,7 +113,7 @@ public record LearningPathItem(
         };
     }
 
-    /** 跳过只关闭当前项，保留已有 Attempt 和 Evidence，之后仍可恢复。 */
+    /** 跳过只关闭当前项，保留已有 Practice 证据，之后仍可恢复。 */
     public LearningPathItem skip(Instant at) {
         DomainChecks.time(at, "at");
         if (status != LearningPathItemStatus.CURRENT) {
@@ -158,47 +124,14 @@ public record LearningPathItem(
                 learnUnitCode,
                 sequence,
                 LearningPathItemStatus.SKIPPED,
-                masteryScore,
-                bestScore,
                 practiceVerified,
-                assessmentPassed,
-                attemptCount,
                 passReason,
                 startedAt,
                 null,
                 at);
     }
 
-    public LearningPathItem recordAssessment(int score, int passingScore, Instant at) {
-        // Assessment 历史追加到 Attempt；这里仅更新 Journey 的 best score 和完成条件。
-        requireCurrent();
-        DomainChecks.score(score);
-        DomainChecks.score(passingScore);
-        if (passingScore != DEFAULT_PASSING_SCORE) {
-            throw new DomainRuleViolation("passingScore must be 70");
-        }
-        DomainChecks.time(at, "at");
-        int nextBestScore = Math.max(bestScore, score);
-        boolean nextAssessmentPassed = assessmentPassed || score >= passingScore;
-        var next = new LearningPathItem(
-                id,
-                learnUnitCode,
-                sequence,
-                status,
-                nextBestScore,
-                nextBestScore,
-                practiceVerified,
-                nextAssessmentPassed,
-                attemptCount + 1,
-                passReason,
-                startedAt,
-                completedAt,
-                at);
-        return nextAssessmentPassed && practiceVerified ? next.complete(at, "ASSESSMENT_AND_PRACTICE") : next;
-    }
-
     public LearningPathItem recordPracticeVerified(Instant at) {
-        // Practice 证据只影响当前 Journey 项，不直接让 Agent 或其他 Journey 改写 mastery。
         requireCurrent();
         DomainChecks.time(at, "at");
         var next = new LearningPathItem(
@@ -206,11 +139,7 @@ public record LearningPathItem(
                 learnUnitCode,
                 sequence,
                 status,
-                masteryScore,
-                bestScore,
                 true,
-                assessmentPassed,
-                attemptCount,
                 passReason,
                 startedAt,
                 completedAt,
@@ -224,11 +153,7 @@ public record LearningPathItem(
                 learnUnitCode,
                 sequence,
                 LearningPathItemStatus.COMPLETED,
-                masteryScore,
-                bestScore,
                 practiceVerified,
-                assessmentPassed,
-                attemptCount,
                 reason,
                 startedAt,
                 at,

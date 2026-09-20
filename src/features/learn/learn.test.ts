@@ -10,9 +10,7 @@ const progress: LearningProgress = {
     currentLearnUnitCode: "first-lesson",
     currentLearnUnitTitle: "第 1 单元：变量",
     currentLearnUnitObjective: "理解 TypeScript 变量",
-    currentLearnUnitContent: "## Concept\n变量保存值。\n\n## Example\n```typescript\nconst answer = 42;\n```",
-    currentMasteryScore: 0,
-    currentBestScore: 0,
+    currentLearnUnitContent: "## Concept\n变量保存值。\n\n## Example\n```typescript\nconst answer = 42;\n```\n\n## Practice\n完成变量练习。",
     practiceVerified: false,
     completedCount: 0,
     totalCount: 1,
@@ -29,10 +27,11 @@ describe("LearnModePanel", () => {
 
         expect(markup).toContain("LEARN MODE");
         expect(markup).toContain("理解 TypeScript 变量");
-        expect(markup).toContain("## Concept");
-        expect(markup).toContain("## Example");
+        expect(markup).toContain(">Concept</h4>");
+        expect(markup).toContain(">Example</h4>");
+        expect(markup).toContain(">Practice</h4>");
+        expect(markup).not.toContain("## Concept");
         expect(markup).toContain("Practice");
-        expect(markup).not.toContain("Assessment");
     });
 
     it("marks Practice after its evidence passes", () => {

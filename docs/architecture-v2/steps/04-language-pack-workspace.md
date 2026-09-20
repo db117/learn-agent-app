@@ -15,7 +15,7 @@
 File Tree。
 
 Step 4 先拆为四个窄任务：核心 LanguagePack/TypeScript pack、Workspace/Manager、Bootstrap/File API、Monaco/File Tree/Vitest。
-本阶段只实现 LanguagePack 的核心声明能力；Practice/Assessment 行为和代码执行留给后续阶段。
+本阶段只实现 LanguagePack 的核心声明能力；Practice 行为和代码执行留给后续阶段。
 
 当前已确认的 LearningJourney 以 `learningJourneyId != null` 表示；Bootstrap 只为当前 Journey 幂等初始化 Learning
 Workspace，不补做路径确认编排。

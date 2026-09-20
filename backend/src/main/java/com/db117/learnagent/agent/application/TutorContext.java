@@ -21,8 +21,6 @@ import java.util.Objects;
  * @param currentObjective 当前 LearnUnit 学习目标；规划模式尚未生成时为空
  * @param currentContent 当前 LearnUnit 内容快照；规划模式尚未生成时为空
  * @param currentStatus 当前路径项状态；规划模式尚未生成时为空
- * @param masteryScore 当前路径项掌握分数
- * @param bestScore 当前路径项历史最高评估分数
  * @param practiceVerified 当前路径项是否已有通过的 Practice 证据
  * @param completedItemCount 当前 Journey 已完成或跳过的路径项数量
  * @param totalItemCount 当前 Journey 路径项总数
@@ -42,8 +40,6 @@ public record TutorContext(
         String currentObjective,
         String currentContent,
         LearningPathItemStatus currentStatus,
-        int masteryScore,
-        int bestScore,
         boolean practiceVerified,
         int completedItemCount,
         int totalItemCount,
@@ -67,9 +63,6 @@ public record TutorContext(
             currentContent = requireText(currentContent, "currentContent");
             currentStatus = Objects.requireNonNull(currentStatus, "currentStatus must not be null");
         }
-        if (masteryScore < 0 || masteryScore > 100 || bestScore < 0 || bestScore > 100) {
-            throw new IllegalArgumentException("scores must be between 0 and 100");
-        }
         if (completedItemCount < 0 || totalItemCount < 0 || completedItemCount > totalItemCount) {
             throw new IllegalArgumentException("invalid progress summary");
         }
@@ -91,8 +84,6 @@ public record TutorContext(
                 objective: %s
                 content: %s
                 current-status: %s
-                mastery-score: %d
-                best-score: %d
                 practice-verified: %s
                 journey-progress: %d/%d
                 workspace-kind: %s
@@ -110,8 +101,6 @@ public record TutorContext(
                 currentObjective,
                 currentContent,
                 currentStatus,
-                masteryScore,
-                bestScore,
                 practiceVerified,
                 completedItemCount,
                 totalItemCount,

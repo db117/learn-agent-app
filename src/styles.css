@@ -476,6 +476,24 @@ button.secondary {
     overflow-wrap: anywhere;
 }
 
+.lesson-sections {
+    margin-top: 1rem;
+}
+
+.lesson-section + .lesson-section {
+    margin-top: 0.9rem;
+}
+
+.lesson-section h4 {
+    margin: 0 0 0.45rem;
+    color: #dfe8f7;
+    font-size: 0.85rem;
+}
+
+.lesson-section .learn-content {
+    margin-top: 0;
+}
+
 .chapter-path {
     margin-top: 1rem;
     padding-top: 0.9rem;

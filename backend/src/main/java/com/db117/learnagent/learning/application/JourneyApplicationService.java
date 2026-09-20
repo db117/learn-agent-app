@@ -219,7 +219,6 @@ public class JourneyApplicationService {
                 journey.goalDescription(),
                 chapters,
                 units,
-                List.of(),
                 Instant.now(clock));
     }
 

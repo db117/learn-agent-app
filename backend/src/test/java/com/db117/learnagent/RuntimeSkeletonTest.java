@@ -1,6 +1,13 @@
 package com.db117.learnagent;
 
-import com.db117.learnagent.learning.domain.*;
+import com.db117.learnagent.learning.domain.Chapter;
+import com.db117.learnagent.learning.domain.Journey;
+import com.db117.learnagent.learning.domain.JourneyRepository;
+import com.db117.learnagent.learning.domain.LearnUnit;
+import com.db117.learnagent.learning.domain.Learner;
+import com.db117.learnagent.learning.domain.LearnerRepository;
+import com.db117.learnagent.learning.domain.LearningJourney;
+import com.db117.learnagent.learning.domain.LearningJourneyRepository;
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -16,7 +23,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
 class RuntimeSkeletonTest {
@@ -219,7 +228,7 @@ class RuntimeSkeletonTest {
                 "variables", "Variables", "Use values", "Variables content", 0, "basics", Set.of());
         return LearningJourney.create(
                 learnerId, "typescript", "TypeScript Journey",
-                List.of(chapter), List.of(unit), List.of(), CREATED_AT);
+                List.of(chapter), List.of(unit), CREATED_AT);
     }
 
     private static String jsonString(String value) {

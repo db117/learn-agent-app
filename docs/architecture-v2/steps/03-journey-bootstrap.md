@@ -37,7 +37,7 @@ Bootstrap 不止负责创建 Journey，还负责把已确认的路径交给学�
 
 Journey、LearningJourney、LearnUnit 和 LearningPathItem 都是 Learning Domain 的
 Domain State；PLANNING/LEARNING Session、规划草稿、Tutor 上下文和消息都是 Agent State。Session
-只能读取已确认的路径，不能直接写入 Journey、LearningJourney、score、mastery 或 completion。
+只能读取已确认的路径，不能直接写入 Journey、LearningJourney、mastery 或 completion。
 
 确认规划时，应用层负责将规划草稿中的有序段落/阶段物化为完整的有序路径，而不是只生成一个占位单元。
 生成 LearningJourney 后先保存，再挂回 Journey。当前不引入并发控制或通用跨聚合事务；如果挂接失败，应用层

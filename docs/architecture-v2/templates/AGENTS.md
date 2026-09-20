@@ -6,7 +6,7 @@ This repository is a clean-slate v2 implementation.
 
 1. Do not add backward compatibility for v1.
 2. Domain State and Agent State must remain separate.
-3. Learning Domain is the authority for score, mastery, completion and assessment.
+3. Learning Domain is the authority for mastery, completion and PracticeEvidence.
 4. AgentScope owns Runtime concerns such as session, memory, skill, plan, MCP, permission and subagents.
 5. Language Pack is a product plugin; Skill is an Agent capability.
 6. UI must not consume AgentScope raw events directly.

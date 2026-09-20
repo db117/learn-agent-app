@@ -1,8 +1,22 @@
 package com.db117.learnagent;
 
-import com.db117.learnagent.learning.domain.*;
-import com.db117.learnagent.persistence.sqlite.*;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.learning.domain.Chapter;
+import com.db117.learnagent.learning.domain.Journey;
+import com.db117.learnagent.learning.domain.LearnUnit;
+import com.db117.learnagent.learning.domain.Learner;
+import com.db117.learnagent.learning.domain.LearningJourney;
+import com.db117.learnagent.learning.domain.LearningPathItemStatus;
+import com.db117.learnagent.persistence.sqlite.SqliteJourneyRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteLearnerRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteLearningJourneyRepository;
+import com.db117.learnagent.persistence.sqlite.SqlitePracticeTaskRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteProjectRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteSchemaInitializer;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.db117.learnagent.project.domain.Project;
 import com.db117.learnagent.project.domain.ProjectEvidence;
 import com.db117.learnagent.project.domain.ProjectMilestone;
@@ -15,7 +29,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SqliteRepositoryTest {
     private static final Instant T0 = Instant.parse("2026-02-01T00:00:00Z");
@@ -38,23 +57,8 @@ class SqliteRepositoryTest {
             var loadedJourney = journeyRepository.findById(savedJourney.id()).orElseThrow();
             assertEquals(List.of("variables", "loops"), loadedJourney.pathItems().stream()
                     .map(item -> item.learnUnitCode()).toList());
-            journeyRepository.save(loadedJourney.recordAssessmentAttempt(
-                    AssessmentAttempt.submitted(
-                            savedJourney.id(),
-                            "variables",
-                            List.of(Answer.choice("choice", Set.of("yes"))),
-                            T0.plusSeconds(1))));
-            var submittedRoundTrip = journeyRepository.findById(savedJourney.id()).orElseThrow();
-            var evaluatedAttempt = submittedRoundTrip.assessmentAttempts().get(0)
-                    .evaluate(80, T0.plusSeconds(2));
-            var evaluatedJourney = journeyRepository.save(
-                    submittedRoundTrip.recordAssessmentAttempt(evaluatedAttempt));
-            var evaluatedRoundTrip = journeyRepository.findById(savedJourney.id()).orElseThrow();
-            assertEquals(1, evaluatedRoundTrip.assessmentAttempts().size());
-            assertEquals("EVALUATED", evaluatedRoundTrip.assessmentAttempts().get(0).status().name());
-            assertEquals(80, evaluatedJourney.pathItems().get(0).masteryScore());
             var movedJourney = journeyRepository.save(
-                    evaluatedJourney.recordPracticeVerified("variables", T0.plusSeconds(3)));
+                    loadedJourney.recordPracticeVerified("variables", T0.plusSeconds(3)));
             var movedRoundTrip = journeyRepository.findActiveByLearnerAndLanguage(
                     learner.id(), "java").orElseThrow();
             assertEquals(movedJourney.id(), movedRoundTrip.id());
@@ -163,14 +167,6 @@ class SqliteRepositoryTest {
                 "Java Journey",
                 List.of(chapter),
                 List.of(loops, variables),
-                List.of(assessment("variables"), assessment("loops")),
                 T0);
-    }
-
-    private Assessment assessment(String learnUnitCode) {
-        return Assessment.create(
-                learnUnitCode,
-                70,
-                List.of(Question.singleChoice("choice", "Choose yes", List.of("yes", "no"), "yes")));
     }
 }

@@ -18,20 +18,17 @@ LocalExecutionEnvironment。
 写入通过的 PracticeEvidence → Learning Domain 更新当前 LearnUnit 的完成判定。
 
 PracticeEvidence 是 Domain State，不是 Tutor Session 的结果。代码执行必须通过 ExecutionEnvironment；Tutor
-只能观察诊断并引导用户，不能直接写入 PracticeEvidence、score、mastery 或 completion。应用层在固定验证项
-全部通过后回写 PracticeEvidence，Learning Domain 决定 `practicePassed`，并与 Assessment 结果共同决定当前
-LearningPathItem 是否完成。
+只能观察诊断并引导用户，不能直接写入 PracticeEvidence、mastery 或 completion。应用层在固定验证项
+全部通过后回写 PracticeEvidence，Learning Domain 根据 `practicePassed` 决定当前 LearningPathItem 是否完成。
 
 当前 Step 5 的 PracticeTask 验证只支持固定的 compile 和 tests 检查。虽然 `ExecutionOperation` 保留了
 `LINT`，但 `LocalExecutionEnvironment` 尚未提供 Lint 实现；`PracticeTask` 也没有固定的 runtime script，因而
 `requireLint` 或 `requireRuntime` 会在验证开始前以 `UNSUPPORTED_VERIFICATION_POLICY` 拒绝。应用层不会把未执行的
 检查写成通过或静默追加误导性的 PracticeEvidence。默认的 compile/tests 验证路径不变。
 
-当前项的完成条件是：Assessment 得分达到 70，且存在通过的 PracticeEvidence。两项条件都满足后，Learning
-Domain 自动将当前项标记为完成，并将下一个有序 `PENDING` 项设为当前项；不存在下一个项时，将
-LearningJourney 置为 `COMPLETED`。Session 只重新加载新的当前 LearnUnit，不自行修改领域状态，也不自动发送
-下一单元的首条消息。
+当前项的完成条件是存在通过的 PracticeEvidence。满足后，Learning Domain 自动将当前项标记为完成，并将下一个有序
+`PENDING` 项设为当前项；不存在下一个项时，将 LearningJourney 置为 `COMPLETED`。Session 只重新加载新的当前
+LearnUnit，不自行修改领域状态，也不自动发送下一单元的首条消息。
 
-**DoD：**至少一个错误 TypeScript Practice 可以完整跑通；修复后能产生通过的 PracticeEvidence；在 Assessment
-达到 70 后，领域状态能推进到下一个 `PENDING` LearnUnit，或在没有下一个单元时进入 LearningJourney
-`COMPLETED`。达到 M1。
+**DoD：**至少一个错误 TypeScript Practice 可以完整跑通；修复后能产生通过的 PracticeEvidence；领域状态能推进到
+下一个 `PENDING` LearnUnit，或在没有下一个单元时进入 LearningJourney `COMPLETED`。达到 M1。

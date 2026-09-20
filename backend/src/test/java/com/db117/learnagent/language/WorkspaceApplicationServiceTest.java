@@ -168,11 +168,8 @@ class WorkspaceApplicationServiceTest {
         var chapter = com.db117.learnagent.learning.domain.Chapter.create("basics", "Basics", 0);
         var unit = com.db117.learnagent.learning.domain.LearnUnit.create(
                 "variables", "Variables", "Use values", "Variables content", 0, "basics", java.util.Set.of());
-        var assessment = com.db117.learnagent.learning.domain.Assessment.create(
-                "variables", 70, List.of(com.db117.learnagent.learning.domain.Question.singleChoice(
-                        "choice", "Choose", List.of("yes", "no"), "yes")));
         return LearningJourney.create(
                 learnerId, "typescript", "TypeScript Journey",
-                List.of(chapter), List.of(unit), List.of(assessment), CREATED_AT).withId(3L);
+                List.of(chapter), List.of(unit), CREATED_AT).withId(3L);
     }
 }

@@ -1,9 +1,5 @@
 package com.db117.learnagent.persistence.sqlite;
 
-import com.db117.learnagent.learning.domain.Answer;
-import com.db117.learnagent.learning.domain.Assessment;
-import com.db117.learnagent.learning.domain.AssessmentAttempt;
-import com.db117.learnagent.learning.domain.AssessmentAttemptStatus;
 import com.db117.learnagent.learning.domain.Chapter;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
@@ -11,8 +7,6 @@ import com.db117.learnagent.learning.domain.LearningJourneyRepository;
 import com.db117.learnagent.learning.domain.LearningJourneyStatus;
 import com.db117.learnagent.learning.domain.LearningPathItem;
 import com.db117.learnagent.learning.domain.LearningPathItemStatus;
-import com.db117.learnagent.learning.domain.Question;
-import com.db117.learnagent.learning.domain.QuestionType;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.sql.Connection;
@@ -30,7 +24,7 @@ import javax.sql.DataSource;
 /**
  * LearningJourney 聚合的 SQLite 适配器。
  *
- * <p>内容快照、路径状态和 Attempt 在同一事务中保存，避免只更新到聚合的一半。</p>
+ * <p>内容快照和路径状态在同一事务中保存，避免只更新到聚合的一半。</p>
  */
 @ApplicationScoped
 public class SqliteLearningJourneyRepository implements LearningJourneyRepository {
@@ -95,7 +89,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
     }
 
     private LearningJourney insertNew(Connection connection, LearningJourney journey) throws SQLException {
-        // 先保存根，再按外键依赖顺序保存内容、评估、路径和历史。
+        // 先保存根，再按外键依赖顺序保存内容和路径。
         long journeyId;
         try (var statement = connection.prepareStatement(
                 "INSERT INTO learning_journey(learner_id, language_pack_id, title, status, created_at, completed_at) "
@@ -117,11 +111,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         var persistedUnits = insertLearnUnits(connection, journeyId, chapterIds, journey.learnUnits());
         var unitIds = persistedUnits.stream().collect(java.util.stream.Collectors.toMap(
                 LearnUnit::code, LearnUnit::id));
-        var persistedAssessments = insertAssessments(connection, journeyId, unitIds, journey.assessments());
-        var assessmentIds = persistedAssessments.stream().collect(java.util.stream.Collectors.toMap(
-                Assessment::learnUnitCode, Assessment::id));
         var persistedItems = insertPathItems(connection, journeyId, unitIds, journey.pathItems());
-        var persistedAttempts = insertAttempts(connection, journeyId, assessmentIds, journey.assessmentAttempts());
         return LearningJourney.reconstitute(
                 journeyId,
                 journey.learnerId(),
@@ -132,13 +122,11 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
                 journey.completedAt(),
                 persistedChapters,
                 persistedUnits,
-                persistedAssessments,
-                persistedItems,
-                persistedAttempts);
+                persistedItems);
     }
 
     private LearningJourney updateExisting(Connection connection, LearningJourney journey) throws SQLException {
-        // 已有内容快照只读；更新阶段只写聚合状态、路径进度和新增 Attempt。
+        // 已有内容快照只读；更新阶段只写聚合状态和路径进度。
         long journeyId = journey.id();
         try (var statement = connection.prepareStatement(
                 "UPDATE learning_journey SET title = ?, status = ?, completed_at = ? "
@@ -155,9 +143,6 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         var unitIds = journey.learnUnits().stream().collect(java.util.stream.Collectors.toMap(
                 LearnUnit::code, LearnUnit::id));
         var persistedItems = updatePathItems(connection, journeyId, unitIds, journey.pathItems());
-        var assessmentIds = journey.assessments().stream().collect(java.util.stream.Collectors.toMap(
-                Assessment::learnUnitCode, Assessment::id));
-        var persistedAttempts = insertAttempts(connection, journeyId, assessmentIds, journey.assessmentAttempts());
         return LearningJourney.reconstitute(
                 journeyId,
                 journey.learnerId(),
@@ -168,16 +153,12 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
                 journey.completedAt(),
                 journey.chapters(),
                 journey.learnUnits(),
-                journey.assessments(),
-                persistedItems,
-                persistedAttempts);
+                persistedItems);
     }
 
     private void requirePersistedContent(LearningJourney journey) {
         if (journey.chapters().stream().anyMatch(chapter -> chapter.id() == null)
-                || journey.learnUnits().stream().anyMatch(unit -> unit.id() == null)
-                || journey.assessments().stream().anyMatch(assessment -> assessment.id() == null
-                || assessment.questions().stream().anyMatch(question -> question.id() == null))) {
+                || journey.learnUnits().stream().anyMatch(unit -> unit.id() == null)) {
             throw new IllegalStateException("persisted journey content cannot be replaced or added");
         }
     }
@@ -224,41 +205,6 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         return List.copyOf(persisted);
     }
 
-    private List<Assessment> insertAssessments(
-            Connection connection, long journeyId, Map<String, Long> unitIds, List<Assessment> assessments)
-            throws SQLException {
-        var persisted = new ArrayList<Assessment>();
-        try (var statement = connection.prepareStatement(
-                "INSERT INTO assessment(journey_id, learn_unit_id, learn_unit_code, passing_score) VALUES (?, ?, ?, ?)",
-                Statement.RETURN_GENERATED_KEYS);
-             var questionStatement = connection.prepareStatement(
-                     "INSERT INTO question(assessment_id, code, type, prompt, option_ids, correct_option_ids) "
-                             + "VALUES (?, ?, ?, ?, ?, ?)",
-                     Statement.RETURN_GENERATED_KEYS)) {
-            for (Assessment assessment : assessments) {
-                statement.setLong(1, journeyId);
-                statement.setLong(2, unitIds.get(assessment.learnUnitCode()));
-                statement.setString(3, assessment.learnUnitCode());
-                statement.setInt(4, assessment.passingScore());
-                statement.executeUpdate();
-                long assessmentId = SqliteSupport.generatedId(connection, statement);
-                var questions = new ArrayList<Question>();
-                for (Question question : assessment.questions()) {
-                    questionStatement.setLong(1, assessmentId);
-                    questionStatement.setString(2, question.code());
-                    questionStatement.setString(3, question.type().name());
-                    questionStatement.setString(4, question.prompt());
-                    questionStatement.setString(5, SqliteJson.write(question.optionIds()));
-                    questionStatement.setString(6, SqliteJson.write(question.correctOptionIds()));
-                    questionStatement.executeUpdate();
-                    questions.add(question.withId(SqliteSupport.generatedId(connection, questionStatement)));
-                }
-                persisted.add(assessment.withId(assessmentId, questions));
-            }
-        }
-        return List.copyOf(persisted);
-    }
-
     private List<LearningPathItem> insertPathItems(
             Connection connection, long journeyId, Map<String, Long> unitIds, List<LearningPathItem> items)
             throws SQLException {
@@ -294,74 +240,6 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         return List.copyOf(persisted);
     }
 
-    private List<AssessmentAttempt> insertAttempts(
-            Connection connection,
-            long journeyId,
-            Map<String, Long> assessmentIds,
-            List<AssessmentAttempt> attempts) throws SQLException {
-        var persisted = new ArrayList<AssessmentAttempt>();
-        try (var statement = connection.prepareStatement(
-                "INSERT INTO assessment_attempt(journey_id, assessment_id, learn_unit_code, status, score, passed, "
-                        + "submitted_at, evaluated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                Statement.RETURN_GENERATED_KEYS);
-             var update = connection.prepareStatement(
-                     "UPDATE assessment_attempt SET status = ?, score = ?, passed = ?, evaluated_at = ? "
-                             + "WHERE id = ? AND journey_id = ?");
-             var answerStatement = connection.prepareStatement(
-                     "INSERT INTO answer(attempt_id, question_code, selected_option_ids, workspace_reference) "
-                             + "VALUES (?, ?, ?, ?)")) {
-            for (AssessmentAttempt attempt : attempts) {
-                if (attempt.id() != null) {
-                    // EVALUATED 是同一提交记录的后续状态；只更新状态字段，不复制答案历史。
-                    update.setString(1, attempt.status().name());
-                    if (attempt.score() == null) {
-                        update.setObject(2, null);
-                    } else {
-                        update.setInt(2, attempt.score());
-                    }
-                    if (attempt.passed() == null) {
-                        update.setObject(3, null);
-                    } else {
-                        update.setInt(3, SqliteSupport.bool(attempt.passed()));
-                    }
-                    update.setString(4, SqliteSupport.instant(attempt.evaluatedAt()));
-                    update.setLong(5, attempt.id());
-                    update.setLong(6, journeyId);
-                    SqliteSupport.requireUpdated(update.executeUpdate(), "assessment attempt", attempt.id());
-                    persisted.add(attempt);
-                    continue;
-                }
-                statement.setLong(1, journeyId);
-                statement.setLong(2, assessmentIds.get(attempt.learnUnitCode()));
-                statement.setString(3, attempt.learnUnitCode());
-                statement.setString(4, attempt.status().name());
-                if (attempt.score() == null) {
-                    statement.setObject(5, null);
-                } else {
-                    statement.setInt(5, attempt.score());
-                }
-                if (attempt.passed() == null) {
-                    statement.setObject(6, null);
-                } else {
-                    statement.setInt(6, SqliteSupport.bool(attempt.passed()));
-                }
-                statement.setString(7, attempt.submittedAt().toString());
-                statement.setString(8, SqliteSupport.instant(attempt.evaluatedAt()));
-                statement.executeUpdate();
-                long attemptId = SqliteSupport.generatedId(connection, statement);
-                for (Answer answer : attempt.answers()) {
-                    answerStatement.setLong(1, attemptId);
-                    answerStatement.setString(2, answer.questionCode());
-                    answerStatement.setString(3, SqliteJson.write(answer.selectedOptionIds()));
-                    answerStatement.setString(4, answer.workspaceReference());
-                    answerStatement.executeUpdate();
-                }
-                persisted.add(attempt.withId(attemptId));
-            }
-        }
-        return List.copyOf(persisted);
-    }
-
     private Optional<LearningJourney> readJourney(
             Connection connection, String predicate, SqlBinder binder) throws SQLException {
         try (var statement = connection.prepareStatement(
@@ -381,9 +259,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         long journeyId = result.getLong("id");
         var chapters = readChapters(connection, journeyId);
         var units = readLearnUnits(connection, journeyId);
-        var assessments = readAssessments(connection, journeyId);
         var items = readPathItems(connection, journeyId);
-        var attempts = readAttempts(connection, journeyId);
         return LearningJourney.reconstitute(
                 journeyId,
                 result.getLong("learner_id"),
@@ -394,9 +270,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
                 SqliteSupport.parseInstant(result, "completed_at"),
                 chapters,
                 units,
-                assessments,
-                items,
-                attempts);
+                items);
     }
 
     private List<Chapter> readChapters(Connection connection, long journeyId) throws SQLException {
@@ -441,51 +315,11 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         return List.copyOf(units);
     }
 
-    private List<Assessment> readAssessments(Connection connection, long journeyId) throws SQLException {
-        var assessments = new ArrayList<Assessment>();
-        try (var statement = connection.prepareStatement(
-                "SELECT id, learn_unit_code, passing_score FROM assessment WHERE journey_id = ? ORDER BY id")) {
-            statement.setLong(1, journeyId);
-            try (var result = statement.executeQuery()) {
-                while (result.next()) {
-                    long assessmentId = result.getLong("id");
-                    assessments.add(new Assessment(
-                            assessmentId,
-                            result.getString("learn_unit_code"),
-                            result.getInt("passing_score"),
-                            readQuestions(connection, assessmentId)));
-                }
-            }
-        }
-        return List.copyOf(assessments);
-    }
-
-    private List<Question> readQuestions(Connection connection, long assessmentId) throws SQLException {
-        var questions = new ArrayList<Question>();
-        try (var statement = connection.prepareStatement(
-                "SELECT id, code, type, prompt, option_ids, correct_option_ids "
-                        + "FROM question WHERE assessment_id = ? ORDER BY id")) {
-            statement.setLong(1, assessmentId);
-            try (var result = statement.executeQuery()) {
-                while (result.next()) {
-                    questions.add(new Question(
-                            result.getLong("id"),
-                            result.getString("code"),
-                            QuestionType.valueOf(result.getString("type")),
-                            result.getString("prompt"),
-                            SqliteJson.strings(result.getString("option_ids")),
-                            SqliteJson.stringSet(result.getString("correct_option_ids"))));
-                }
-            }
-        }
-        return List.copyOf(questions);
-    }
-
     private List<LearningPathItem> readPathItems(Connection connection, long journeyId) throws SQLException {
         var items = new ArrayList<LearningPathItem>();
         try (var statement = connection.prepareStatement(
-                "SELECT id, learn_unit_code, sequence, status, mastery_score, best_score, practice_verified, "
-                        + "assessment_passed, attempt_count, pass_reason, started_at, completed_at, updated_at "
+                "SELECT id, learn_unit_code, sequence, status, practice_verified, pass_reason, started_at, "
+                        + "completed_at, updated_at "
                         + "FROM learning_path_item WHERE journey_id = ? ORDER BY id")) {
             statement.setLong(1, journeyId);
             try (var result = statement.executeQuery()) {
@@ -495,11 +329,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
                             result.getString("learn_unit_code"),
                             result.getInt("sequence"),
                             LearningPathItemStatus.valueOf(result.getString("status")),
-                            result.getInt("mastery_score"),
-                            result.getInt("best_score"),
                             SqliteSupport.bool(result, "practice_verified"),
-                            SqliteSupport.bool(result, "assessment_passed"),
-                            result.getInt("attempt_count"),
                             result.getString("pass_reason"),
                             SqliteSupport.parseInstant(result, "started_at"),
                             SqliteSupport.parseInstant(result, "completed_at"),
@@ -510,61 +340,15 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         return List.copyOf(items);
     }
 
-    private List<AssessmentAttempt> readAttempts(Connection connection, long journeyId) throws SQLException {
-        var attempts = new ArrayList<AssessmentAttempt>();
-        try (var statement = connection.prepareStatement(
-                "SELECT id, learn_unit_code, status, score, passed, submitted_at, evaluated_at "
-                        + "FROM assessment_attempt WHERE journey_id = ? ORDER BY id")) {
-            statement.setLong(1, journeyId);
-            try (var result = statement.executeQuery()) {
-                while (result.next()) {
-                    long attemptId = result.getLong("id");
-                    Integer score = result.getObject("score") == null ? null : result.getInt("score");
-                    Boolean passed = result.getObject("passed") == null ? null : result.getInt("passed") != 0;
-                    attempts.add(new AssessmentAttempt(
-                            attemptId,
-                            journeyId,
-                            result.getString("learn_unit_code"),
-                            AssessmentAttemptStatus.valueOf(result.getString("status")),
-                            readAnswers(connection, attemptId),
-                            score,
-                            passed,
-                            Instant.parse(result.getString("submitted_at")),
-                            SqliteSupport.parseInstant(result, "evaluated_at")));
-                }
-            }
-        }
-        return List.copyOf(attempts);
-    }
-
-    private List<Answer> readAnswers(Connection connection, long attemptId) throws SQLException {
-        var answers = new ArrayList<Answer>();
-        try (var statement = connection.prepareStatement(
-                "SELECT question_code, selected_option_ids, workspace_reference "
-                        + "FROM answer WHERE attempt_id = ? ORDER BY id")) {
-            statement.setLong(1, attemptId);
-            try (var result = statement.executeQuery()) {
-                while (result.next()) {
-                    answers.add(new Answer(
-                            result.getString("question_code"),
-                            SqliteJson.stringSet(result.getString("selected_option_ids")),
-                            result.getString("workspace_reference")));
-                }
-            }
-        }
-        return List.copyOf(answers);
-    }
-
     private String pathItemInsertSql() {
         return "INSERT INTO learning_path_item(journey_id, learn_unit_id, learn_unit_code, sequence, status, "
-                + "mastery_score, best_score, practice_verified, assessment_passed, attempt_count, pass_reason, "
-                + "started_at, completed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                + "practice_verified, pass_reason, started_at, completed_at, updated_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     }
 
     private String pathItemUpdateSql() {
-        return "UPDATE learning_path_item SET sequence = ?, status = ?, mastery_score = ?, best_score = ?, "
-                + "practice_verified = ?, assessment_passed = ?, attempt_count = ?, pass_reason = ?, started_at = ?, "
-                + "completed_at = ?, updated_at = ? WHERE id = ?";
+        return "UPDATE learning_path_item SET sequence = ?, status = ?, practice_verified = ?, pass_reason = ?, "
+                + "started_at = ?, completed_at = ?, updated_at = ? WHERE id = ?";
     }
 
     private void bindPathItem(PreparedStatement statement, long journeyId, long learnUnitId, LearningPathItem item)
@@ -574,30 +358,22 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         statement.setString(3, item.learnUnitCode());
         statement.setInt(4, item.sequence());
         statement.setString(5, item.status().name());
-        statement.setInt(6, item.masteryScore());
-        statement.setInt(7, item.bestScore());
-        statement.setInt(8, SqliteSupport.bool(item.practiceVerified()));
-        statement.setInt(9, SqliteSupport.bool(item.assessmentPassed()));
-        statement.setInt(10, item.attemptCount());
-        statement.setString(11, item.passReason());
-        statement.setString(12, SqliteSupport.instant(item.startedAt()));
-        statement.setString(13, SqliteSupport.instant(item.completedAt()));
-        statement.setString(14, item.updatedAt().toString());
+        statement.setInt(6, SqliteSupport.bool(item.practiceVerified()));
+        statement.setString(7, item.passReason());
+        statement.setString(8, SqliteSupport.instant(item.startedAt()));
+        statement.setString(9, SqliteSupport.instant(item.completedAt()));
+        statement.setString(10, item.updatedAt().toString());
     }
 
     private void bindPathItemUpdate(PreparedStatement statement, LearningPathItem item) throws SQLException {
         statement.setInt(1, item.sequence());
         statement.setString(2, item.status().name());
-        statement.setInt(3, item.masteryScore());
-        statement.setInt(4, item.bestScore());
-        statement.setInt(5, SqliteSupport.bool(item.practiceVerified()));
-        statement.setInt(6, SqliteSupport.bool(item.assessmentPassed()));
-        statement.setInt(7, item.attemptCount());
-        statement.setString(8, item.passReason());
-        statement.setString(9, SqliteSupport.instant(item.startedAt()));
-        statement.setString(10, SqliteSupport.instant(item.completedAt()));
-        statement.setString(11, item.updatedAt().toString());
-        statement.setLong(12, item.id());
+        statement.setInt(3, SqliteSupport.bool(item.practiceVerified()));
+        statement.setString(4, item.passReason());
+        statement.setString(5, SqliteSupport.instant(item.startedAt()));
+        statement.setString(6, SqliteSupport.instant(item.completedAt()));
+        statement.setString(7, item.updatedAt().toString());
+        statement.setLong(8, item.id());
     }
 
     @FunctionalInterface

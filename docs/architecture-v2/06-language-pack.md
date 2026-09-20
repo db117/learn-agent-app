@@ -15,8 +15,8 @@ public interface LanguagePack {
 }
 ```
 
-PracticeGenerator 与 AssessmentStrategy 是按 language pack 选择的可选能力，不属于上述核心 SPI；它们在 Practice/Learn
-阶段单独注册和解析。Step 4 不实现这两类能力的行为。
+PracticeGenerator 是按 language pack 选择的可选能力，不属于上述核心 SPI；它在 Practice 阶段单独注册和解析。
+Step 4 不实现 Practice 生成行为。
 
 ## 第一实现
 

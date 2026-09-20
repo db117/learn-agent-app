@@ -11,10 +11,6 @@ LearningJourney
 Chapter
 LearnUnit
 LearningPathItem
-Assessment
-Question
-AssessmentAttempt
-Answer
 Mastery
 ```
 
@@ -27,7 +23,7 @@ Learner 1 ── * Journey 1 ── 0..1 LearningJourney ── * LearnUnit
 ```
 
 一个 Journey 最终只能有一份 LearningJourney。规划过程中的路径是 Agent State 草稿，用户确认后才进入 Domain State；Tutor 不得直接
-写入 Journey、LearnUnit、score、mastery 或 completion。
+写入 Journey、LearnUnit、mastery 或 completion。
 
 `LearnUnit` 回答： **学什么？**
 
@@ -82,9 +78,9 @@ ProjectEvidence
 
 ## Mastery
 
-Mastery 必须通过确定性策略计算，可以使用：AssessmentResult、PracticeEvidence、RepeatedPerformance、ReviewDebt。
+Mastery 必须通过确定性策略计算；当前实现只使用通过的 PracticeEvidence。
 
-Agent 可以提供分析，但不能直接写入 mastery 数值。
+Agent 可以提供分析，但不能直接写入 mastery 状态。
 
 ## 三类概念必须永久区分
 

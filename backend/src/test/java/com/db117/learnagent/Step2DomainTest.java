@@ -1,8 +1,22 @@
 package com.db117.learnagent;
 
-import com.db117.learnagent.learning.domain.*;
-import com.db117.learnagent.practice.domain.*;
-import com.db117.learnagent.project.domain.*;
+import com.db117.learnagent.learning.domain.Chapter;
+import com.db117.learnagent.learning.domain.LearnUnit;
+import com.db117.learnagent.learning.domain.LearningJourney;
+import com.db117.learnagent.learning.domain.LearningJourneyStatus;
+import com.db117.learnagent.learning.domain.LearningPathItemStatus;
+import com.db117.learnagent.learning.domain.Mastery;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskStatus;
+import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.project.domain.Project;
+import com.db117.learnagent.project.domain.ProjectEvidence;
+import com.db117.learnagent.project.domain.ProjectMilestone;
+import com.db117.learnagent.project.domain.ProjectMilestoneStatus;
+import com.db117.learnagent.project.domain.ProjectStatus;
 import com.db117.learnagent.shared.domain.DomainRuleViolation;
 import org.junit.jupiter.api.Test;
 
@@ -10,7 +24,9 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class Step2DomainTest {
     private static final Instant T0 = Instant.parse("2026-01-01T00:00:00Z");
@@ -23,12 +39,11 @@ class Step2DomainTest {
                 .map(item -> item.learnUnitCode()).toList());
         assertEquals(LearningPathItemStatus.CURRENT, journey.currentItem().status());
 
-        var afterFirst = pass(journey, "variables", 3);
+        var afterFirst = journey.recordPracticeVerified("variables", T0.plusSeconds(3));
         assertEquals(LearningJourneyStatus.ACTIVE, afterFirst.status());
         assertEquals("loops", afterFirst.currentItem().learnUnitCode());
-        assertEquals(80, afterFirst.pathItems().get(0).masteryScore());
 
-        var completed = pass(afterFirst, "loops", 7);
+        var completed = afterFirst.recordPracticeVerified("loops", T0.plusSeconds(7));
         assertEquals(LearningJourneyStatus.COMPLETED, completed.status());
         assertEquals(LearningPathItemStatus.COMPLETED, completed.pathItems().get(1).status());
     }
@@ -39,9 +54,9 @@ class Step2DomainTest {
         var afterPractice = journey.recordPracticeVerified("variables", T0.plusSeconds(1));
 
         assertEquals(LearningPathItemStatus.COMPLETED, afterPractice.pathItems().get(0).status());
-        assertFalse(afterPractice.pathItems().get(0).assessmentPassed());
+        assertTrue(afterPractice.pathItems().get(0).practiceVerified());
         assertEquals("PRACTICE_EVIDENCE", afterPractice.pathItems().get(0).passReason());
-        assertEquals(new Mastery(0, true), afterPractice.pathItems().get(0).mastery());
+        assertEquals(new Mastery(true), afterPractice.pathItems().get(0).mastery());
         assertEquals("loops", afterPractice.currentItem().learnUnitCode());
     }
 
@@ -58,10 +73,8 @@ class Step2DomainTest {
         var chapter = Chapter.create("basics", "Basics", 0);
         var first = LearnUnit.create("a", "A", "A", "A", 0, "basics", Set.of("b"));
         var second = LearnUnit.create("b", "B", "B", "B", 1, "basics", Set.of("a"));
-        var assessments = List.of(assessment("a"), assessment("b"));
-
         assertThrows(DomainRuleViolation.class, () -> LearningJourney.create(
-                1, "java", "cycle", List.of(chapter), List.of(first, second), assessments, T0));
+                1, "java", "cycle", List.of(chapter), List.of(first, second), T0));
     }
 
     @Test
@@ -116,17 +129,6 @@ class Step2DomainTest {
         assertEquals(T0.plusSeconds(2), completed.completedAt());
     }
 
-    private LearningJourney pass(LearningJourney journey, String learnUnitCode, long offset) {
-        var attempt = AssessmentAttempt.submitted(
-                        journey.id(),
-                        learnUnitCode,
-                        List.of(Answer.choice("choice", Set.of("yes"))),
-                        T0.plusSeconds(offset))
-                .evaluate(80, T0.plusSeconds(offset + 1));
-        return journey.recordAssessmentAttempt(attempt)
-                .recordPracticeVerified(learnUnitCode, T0.plusSeconds(offset + 2));
-    }
-
     private LearningJourney journey() {
         var chapter = Chapter.create("basics", "Basics", 0);
         var variables = LearnUnit.create(
@@ -139,14 +141,6 @@ class Step2DomainTest {
                 "Java Journey",
                 List.of(chapter),
                 List.of(loops, variables),
-                List.of(assessment("variables"), assessment("loops")),
                 T0);
-    }
-
-    private Assessment assessment(String learnUnitCode) {
-        return Assessment.create(
-                learnUnitCode,
-                70,
-                List.of(Question.singleChoice("choice", "Choose yes", List.of("yes", "no"), "yes")));
     }
 }

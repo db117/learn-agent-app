@@ -16,8 +16,6 @@ import java.util.Objects;
  * @param currentLearnUnitTitle 当前 LearnUnit 标题；路径完成后为空
  * @param currentLearnUnitObjective 当前 LearnUnit 目标；路径完成后为空
  * @param currentLearnUnitContent 当前 LearnUnit 的 Concept/Example 内容快照；路径完成后为空
- * @param currentMasteryScore 当前项的最佳评估分数
- * @param currentBestScore 当前项的历史最高评估分数
  * @param practiceVerified 当前项是否已有通过的 PracticeEvidence
  * @param completedCount 已完成的路径项数量
  * @param totalCount 路径项总数
@@ -31,8 +29,6 @@ public record LearningProgressResponse(
         String currentLearnUnitTitle,
         String currentLearnUnitObjective,
         String currentLearnUnitContent,
-        int currentMasteryScore,
-        int currentBestScore,
         boolean practiceVerified,
         int completedCount,
         int totalCount,
@@ -68,8 +64,6 @@ public record LearningProgressResponse(
                 currentUnit == null ? null : currentUnit.title(),
                 currentUnit == null ? null : currentUnit.objective(),
                 currentUnit == null ? null : currentUnit.content(),
-                currentItem == null ? 0 : currentItem.masteryScore(),
-                currentItem == null ? 0 : currentItem.bestScore(),
                 currentItem != null && currentItem.practiceVerified(),
                 completedCount,
                 journey.pathItems().size(),

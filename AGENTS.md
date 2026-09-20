@@ -6,7 +6,7 @@
 
 1. 不为 v1 添加向后兼容。
 2. Domain State 与 Agent State 必须保持分离。
-3. Learning Domain 是 score、mastery、completion 和 assessment 的唯一权威来源。
+3. Learning Domain 是 mastery、completion 和 PracticeEvidence 的唯一权威来源。
 4. AgentScope 负责 session、memory、skill、plan、MCP、permission 和 subagents 等 Runtime 能力。
 5. Language Pack 是产品插件；Skill 是 Agent capability。
 6. UI 不得直接消费 AgentScope raw event。

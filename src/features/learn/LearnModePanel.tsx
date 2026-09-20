@@ -6,8 +6,6 @@ export type LearningProgress = {
     currentLearnUnitTitle: string | null;
     currentLearnUnitObjective: string | null;
     currentLearnUnitContent: string | null;
-    currentMasteryScore: number;
-    currentBestScore: number;
     practiceVerified: boolean;
     completedCount: number;
     totalCount: number;
@@ -33,6 +31,11 @@ type Props = {
 };
 
 const stages = ["Explain", "Example", "Practice"];
+
+type LessonSection = {
+    title: string;
+    content: string;
+};
 
 export function LearnModePanel({progress, loading = false}: Props) {
     if (loading) {
@@ -79,12 +82,34 @@ export function LearnModePanel({progress, loading = false}: Props) {
             <p className="learn-objective"><strong>本单元目标：</strong>{progress.currentLearnUnitObjective}</p>
         )}
         {progress.currentLearnUnitContent && (
-            <pre className="learn-content" aria-label="LearnUnit Concept 和 Example">
-                {progress.currentLearnUnitContent}
-            </pre>
+            <LessonContent content={progress.currentLearnUnitContent}/>
         )}
         <ChapterPath chapters={progress.chapters}/>
     </section>;
+}
+
+function LessonContent({content}: { content: string }) {
+    const sections = splitLessonContent(content);
+    return <section className="lesson-sections" aria-label="LearnUnit 教学内容">
+        {sections.map((section) => (
+            <article className="lesson-section" key={section.title}>
+                <h4>{section.title}</h4>
+                <pre className="learn-content">{section.content}</pre>
+            </article>
+        ))}
+    </section>;
+}
+
+function splitLessonContent(content: string): LessonSection[] {
+    const headings = [...content.matchAll(/^##\s+(Concept|Example|Practice)\s*$/gm)];
+    if (headings.length === 0) {
+        return [{title: "课程内容", content: content.trim()}];
+    }
+    return headings.map((heading, index) => {
+        const start = (heading.index ?? 0) + heading[0].length;
+        const end = headings[index + 1]?.index ?? content.length;
+        return {title: heading[1], content: content.slice(start, end).trim()};
+    });
 }
 
 function ChapterPath({chapters}: { chapters: LearningChapter[] }) {

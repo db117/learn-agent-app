@@ -6,12 +6,13 @@ import com.db117.learnagent.agent.api.TutorEventType;
 import com.db117.learnagent.agent.application.TutorContextAssembler;
 import com.db117.learnagent.agent.application.TutorRequestException;
 import com.db117.learnagent.agent.application.TutorSessionService;
+import com.db117.learnagent.agent.tool.TutorWorkspaceTools;
+import com.db117.learnagent.config.RuntimeConfig;
 import com.db117.learnagent.execution.LocalExecutionEnvironment;
 import com.db117.learnagent.execution.TypeScriptCompiler;
 import com.db117.learnagent.execution.TypeScriptTestRunner;
 import com.db117.learnagent.language.LanguagePackCatalog;
 import com.db117.learnagent.language.typescript.TypeScriptLanguagePack;
-import com.db117.learnagent.learning.domain.Assessment;
 import com.db117.learnagent.learning.domain.Chapter;
 import com.db117.learnagent.learning.domain.Journey;
 import com.db117.learnagent.learning.domain.JourneyRepository;
@@ -23,8 +24,6 @@ import com.db117.learnagent.learning.domain.LearningJourneyRepository;
 import com.db117.learnagent.practice.application.PracticeRuntimeService;
 import com.db117.learnagent.practice.domain.PracticeTask;
 import com.db117.learnagent.practice.domain.PracticeTaskRepository;
-import com.db117.learnagent.agent.tool.TutorWorkspaceTools;
-import com.db117.learnagent.config.RuntimeConfig;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import io.agentscope.core.message.Msg;
@@ -48,6 +47,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -175,6 +175,38 @@ class AgentScopeRuntimeTest {
             assertEquals(com.db117.learnagent.agent.api.TutorSessionMode.PLANNING, session.mode());
             assertNull(session.currentLearnUnitCode());
             assertFalse(session.restored());
+        } finally {
+            runtime.close();
+        }
+    }
+
+    @Test
+    void advancingTheCurrentLearnUnitCreatesANewSessionAndStalesTheOldOne() throws Exception {
+        var root = Files.createTempDirectory("tutor-session-rollover");
+        var learningJourneys = new MutableLearningJourneyRepository(twoUnitJourney());
+        var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(null), root.resolve("agent"));
+        var service = new TutorSessionService(
+                new TutorContextAssembler(
+                        new FakeLearnerRepository(),
+                        new FakeParentJourneyRepository(),
+                        learningJourneys),
+                runtime);
+        try {
+            var first = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            var restoredFirst = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            assertEquals(first.sessionId(), restoredFirst.sessionId());
+            assertEquals("first", first.currentLearnUnitCode());
+
+            learningJourneys.journey = learningJourneys.journey
+                    .recordPracticeVerified("first", Instant.parse("2026-01-01T00:00:01Z"));
+
+            var second = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            assertNotEquals(first.sessionId(), second.sessionId());
+            assertEquals("second", second.currentLearnUnitCode());
+
+            var stale = assertThrows(TutorRequestException.class,
+                    () -> service.streamTurn(first.sessionId(), new SendTutorMessageRequest("stale", "继续")));
+            assertEquals("STALE_SESSION", stale.code());
         } finally {
             runtime.close();
         }
@@ -418,9 +450,6 @@ class AgentScopeRuntimeTest {
         private static LearningJourney journey(String languagePackId) {
             var at = Instant.parse("2026-01-01T00:00:00Z");
             var unit = LearnUnit.create("java-basics", "Java Basics", "Understand Java", "content", 0, "chapter-1", Set.of());
-            var question = com.db117.learnagent.learning.domain.Question.singleChoice(
-                    "q-1", "What language?", List.of("java", "go"), "java");
-            var assessment = Assessment.create("java-basics", 70, List.of(question));
             return LearningJourney.reconstitute(
                     1L,
                     1L,
@@ -431,11 +460,55 @@ class AgentScopeRuntimeTest {
                     null,
                     List.of(Chapter.create("chapter-1", "Chapter 1", 0)),
                     List.of(unit),
-                    List.of(assessment),
                     List.of(com.db117.learnagent.learning.domain.LearningPathItem.current("java-basics", 0, at)
-                            .withId(1L)),
-                    List.of());
+                            .withId(1L)));
         }
+    }
+
+    private static final class MutableLearningJourneyRepository implements LearningJourneyRepository {
+        private LearningJourney journey;
+
+        private MutableLearningJourneyRepository(LearningJourney journey) {
+            this.journey = journey;
+        }
+
+        @Override
+        public LearningJourney save(LearningJourney journey) {
+            this.journey = journey;
+            return journey;
+        }
+
+        @Override
+        public void delete(long id) {
+        }
+
+        @Override
+        public Optional<LearningJourney> findById(long id) {
+            return id == journey.id() ? Optional.of(journey) : Optional.empty();
+        }
+
+        @Override
+        public Optional<LearningJourney> findActiveByLearnerAndLanguage(long learnerId, String languagePackId) {
+            return Optional.of(journey);
+        }
+    }
+
+    private static LearningJourney twoUnitJourney() {
+        var at = Instant.parse("2026-01-01T00:00:00Z");
+        var first = LearnUnit.create(
+                "first", "First", "Understand the first unit", "## Concept\nfirst\n\n## Example\none\n\n## Practice\nfirst practice",
+                0, "chapter-1", Set.of());
+        var second = LearnUnit.create(
+                "second", "Second", "Understand the second unit", "## Concept\nsecond\n\n## Example\ntwo\n\n## Practice\nsecond practice",
+                1, "chapter-1", Set.of("first"));
+        return LearningJourney.create(
+                        1L,
+                        "typescript",
+                        "TypeScript Journey",
+                        List.of(Chapter.create("chapter-1", "Chapter 1", 0)),
+                        List.of(first, second),
+                        at)
+                .withId(1L);
     }
 
     private static final class EmptyPracticeTaskRepository implements PracticeTaskRepository {

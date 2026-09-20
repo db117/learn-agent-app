@@ -13,4 +13,4 @@
 
 加入首批 Skill：socratic-hint、diagnose-error、review-code、java-to-typescript；启用长期 Learner Memory。
 
-**DoD：**跨 Session 可以利用已记录的长期误区调整教学方式，但 score/mastery 仍只来自 Domain。
+**DoD：**跨 Session 可以利用已记录的长期误区调整教学方式，但 mastery/completion 仍只来自 Domain。

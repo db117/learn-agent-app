@@ -23,7 +23,11 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
 @TestProfile(PracticeRuntimeE2ETest.IsolatedPracticeProfile.class)
@@ -88,6 +92,9 @@ class PracticeRuntimeE2ETest {
 
         var initialVerification = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
         assertTrue(initialVerification.body().contains("\"verified\":false"));
+        long taskId = jsonLong(initialVerification.body(), "taskId");
+        assertEquals("修复 src/index.ts 中的类型错误。",
+                practiceTasks.findById(taskId).orElseThrow().description());
 
         putFile("/api/journeys/" + journeyId + "/workspace/files/src/index.ts",
                 "export const answer: number = \"broken\";", 200);
@@ -106,7 +113,6 @@ class PracticeRuntimeE2ETest {
 
         var failedVerification = post(
                 "/api/journeys/" + journeyId + "/practice/verify", null, 200);
-        long taskId = jsonLong(failedVerification.body(), "taskId");
         assertTrue(failedVerification.body().contains("\"verified\":false"));
         var taskAfterFailure = practiceTasks.findById(taskId).orElseThrow();
         assertEquals(2, taskAfterFailure.attempts().size());
@@ -141,9 +147,7 @@ class PracticeRuntimeE2ETest {
         var completed = persisted.pathItems().getFirst();
         assertEquals(LearningPathItemStatus.COMPLETED, completed.status());
         assertTrue(completed.practiceVerified());
-        assertFalse(completed.assessmentPassed());
         assertEquals("PRACTICE_EVIDENCE", completed.passReason());
-        assertTrue(persisted.assessmentAttempts().isEmpty());
         assertEquals("functions", persisted.currentItem().learnUnitCode());
     }
 

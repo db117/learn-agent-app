@@ -30,7 +30,7 @@ const PLANNING_PROMPT = `请根据我的 Learner 背景和 Journey 目标生成�
     }
   ]
 }
-每个 unit 是一个 LearnUnit；章节和单元必须按学习顺序排列。不要生成 Assessment。用户开始某个单元后，TutorAgent 再向用户讲解 Concept、Example 和 Practice；Practice 通过后才完成该单元。`;
+每个 unit 是一个 LearnUnit；章节和单元必须按学习顺序排列。用户开始某个单元后，TutorAgent 再向用户讲解 Concept、Example 和 Practice；Practice 通过后才完成该单元。`;
 const LEARNING_PROMPT = "开始当前 LearnUnit。请根据当前单元目标，先用清晰的 Concept 和 Example 讲解，再明确说明 Practice 要求；等待学习者完成 Practice 后再推进，不要提前标记完成。";
 
 type Health = Record<string, unknown>;

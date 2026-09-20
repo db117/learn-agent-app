@@ -26,29 +26,24 @@ Agentic Programming Learning Environment（智能编程学习环境）。
 - LearningPathItem：Journey 中针对一个 LearnUnit 的进度事实，是该进度的唯一权威来源；从其他当前项返回时，原 `CURRENT` 转为
   `SKIPPED`，目标项转为 `CURRENT`；`SKIPPED` 可以再次激活后完成。
 - Chapter：Journey 内 LearnUnit 的有序分组，不跨 Journey 共享。
-- Assessment：Journey 内某个 LearnUnit 的独立评估定义，可包含选择题和编码题；评分必须由确定性策略产生，不跨 Journey 共享。
-- AssessmentAttempt：一次独立的评估提交记录；提交后经过确定性评估进入 `EVALUATED`。
-- Question：只属于一个 Assessment 的评估问题。
-- Answer：AssessmentAttempt 针对 Question 的提交；选择答案保存选项，编码答案通过 LearningWorkspace 快照或 Artifact 引用留痕。
 - PracticeAttempt：一次独立的练习提交记录。
 - PracticeEvidence：练习提交产生的客观、可验证证据，包含编译、测试、Lint、运行结果、提交文件和验证时间；是否通过由
   `verificationPolicy` 确定性判定。
 - VerificationPolicy：PracticeTask 要求的固定检查项，包括编译、测试、Lint 和运行。
 - Project：与一个 LearningJourney 一一对应的真实项目，拥有必需且唯一的 `journeyId`。
 - ProjectMilestone：归属于一个 Project 的领域进度节点，不等同于 Agent Plan。
-- Mastery：由领域证据按确定性规则计算出的掌握状态；按 `journeyId + learnUnitId` 隔离，Assessment 得分达到及格线且存在通过的
-  PracticeEvidence 时才算 mastered。
+- Mastery：由通过的 PracticeEvidence 按确定性规则计算出的掌握状态；按 `journeyId + learnUnitId` 隔离。
 - Entity ID：由 SQLite 持久化层自增产生，不采用 UUID。
 - LearningWorkspace：Practice 模式的代码工作区。
 - ProjectWorkspace：Project 模式的代码工作区。
 - ProjectEvidence：证明 ProjectMilestone 已完成的客观、不可变证据，包含 Workspace/Artifact 引用、验证摘要、通过标记和验证时间。
 - TutorAgent：唯一面向用户的主编排 Agent。
 
-Attempt 与 Evidence 是不可变历史记录；重试或重新提交会形成新的历史记录，不覆盖既有记录。
-LearnUnit、Chapter、Assessment 和 Question 作为 Journey 内内容快照创建后不可原地修改；重新生成会产生新的内容对象。
+PracticeAttempt 与 PracticeEvidence 是不可变历史记录；重试或重新提交会形成新的历史记录，不覆盖既有记录。
+LearnUnit 和 Chapter 作为 Journey 内内容快照创建后不可原地修改；重新生成会产生新的内容对象。
 LearningJourney 在全部 LearningPathItem 完成或跳过时可以完成；显式恢复跳过项时可以重新进入 `ACTIVE`。Journey 自身只管理目标的
 `ACTIVE/ARCHIVED` 生命周期，不复制 LearningJourney 的完成事实。
-AssessmentAttempt 只能针对 `CURRENT` 的 LearningPathItem 提交；`SKIPPED` 必须先恢复，`COMPLETED` 拒绝新提交。
+Practice 只能针对 `CURRENT` 的 LearningPathItem 验证；`SKIPPED` 必须先恢复，`COMPLETED` 拒绝新验证。
 没有前置条件的 LearnUnit 优先进入路径候选；其余候选按前置关系拓扑排序，并用 `sequence/code` 稳定排序。
 Practice 的 VerificationPolicy 只声明固定检查项；所有必需检查通过后 PracticeEvidence 才通过。
 ProjectMilestone 只有在存在通过的 ProjectEvidence 时才能完成；全部 Milestone 完成后 Project 才能完成。

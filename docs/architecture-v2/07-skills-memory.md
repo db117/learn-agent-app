@@ -33,7 +33,7 @@ generated → candidate → review → enabled
 
 Memory 保存：长期背景、偏好、常见误区、常犯错误、有效教学方式。
 
-Memory 不保存 score、completed、mastery、assessment passed 等权威事实。
+Memory 不保存 completed、mastery 或 PracticeEvidence 等权威事实。
 
 ```text
 Domain State → SQLite → 权威事实

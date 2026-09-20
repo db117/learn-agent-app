@@ -113,7 +113,7 @@ public final class PracticeResource {
                         learningJourney.languagePackId(),
                         "CODE",
                         "练习：" + unit.title(),
-                        unit.objective(),
+                        unit.practiceInstruction(),
                         1,
                         TYPESCRIPT_STARTER_SOURCE,
                         new VerificationPolicy(true, true, false, false),

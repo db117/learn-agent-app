@@ -4,9 +4,14 @@ import com.db117.learnagent.shared.domain.DomainChecks;
 import com.db117.learnagent.shared.domain.DomainRuleViolation;
 
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
-/** Learning Domain 的聚合根，统一拥有 Journey 内容快照、路径进度和评估历史。 */
+/** Learning Domain 的聚合根，统一拥有 Journey 内容快照和路径进度。 */
 public final class LearningJourney {
     private final Long id;
     private final long learnerId;
@@ -17,9 +22,7 @@ public final class LearningJourney {
     private final Instant completedAt;
     private final List<Chapter> chapters;
     private final List<LearnUnit> learnUnits;
-    private final List<Assessment> assessments;
     private final List<LearningPathItem> pathItems;
-    private final List<AssessmentAttempt> assessmentAttempts;
 
     private LearningJourney(
             Long id,
@@ -31,9 +34,7 @@ public final class LearningJourney {
             Instant completedAt,
             List<Chapter> chapters,
             List<LearnUnit> learnUnits,
-            List<Assessment> assessments,
-            List<LearningPathItem> pathItems,
-            List<AssessmentAttempt> assessmentAttempts) {
+            List<LearningPathItem> pathItems) {
         if (id != null && id <= 0) {
             throw new DomainRuleViolation("id must be positive");
         }
@@ -54,22 +55,8 @@ public final class LearningJourney {
         this.completedAt = completedAt;
         this.chapters = List.copyOf(chapters == null ? List.of() : chapters);
         this.learnUnits = List.copyOf(learnUnits == null ? List.of() : learnUnits);
-        this.assessments = List.copyOf(assessments == null ? List.of() : assessments);
         this.pathItems = List.copyOf(pathItems == null ? List.of() : pathItems);
-        this.assessmentAttempts = List.copyOf(assessmentAttempts == null ? List.of() : assessmentAttempts);
-        validateContent(this.chapters, this.learnUnits, this.assessments, this.pathItems);
-        var attemptIds = new HashSet<Long>();
-        for (AssessmentAttempt attempt : this.assessmentAttempts) {
-            if (id == null || attempt.journeyId() != id) {
-                throw new DomainRuleViolation("assessment attempt has an invalid journeyId");
-            }
-            if (!unitCodes(this.learnUnits).contains(attempt.learnUnitCode())) {
-                throw new DomainRuleViolation("assessment attempt references an unknown LearnUnit");
-            }
-            if (attempt.id() != null && !attemptIds.add(attempt.id())) {
-                throw new DomainRuleViolation("assessment attempt ids must be unique");
-            }
-        }
+        validateContent(this.chapters, this.learnUnits, this.pathItems);
         long currentCount = this.pathItems.stream()
                 .filter(item -> item.status() == LearningPathItemStatus.CURRENT)
                 .count();
@@ -105,7 +92,6 @@ public final class LearningJourney {
             String title,
             List<Chapter> chapters,
             List<LearnUnit> learnUnits,
-            List<Assessment> assessments,
             Instant createdAt) {
         var orderedUnits = orderUnits(learnUnits);
         var items = new ArrayList<LearningPathItem>();
@@ -125,9 +111,7 @@ public final class LearningJourney {
                 null,
                 chapters,
                 learnUnits,
-                assessments,
-                items,
-                List.of());
+                items);
     }
 
     /** 从 Repository 恢复完整聚合，恢复时仍重新校验全部领域不变量。 */
@@ -141,9 +125,7 @@ public final class LearningJourney {
             Instant completedAt,
             List<Chapter> chapters,
             List<LearnUnit> learnUnits,
-            List<Assessment> assessments,
-            List<LearningPathItem> pathItems,
-            List<AssessmentAttempt> assessmentAttempts) {
+            List<LearningPathItem> pathItems) {
         return new LearningJourney(
                 DomainChecks.id(id, "id"),
                 learnerId,
@@ -154,9 +136,7 @@ public final class LearningJourney {
                 completedAt,
                 chapters,
                 learnUnits,
-                assessments,
-                pathItems,
-                assessmentAttempts);
+                pathItems);
     }
 
     public Long id() {
@@ -195,16 +175,8 @@ public final class LearningJourney {
         return learnUnits;
     }
 
-    public List<Assessment> assessments() {
-        return assessments;
-    }
-
     public List<LearningPathItem> pathItems() {
         return pathItems;
-    }
-
-    public List<AssessmentAttempt> assessmentAttempts() {
-        return assessmentAttempts;
     }
 
     public LearningPathItem currentItem() {
@@ -221,20 +193,11 @@ public final class LearningJourney {
                 .orElseThrow(() -> new DomainRuleViolation("unknown LearnUnit: " + code));
     }
 
-    public Assessment assessmentFor(String learnUnitCode) {
-        return assessments.stream()
-                .filter(assessment -> assessment.learnUnitCode().equals(learnUnitCode))
-                .findFirst()
-                .orElseThrow(() -> new DomainRuleViolation("missing Assessment: " + learnUnitCode));
-    }
-
     public LearningJourney withId(long persistedId) {
         return copy(
                 DomainChecks.id(persistedId, "id"),
                 chapters,
                 learnUnits,
-                assessments,
-                assessmentAttempts,
                 pathItems,
                 status,
                 completedAt);
@@ -244,15 +207,11 @@ public final class LearningJourney {
             long persistedId,
             List<Chapter> persistedChapters,
             List<LearnUnit> persistedLearnUnits,
-            List<Assessment> persistedAssessments,
-            List<LearningPathItem> persistedPathItems,
-            List<AssessmentAttempt> persistedAttempts) {
+            List<LearningPathItem> persistedPathItems) {
         return copy(
                 DomainChecks.id(persistedId, "id"),
                 persistedChapters,
                 persistedLearnUnits,
-                persistedAssessments,
-                persistedAttempts,
                 persistedPathItems,
                 status,
                 completedAt);
@@ -282,8 +241,6 @@ public final class LearningJourney {
                 id,
                 chapters,
                 learnUnits,
-                assessments,
-                assessmentAttempts,
                 nextItems,
                 LearningJourneyStatus.ACTIVE,
                 null);
@@ -307,60 +264,11 @@ public final class LearningJourney {
         var nextItems = replaceItem(learnUnitCode, nextItem);
         return nextItem.status() == LearningPathItemStatus.COMPLETED
                 ? advanceAfterClose(nextItems, at)
-                : copy(id, chapters, learnUnits, assessments, assessmentAttempts, nextItems, status, completedAt);
-    }
-
-    /** 只接收当前项的评估历史；EVALUATED 结果才会影响 score 和完成状态。 */
-    public LearningJourney recordAssessmentAttempt(AssessmentAttempt attempt) {
-        Objects.requireNonNull(attempt, "attempt");
-        if (attempt.journeyId() != journeyIdForComparison()) {
-            throw new DomainRuleViolation("assessment attempt belongs to another journey");
-        }
-        var item = item(attempt.learnUnitCode());
-        if (item.status() != LearningPathItemStatus.CURRENT) {
-            throw new DomainRuleViolation("assessment requires a current item: " + attempt.learnUnitCode());
-        }
-        var nextAttempts = new ArrayList<>(assessmentAttempts);
-        var existingIndex = attemptIndex(attempt.id());
-        if (existingIndex >= 0) {
-            var existing = nextAttempts.get(existingIndex);
-            if (existing.status() == AssessmentAttemptStatus.EVALUATED
-                    && attempt.status() == AssessmentAttemptStatus.EVALUATED) {
-                throw new DomainRuleViolation("assessment attempt has already been evaluated");
-            }
-            // 评估是同一条提交历史的状态变化，不创建第二条 Attempt。
-            nextAttempts.set(existingIndex, attempt);
-        } else {
-            if (attempt.id() != null) {
-                throw new DomainRuleViolation("assessment attempt does not belong to this journey");
-            }
-            nextAttempts.add(attempt);
-        }
-        if (attempt.status() != AssessmentAttemptStatus.EVALUATED) {
-            return copy(id, chapters, learnUnits, assessments, nextAttempts, pathItems, status, completedAt);
-        }
-        var assessment = assessmentFor(attempt.learnUnitCode());
-        var nextItem = item.recordAssessment(attempt.score(), assessment.passingScore(), attempt.evaluatedAt());
-        var nextItems = replaceItem(attempt.learnUnitCode(), nextItem);
-        return nextItem.status() == LearningPathItemStatus.COMPLETED
-                ? advanceAfterClose(nextItems, attempt.evaluatedAt(), nextAttempts)
-                : copy(id, chapters, learnUnits, assessments, nextAttempts, nextItems, status, completedAt);
-    }
-
-    private long journeyIdForComparison() {
-        if (id == null) {
-            throw new DomainRuleViolation("journey must be persisted before recording an attempt");
-        }
-        return id;
+                : copy(id, chapters, learnUnits, nextItems, status, completedAt);
     }
 
     /** 关闭当前项后只自动推进 PENDING，不擅自重新打开 SKIPPED。 */
     private LearningJourney advanceAfterClose(List<LearningPathItem> closedItems, Instant at) {
-        return advanceAfterClose(closedItems, at, assessmentAttempts);
-    }
-
-    private LearningJourney advanceAfterClose(
-            List<LearningPathItem> closedItems, Instant at, List<AssessmentAttempt> attempts) {
         var nextItems = new ArrayList<>(closedItems);
         var nextPending = nextItems.stream()
                 .filter(item -> item.status() == LearningPathItemStatus.PENDING)
@@ -368,10 +276,10 @@ public final class LearningJourney {
         if (nextPending.isPresent()) {
             int index = nextItems.indexOf(nextPending.get());
             nextItems.set(index, nextPending.get().start(at));
-            return copy(id, chapters, learnUnits, assessments, attempts, nextItems,
+            return copy(id, chapters, learnUnits, nextItems,
                     LearningJourneyStatus.ACTIVE, null);
         }
-        return copy(id, chapters, learnUnits, assessments, attempts, nextItems,
+        return copy(id, chapters, learnUnits, nextItems,
                 LearningJourneyStatus.COMPLETED, at);
     }
 
@@ -380,18 +288,6 @@ public final class LearningJourney {
                 .filter(pathItem -> pathItem.learnUnitCode().equals(learnUnitCode))
                 .findFirst()
                 .orElseThrow(() -> new DomainRuleViolation("unknown path item: " + learnUnitCode));
-    }
-
-    private int attemptIndex(Long attemptId) {
-        if (attemptId == null) {
-            return -1;
-        }
-        for (int index = 0; index < assessmentAttempts.size(); index++) {
-            if (attemptId.equals(assessmentAttempts.get(index).id())) {
-                return index;
-            }
-        }
-        return -1;
     }
 
     private int indexOfItem(String learnUnitCode) {
@@ -413,8 +309,6 @@ public final class LearningJourney {
             Long nextId,
             List<Chapter> nextChapters,
             List<LearnUnit> nextLearnUnits,
-            List<Assessment> nextAssessments,
-            List<AssessmentAttempt> nextAttempts,
             List<LearningPathItem> nextItems,
             LearningJourneyStatus nextStatus,
             Instant nextCompletedAt) {
@@ -428,16 +322,13 @@ public final class LearningJourney {
                 nextCompletedAt,
                 nextChapters,
                 nextLearnUnits,
-                nextAssessments,
-                nextItems,
-                nextAttempts);
+                nextItems);
     }
 
-    /** 验证 Journey 内内容、路径和可选历史 Assessment 关系，阻止半有效聚合落库。 */
+    /** 验证 Journey 内内容和路径，阻止半有效聚合落库。 */
     private static void validateContent(
             List<Chapter> chapters,
             List<LearnUnit> learnUnits,
-            List<Assessment> assessments,
             List<LearningPathItem> pathItems) {
         if (chapters.isEmpty() || learnUnits.isEmpty()) {
             throw new DomainRuleViolation("journey content must contain chapters and LearnUnits");
@@ -452,12 +343,6 @@ public final class LearningJourney {
                 throw new DomainRuleViolation("LearnUnit has an unknown prerequisite: " + unit.code());
             }
         }
-        var assessmentUnits = new HashSet<String>();
-        for (Assessment assessment : assessments) {
-            if (!unitCodes.contains(assessment.learnUnitCode()) || !assessmentUnits.add(assessment.learnUnitCode())) {
-                throw new DomainRuleViolation("Assessment must reference a unique LearnUnit");
-            }
-        }
         if (pathItems.size() != learnUnits.size()
                 || !new HashSet<>(pathItems.stream().map(LearningPathItem::learnUnitCode).toList()).equals(unitCodes)) {
             throw new DomainRuleViolation("path items must contain each LearnUnit exactly once");
@@ -470,10 +355,6 @@ public final class LearningJourney {
             throw new DomainRuleViolation(label + " must be unique");
         }
         return unique;
-    }
-
-    private static Set<String> unitCodes(List<LearnUnit> units) {
-        return units.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet());
     }
 
     /** 用确定性拓扑排序生成路径；无前置项优先，sequence/code 解决并列。 */
@@ -497,10 +378,11 @@ public final class LearningJourney {
         var comparator = Comparator.comparingInt(LearnUnit::sequence).thenComparing(LearnUnit::code);
         while (!remaining.isEmpty()) {
             // 每轮只从已满足全部前置条件的候选中取最稳定的一项；无候选即代表存在环。
+            var completedCodes = ordered.stream().map(LearnUnit::code)
+                    .collect(java.util.stream.Collectors.toSet());
             var candidates = remaining.stream()
                     .map(byCode::get)
-                    .filter(unit -> ordered.stream().map(LearnUnit::code).collect(java.util.stream.Collectors.toSet())
-                            .containsAll(unit.prerequisiteCodes()))
+                    .filter(unit -> completedCodes.containsAll(unit.prerequisiteCodes()))
                     .sorted(comparator)
                     .toList();
             if (candidates.isEmpty()) {
