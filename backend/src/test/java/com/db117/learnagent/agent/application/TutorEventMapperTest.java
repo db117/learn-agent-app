@@ -52,4 +52,18 @@ class TutorEventMapperTest {
         assertEquals(List.of(TutorEventType.TOOL_COMPLETED, TutorEventType.WORKSPACE_CHANGED),
                 writeProjection.stream().map(TutorEventMapper.Projection::type).toList());
     }
+
+    @Test
+    void projectsSkillLoadingAsAStableUiEvent() {
+        var loaded = new ToolResultBlock(
+                "call-3", "load_skill_through_path",
+                List.of(TextBlock.builder().text("internal skill body").build()), null);
+
+        var projection = TutorEventMapper.map(
+                new Event(EventType.TOOL_RESULT, new ToolResultMessage(loaded), true));
+
+        assertEquals(List.of(TutorEventType.SKILL_LOADED),
+                projection.stream().map(TutorEventMapper.Projection::type).toList());
+        assertEquals("已加载 Skill", projection.getFirst().text());
+    }
 }

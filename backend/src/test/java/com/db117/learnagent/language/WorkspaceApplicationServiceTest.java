@@ -1,5 +1,6 @@
 package com.db117.learnagent.language;
 
+import com.db117.learnagent.config.RuntimeConfig;
 import com.db117.learnagent.language.typescript.TypeScriptLanguagePack;
 import com.db117.learnagent.learning.api.WorkspaceDescriptor;
 import com.db117.learnagent.learning.application.LearningRequestException;
@@ -48,7 +49,7 @@ class WorkspaceApplicationServiceTest {
         assertEquals("export {};", Files.readString(workspace.root().resolve("src/index.ts")));
         assertEquals("learning:2", WorkspaceDescriptor.from(workspace).reference());
 
-        var resource = new WorkspaceResource(service, new WorkspaceManager(() -> dataDir.toString()));
+        var resource = new WorkspaceResource(service, new WorkspaceManager(runtimeConfig()));
         resource.writeLearningFile(2, "src/main.ts", new WorkspaceContentRequest("export const answer = 42;"));
         assertEquals("export const answer = 42;",
                 resource.readLearningFile(2, "src/main.ts").content());
@@ -161,7 +162,7 @@ class WorkspaceApplicationServiceTest {
                 learningJourneyRepository,
                 projectRepository,
                 new LanguagePackCatalog(List.of(new TypeScriptLanguagePack())),
-                new WorkspaceManager(() -> dataDir.toString()));
+                new WorkspaceManager(runtimeConfig()));
     }
 
     private LearningJourney learningJourney(long learnerId) {
@@ -171,5 +172,19 @@ class WorkspaceApplicationServiceTest {
         return LearningJourney.create(
                 learnerId, "typescript", "TypeScript Journey",
                 List.of(chapter), List.of(unit), CREATED_AT).withId(3L);
+    }
+
+    private RuntimeConfig runtimeConfig() {
+        return new RuntimeConfig() {
+            @Override
+            public String dataDir() {
+                return dataDir.toString();
+            }
+
+            @Override
+            public boolean memoryEnabled() {
+                return false;
+            }
+        };
     }
 }

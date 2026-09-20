@@ -28,6 +28,7 @@ import com.db117.learnagent.practice.domain.PracticeTask;
 import com.db117.learnagent.practice.domain.PracticeTaskRepository;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
@@ -37,12 +38,15 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.tool.ToolCallParam;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -56,10 +60,45 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AgentScopeRuntimeTest {
     @Test
+    void memoryToolsPersistLearnerContextAcrossRuntimeSessions() throws Exception {
+        var root = Files.createTempDirectory("tutor-memory");
+        var runtime = new TutorAgentRuntime(
+                testConfig(root, true),
+                new TutorModel(new FakeModel()),
+                root.resolve("agent"));
+        try {
+            var tutorContext = contextAssembler(
+                    new FakeLearnerRepository(),
+                    new FakeParentJourneyRepository(),
+                    new FakeJourneyRepository()).assemble(1L, 1L);
+            var saved = callTool(
+                    runtime,
+                    runtime.context("memory-session-1", "1", tutorContext),
+                    "memory_save",
+                    Map.of("content", "- 学习者偏好通过错误示例理解概念"));
+            assertTrue(toolText(saved).contains("Saved 1 memory"), toolText(saved));
+
+            runtime.close();
+            runtime = new TutorAgentRuntime(
+                    testConfig(root, true),
+                    new TutorModel(new FakeModel()),
+                    root.resolve("agent"));
+            var found = callTool(
+                    runtime,
+                    runtime.context("memory-session-2", "1", tutorContext),
+                    "memory_search",
+                    Map.of("query", "错误示例"));
+            assertTrue(toolText(found).contains("学习者偏好通过错误示例理解概念"), toolText(found));
+        } finally {
+            runtime.close();
+        }
+    }
+
+    @Test
     void tutorProjectsVisibleTextAndRestoresSafeHistory() throws Exception {
         var root = Files.createTempDirectory("tutor-runtime");
         var model = new FakeModel();
-        var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(model), root.resolve("agent"));
+        var runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(model), root.resolve("agent"));
         var service = new TutorSessionService(
                 contextAssembler(
                         new FakeLearnerRepository(),
@@ -89,7 +128,7 @@ class AgentScopeRuntimeTest {
             assertEquals(List.of("user", "assistant"),
                     restored.messages().stream().map(message -> message.role()).toList());
             assertEquals("visible answer", restored.messages().get(1).text());
-            assertTrue(runtime.agent().getToolkit().getToolNames().isEmpty());
+            assertEquals(Set.of("load_skill_through_path"), runtime.agent().getToolkit().getToolNames());
 
             var replay = service.streamTurn(
                             session.sessionId(),
@@ -109,7 +148,7 @@ class AgentScopeRuntimeTest {
     @Test
     void missingModelIsReportedWhenSendingRatherThanAtStartup() throws Exception {
         var root = Files.createTempDirectory("tutor-no-model");
-        var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(null), root.resolve("agent"));
+        var runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(null), root.resolve("agent"));
         var service = new TutorSessionService(
                 contextAssembler(
                         new FakeLearnerRepository(),
@@ -131,7 +170,7 @@ class AgentScopeRuntimeTest {
     void modelFailurePersistsInputAndDoesNotRetryTheSameTurn() throws Exception {
         var root = Files.createTempDirectory("tutor-failure");
         var model = new FailingModel();
-        var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(model), root.resolve("agent"));
+        var runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(model), root.resolve("agent"));
         var service = new TutorSessionService(
                 contextAssembler(
                         new FakeLearnerRepository(),
@@ -163,7 +202,7 @@ class AgentScopeRuntimeTest {
     @Test
     void planningSessionStartsBeforeLearningJourneyExists() throws Exception {
         var root = Files.createTempDirectory("tutor-planning");
-        var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(null), root.resolve("agent"));
+        var runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(null), root.resolve("agent"));
         var service = new TutorSessionService(
                 contextAssembler(
                         new FakeLearnerRepository(),
@@ -186,7 +225,7 @@ class AgentScopeRuntimeTest {
     void advancingTheCurrentLearnUnitCreatesANewSessionAndStalesTheOldOne() throws Exception {
         var root = Files.createTempDirectory("tutor-session-rollover");
         var learningJourneys = new MutableLearningJourneyRepository(twoUnitJourney());
-        var runtime = new TutorAgentRuntime(() -> root.toString(), new TutorModel(null), root.resolve("agent"));
+        var runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(null), root.resolve("agent"));
         var service = new TutorSessionService(
                 contextAssembler(
                         new FakeLearnerRepository(),
@@ -217,7 +256,17 @@ class AgentScopeRuntimeTest {
     @Test
     void tutorDrivesRealLearningWorkspaceToolAndProjectsSafeEvents() throws Exception {
         var dataDir = Files.createTempDirectory("tutor-workspace-runtime");
-        RuntimeConfig config = () -> dataDir.toString();
+        RuntimeConfig config = new RuntimeConfig() {
+            @Override
+            public String dataDir() {
+                return dataDir.toString();
+            }
+
+            @Override
+            public boolean memoryEnabled() {
+                return false;
+            }
+        };
         var workspaces = new WorkspaceManager(config);
         var learningJourneys = new FakeJourneyRepository("typescript");
         var workspaceAccess = new WorkspaceApplicationService(
@@ -524,6 +573,59 @@ class AgentScopeRuntimeTest {
                         List.of(first, second),
                         at)
                 .withId(1L);
+    }
+
+    private static RuntimeConfig testConfig(Path dataDir) {
+        return testConfig(dataDir, false);
+    }
+
+    private static RuntimeConfig testConfig(Path dataDir, boolean memoryEnabled) {
+        return new RuntimeConfig() {
+            @Override
+            public String dataDir() {
+                return dataDir.toString();
+            }
+
+            @Override
+            public boolean memoryEnabled() {
+                return memoryEnabled;
+            }
+        };
+    }
+
+    private static ToolResultBlock callTool(
+            TutorAgentRuntime runtime,
+            io.agentscope.core.agent.RuntimeContext context,
+            String name,
+            Map<String, Object> input) {
+        return runtime.agent().getToolkit().callTool(
+                        ToolCallParam.builder()
+                                .toolUseBlock(ToolUseBlock.builder()
+                                        .id(name + "-test")
+                                        .name(name)
+                                        .input(input)
+                                        .content(jsonInput(input))
+                                        .build())
+                                .input(input)
+                                .runtimeContext(context)
+                                .build())
+                .block();
+    }
+
+    private static String jsonInput(Map<String, Object> input) {
+        try {
+            return new ObjectMapper().writeValueAsString(input);
+        } catch (Exception error) {
+            throw new IllegalStateException(error);
+        }
+    }
+
+    private static String toolText(ToolResultBlock result) {
+        return result.getOutput().stream()
+                .filter(TextBlock.class::isInstance)
+                .map(TextBlock.class::cast)
+                .map(TextBlock::getText)
+                .reduce("", String::concat);
     }
 
     private static final class EmptyPracticeTaskRepository implements PracticeTaskRepository {

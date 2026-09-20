@@ -36,11 +36,19 @@ final class TutorEventMapper {
             var toolName = block.getName() == null || block.getName().isBlank()
                     ? "工具" : block.getName();
             var failed = block.getState() != null && "ERROR".equals(block.getState().name());
-            var type = failed ? TutorEventType.TOOL_FAILED : TutorEventType.TOOL_COMPLETED;
+            var type = failed
+                    ? TutorEventType.TOOL_FAILED
+                    : "load_skill_through_path".equals(toolName)
+                    ? TutorEventType.SKILL_LOADED
+                    : TutorEventType.TOOL_COMPLETED;
             var errorCode = failed ? "TOOL_FAILED" : null;
             projections.add(new Projection(
                     type,
-                    (failed ? "工具失败 " : "已完成工具 ") + toolName,
+                    failed
+                            ? "工具失败 " + toolName
+                            : "load_skill_through_path".equals(toolName)
+                            ? "已加载 Skill"
+                            : "已完成工具 " + toolName,
                     errorCode));
             if (!failed && "write_file".equals(toolName)) {
                 projections.add(new Projection(TutorEventType.WORKSPACE_CHANGED, "Workspace 已更新", null));

@@ -87,7 +87,17 @@ class PracticeRuntimeServiceTest {
     private PracticeRuntimeService service(
             ExecutionEnvironment environment,
             PracticeTaskRepository repository) {
-        RuntimeConfig config = () -> dataDir.toString();
+        RuntimeConfig config = new RuntimeConfig() {
+            @Override
+            public String dataDir() {
+                return dataDir.toString();
+            }
+
+            @Override
+            public boolean memoryEnabled() {
+                return false;
+            }
+        };
         var manager = new WorkspaceManager(config);
         return new PracticeRuntimeService(
                 environment,

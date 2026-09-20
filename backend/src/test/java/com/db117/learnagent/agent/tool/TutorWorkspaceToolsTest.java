@@ -1,5 +1,6 @@
 package com.db117.learnagent.agent.tool;
 
+import com.db117.learnagent.config.RuntimeConfig;
 import com.db117.learnagent.execution.ExecutionEnvironment;
 import com.db117.learnagent.execution.ExecutionResult;
 import com.db117.learnagent.execution.TypeScriptCompiler;
@@ -26,7 +27,17 @@ class TutorWorkspaceToolsTest {
 
     @Test
     void registersOnlyTheNarrowPracticeToolSurface() {
-        var manager = new WorkspaceManager(() -> dataDir.toString());
+        var manager = new WorkspaceManager(new RuntimeConfig() {
+            @Override
+            public String dataDir() {
+                return dataDir.toString();
+            }
+
+            @Override
+            public boolean memoryEnabled() {
+                return false;
+            }
+        });
         ExecutionEnvironment environment = (workspace, request) ->
                 new ExecutionResult(true, 0, "", Duration.ZERO);
         var runtime = new PracticeRuntimeService(

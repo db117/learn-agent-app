@@ -1,7 +1,11 @@
 package com.db117.learnagent.workspace;
 
 import com.db117.learnagent.config.RuntimeConfig;
-import com.db117.learnagent.language.*;
+import com.db117.learnagent.language.LanguageMetadata;
+import com.db117.learnagent.language.LanguagePack;
+import com.db117.learnagent.language.Toolchain;
+import com.db117.learnagent.language.WorkspaceTemplate;
+import com.db117.learnagent.language.WorkspaceTemplateProvider;
 import com.db117.learnagent.language.typescript.TypeScriptLanguagePack;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.WorkspaceFileEntry;
@@ -15,7 +19,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorkspaceManagerTest {
     @TempDir
@@ -180,7 +187,17 @@ class WorkspaceManagerTest {
     }
 
     private WorkspaceManager manager() {
-        RuntimeConfig config = () -> dataDir.toString();
+        RuntimeConfig config = new RuntimeConfig() {
+            @Override
+            public String dataDir() {
+                return dataDir.toString();
+            }
+
+            @Override
+            public boolean memoryEnabled() {
+                return false;
+            }
+        };
         return new WorkspaceManager(config);
     }
 }

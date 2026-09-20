@@ -39,7 +39,17 @@ class WorkspaceResourceTest {
     }
 
     private WorkspaceResource resource() {
-        RuntimeConfig config = () -> dataDir.toString();
+        RuntimeConfig config = new RuntimeConfig() {
+            @Override
+            public String dataDir() {
+                return dataDir.toString();
+            }
+
+            @Override
+            public boolean memoryEnabled() {
+                return false;
+            }
+        };
         return new WorkspaceResource(new WorkspaceManager(config));
     }
 }

@@ -1,6 +1,7 @@
 package com.db117.learnagent.agent.runtime;
 
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import jakarta.enterprise.context.ApplicationScoped;
 
@@ -36,7 +37,8 @@ public class TutorModel {
             var builder = OpenAIChatModel.builder()
                     .apiKey(apiKey)
                     .modelName(modelName)
-                    .stream(true);
+                    .stream(true)
+                    .httpTransport(new ProviderEnvelopeHttpTransport(HttpTransportFactory.getDefault()));
             var baseUrl = environment("OPENAI_BASE_URL");
             if (!baseUrl.isBlank()) {
                 builder.baseUrl(baseUrl);

@@ -1,5 +1,6 @@
 package com.db117.learnagent.execution;
 
+import com.db117.learnagent.config.RuntimeConfig;
 import com.db117.learnagent.language.typescript.TypeScriptLanguagePack;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.LearningWorkspace;
@@ -21,7 +22,17 @@ class TypeScriptWorkspaceToolchainTest {
         var dataDir = Files.createTempDirectory("learn-agent-independent-workspace-");
         try {
             assertNoAncestorNodeModules(dataDir);
-            var manager = new WorkspaceManager(() -> dataDir.toString());
+            var manager = new WorkspaceManager(new RuntimeConfig() {
+                @Override
+                public String dataDir() {
+                    return dataDir.toString();
+                }
+
+                @Override
+                public boolean memoryEnabled() {
+                    return false;
+                }
+            });
             LearningWorkspace workspace = manager.ensureLearningWorkspace(1, new TypeScriptLanguagePack());
             assertFalse(Files.exists(workspace.root().resolve("node_modules")));
             var environment = new LocalExecutionEnvironment(Duration.ofSeconds(60));

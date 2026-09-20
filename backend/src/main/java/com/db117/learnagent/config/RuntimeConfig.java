@@ -7,4 +7,7 @@ import io.smallrye.config.WithName;
 public interface RuntimeConfig {
     @WithName("data-dir")
     String dataDir();
+
+    @WithName("memory-enabled")
+    boolean memoryEnabled();
 }
