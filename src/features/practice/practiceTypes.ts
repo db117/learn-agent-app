@@ -29,6 +29,7 @@ export type PracticePanelProps = {
     content: string;
     loading?: boolean;
     loadingContent?: boolean;
+    creating?: boolean;
     dirty?: boolean;
     saving?: boolean;
     compiling?: boolean;
@@ -47,6 +48,7 @@ export type PracticePanelProps = {
     onSave: () => void | Promise<void>;
     onCompile: () => void | Promise<void>;
     onTest: () => void | Promise<void>;
+    onCreateFile: (path: string) => void | Promise<void>;
     onVerify?: () => void | Promise<void>;
     onStartChoice?: () => void | Promise<void>;
     onSelectChoice?: (optionId: string) => void;

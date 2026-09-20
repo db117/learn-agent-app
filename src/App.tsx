@@ -118,6 +118,7 @@ export default function App() {
     const [journeyAction, setJourneyAction] = useState<"creating" | number | null>(null);
     const [journeyFeedback, setJourneyFeedback] = useState<string | null>(null);
     const [workspaceDirty, setWorkspaceDirty] = useState(false);
+    const [workspaceVersion, setWorkspaceVersion] = useState(0);
     const [progressVersion, setProgressVersion] = useState(0);
     const [learningCompleted, setLearningCompleted] = useState(false);
     const [planningJourneyId, setPlanningJourneyId] = useState<number | null>(null);
@@ -378,6 +379,9 @@ export default function App() {
             await readSse(response, (event) => {
                 if (event.type === "turn.started") setActivity("TutorAgent 已开始处理");
                 if (event.type === "activity") setActivity(event.text ?? "TutorAgent 正在工作");
+                if (event.type === "workspace.changed") {
+                    setWorkspaceVersion((version) => version + 1);
+                }
                 if (event.type.startsWith("tool.") || event.type === "workspace.changed") {
                     setActivity(event.text ?? "TutorAgent 正在操作 Workspace");
                 }
@@ -723,6 +727,7 @@ export default function App() {
                                     journeyId={currentJourney.id}
                                     onDirtyChange={setWorkspaceDirty}
                                     onProgressChanged={handleProgressChanged}
+                                    workspaceVersion={workspaceVersion}
                                     progressVersion={progressVersion}
                                 />
                         )}

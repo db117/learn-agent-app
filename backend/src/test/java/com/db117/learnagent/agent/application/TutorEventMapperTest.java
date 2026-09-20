@@ -3,12 +3,7 @@ package com.db117.learnagent.agent.application;
 import com.db117.learnagent.agent.api.TutorEventType;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
-import io.agentscope.core.message.AssistantMessage;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.ToolResultBlock;
-import io.agentscope.core.message.ToolResultMessage;
-import io.agentscope.core.message.ToolResultState;
-import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.*;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -42,6 +37,8 @@ class TutorEventMapperTest {
                 .withState(ToolResultState.ERROR);
         var written = new ToolResultBlock(
                 "call-2", "write_file", List.of(TextBlock.builder().text("ok").build()), null);
+        var compiled = new ToolResultBlock(
+                "call-3", "compile_project", List.of(TextBlock.builder().text("dist/index.js").build()), null);
 
         var failedProjection = TutorEventMapper.map(
                 new Event(EventType.TOOL_RESULT, new ToolResultMessage(failed), true));
@@ -51,6 +48,9 @@ class TutorEventMapperTest {
         assertEquals(TutorEventType.TOOL_FAILED, failedProjection.getFirst().type());
         assertEquals(List.of(TutorEventType.TOOL_COMPLETED, TutorEventType.WORKSPACE_CHANGED),
                 writeProjection.stream().map(TutorEventMapper.Projection::type).toList());
+        assertEquals(List.of(TutorEventType.TOOL_COMPLETED, TutorEventType.WORKSPACE_CHANGED),
+                TutorEventMapper.map(new Event(EventType.TOOL_RESULT, new ToolResultMessage(compiled), true))
+                        .stream().map(TutorEventMapper.Projection::type).toList());
     }
 
     @Test

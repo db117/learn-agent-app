@@ -47,6 +47,11 @@ test("learner completes Learn Mode through the real browser", async ({page}) => 
     await expect(page.locator(".unit-label")).toHaveText(/当前 LearnUnit：\S+/);
     await expect(chat.locator(".message.assistant").last()).toContainText(/\S+/);
 
+    await page.getByLabel("新建文件路径").fill("ts-runtime-practice/src/created.ts");
+    await page.getByRole("button", {name: "新建文件", exact: true}).click();
+    await expect(page.getByText("已创建 ts-runtime-practice/src/created.ts")).toBeVisible();
+    await expect(page.locator(".workspace-files")).toContainText("ts-runtime-practice");
+
     const initialProgress = await readProgressCounter(page);
     expect(initialProgress.completed).toBe(0);
     expect(initialProgress.total).toBeGreaterThan(1);

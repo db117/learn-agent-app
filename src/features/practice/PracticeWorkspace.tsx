@@ -11,6 +11,7 @@ type Props = {
     journeyId: number;
     onDirtyChange?: (dirty: boolean) => void;
     onProgressChanged?: (status: string, currentLearnUnitCode: string | null) => void;
+    workspaceVersion?: number;
     progressVersion?: number;
 };
 
@@ -37,12 +38,19 @@ type VerifyResponse = {
 
 type ChoiceStartResponse = ChoiceQuestion;
 
-export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, progressVersion = 0}: Props) {
+export function PracticeWorkspace({
+                                      journeyId,
+                                      onDirtyChange,
+                                      onProgressChanged,
+                                      workspaceVersion = 0,
+                                      progressVersion = 0,
+                                  }: Props) {
     const api = useMemo(() => createWorkspaceApi(fetch, BACKEND_URL), []);
     const [files, setFiles] = useState<WorkspaceFileEntry[]>([]);
     const [state, setState] = useState(initialSaveState);
     const [loading, setLoading] = useState(true);
     const [loadingContent, setLoadingContent] = useState(false);
+    const [creatingFile, setCreatingFile] = useState(false);
     const [saving, setSaving] = useState(false);
     const [compiling, setCompiling] = useState(false);
     const [testing, setTesting] = useState(false);
@@ -103,6 +111,7 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
         setChoiceLoading(false);
         setChoiceSubmitting(false);
         setSelectedChoiceId(null);
+        setCreatingFile(false);
         setLoading(true);
         void loadProgress(controller.signal);
         api.listFiles("journey", journeyId)
@@ -119,6 +128,21 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
             });
         return () => controller.abort();
     }, [api, journeyId, progressVersion]);
+
+    useEffect(() => {
+        if (workspaceVersion === 0) return;
+        let cancelled = false;
+        api.listFiles("journey", journeyId)
+            .then((nextFiles) => {
+                if (!cancelled) setFiles(nextFiles);
+            })
+            .catch((error: unknown) => {
+                if (!cancelled) setFeedback(error instanceof Error ? error.message : "无法刷新练习 Workspace");
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [api, journeyId, workspaceVersion]);
 
     const selectWorkspaceFile = (path: string) => {
         if (path === state.selectedPath) return;
@@ -145,6 +169,30 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
             setFeedback(message);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const createFile = async (path: string) => {
+        const normalizedPath = path.trim();
+        if (!normalizedPath) {
+            setFeedback("请输入新文件的 Workspace 相对路径。");
+            return;
+        }
+        if (files.some((file) => file.path === normalizedPath)) {
+            setFeedback("文件已存在，请直接从文件树中打开它。");
+            return;
+        }
+        setCreatingFile(true);
+        setFeedback(null);
+        try {
+            const file = await api.writeFile("journey", journeyId, normalizedPath, "");
+            setFiles((current) => [...current, file].sort((left, right) => left.path.localeCompare(right.path)));
+            setState(selectFile(file.path, file.content));
+            setFeedback(`已创建 ${file.path}，现在可以编辑。`);
+        } catch (error: unknown) {
+            setFeedback(error instanceof Error ? error.message : "无法创建练习文件");
+        } finally {
+            setCreatingFile(false);
         }
     };
 
@@ -292,6 +340,7 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
             content={state.draftContent}
             loading={loading}
             loadingContent={loadingContent}
+            creating={creatingFile}
             dirty={state.dirty}
             saving={saving}
             compiling={compiling}
@@ -310,6 +359,7 @@ export function PracticeWorkspace({journeyId, onDirtyChange, onProgressChanged, 
             onSave={save}
             onCompile={compile}
             onTest={runTests}
+            onCreateFile={createFile}
             onVerify={verify}
             onStartChoice={startChoice}
             onSelectChoice={setSelectedChoiceId}

@@ -50,11 +50,18 @@ final class TutorEventMapper {
                             ? "已加载 Skill"
                             : "已完成工具 " + toolName,
                     errorCode));
-            if (!failed && "write_file".equals(toolName)) {
+            if (!failed && changesWorkspace(toolName)) {
                 projections.add(new Projection(TutorEventType.WORKSPACE_CHANGED, "Workspace 已更新", null));
             }
         }
         return List.copyOf(projections);
+    }
+
+    private static boolean changesWorkspace(String toolName) {
+        return switch (toolName) {
+            case "write_file", "initialize_npm_project", "install_typescript", "compile_project" -> true;
+            default -> false;
+        };
     }
 
     /**

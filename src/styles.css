@@ -734,6 +734,23 @@ button.secondary {
     flex-wrap: wrap;
 }
 
+.workspace-create {
+    display: grid;
+    gap: 0.35rem;
+    margin-top: 0.9rem;
+}
+
+.workspace-create label {
+    color: #9aa9c2;
+    font-size: 0.78rem;
+}
+
+.workspace-create-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem;
+}
+
 .choice-practice {
     margin-top: 1rem;
     padding: 1rem;

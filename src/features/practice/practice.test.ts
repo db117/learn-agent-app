@@ -34,6 +34,7 @@ function panelProps(overrides: Partial<PracticePanelProps> = {}): PracticePanelP
         onSave: vi.fn(),
         onCompile: vi.fn(),
         onTest: vi.fn(),
+        onCreateFile: vi.fn(),
         ...overrides,
     };
 }
@@ -57,6 +58,7 @@ describe("PracticePanel", () => {
         expect(markup).toContain("编译");
         expect(markup).toContain("测试");
         expect(markup).toContain("保存");
+        expect(markup).toContain("新建文件");
         expect(markup).toContain("main.ts");
         expect(markup).toContain("src/main.ts:2:1");
         expect(markup).toContain("TS2322");

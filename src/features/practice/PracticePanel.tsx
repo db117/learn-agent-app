@@ -1,4 +1,5 @@
 import Editor from "@monaco-editor/react";
+import {useState} from "react";
 import {buildFileTree} from "../workspace/fileTree";
 import {WorkspaceFileTree} from "../workspace/WorkspaceFileTree";
 import {formatDiagnostic, sortDiagnostics} from "./practiceDiagnostics";
@@ -10,6 +11,7 @@ export function PracticePanel({
                                   content,
                                   loading = false,
                                   loadingContent = false,
+                                  creating = false,
                                   dirty = false,
                                   saving = false,
                                   compiling = false,
@@ -28,14 +30,16 @@ export function PracticePanel({
                                   onSave,
                                   onCompile,
                                   onTest,
+                                  onCreateFile,
                                   onVerify = () => undefined,
                                   onStartChoice = () => undefined,
                                   onSelectChoice = () => undefined,
                                   onSubmitChoice = () => undefined,
                               }: PracticePanelProps) {
+    const [newFilePath, setNewFilePath] = useState("");
     const tree = buildFileTree([...files]);
     const orderedDiagnostics = sortDiagnostics(diagnostics);
-    const actionsDisabled = loading || loadingContent || saving;
+    const actionsDisabled = loading || loadingContent || saving || creating;
 
     return (
         <section className="workspace-panel" aria-labelledby="practice-title">
@@ -72,6 +76,26 @@ export function PracticePanel({
                     </button>
                 </div>
             </div>
+
+            <form className="workspace-create" onSubmit={(event) => {
+                event.preventDefault();
+                void onCreateFile(newFilePath.trim());
+            }}>
+                <label htmlFor="new-practice-file">新建文件路径</label>
+                <div className="workspace-create-controls">
+                    <input
+                        id="new-practice-file"
+                        value={newFilePath}
+                        onChange={(event) => setNewFilePath(event.target.value)}
+                        placeholder="例如：ts-runtime-practice/src/index.ts"
+                        required
+                        disabled={actionsDisabled}
+                    />
+                    <button type="submit" className="secondary" disabled={actionsDisabled}>
+                        {creating ? "创建中…" : "新建文件"}
+                    </button>
+                </div>
+            </form>
 
             {feedback && <p className="form-feedback" role="alert">{feedback}</p>}
             {runtimeSummary && <pre className="runtime-summary" aria-label="执行摘要">{runtimeSummary}</pre>}
