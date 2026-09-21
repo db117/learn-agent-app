@@ -1,5 +1,5 @@
 import Editor from "@monaco-editor/react";
-import {useState} from "react";
+import {useEffect, useState} from "react";
 import {buildFileTree} from "../workspace/fileTree";
 import {WorkspaceFileTree} from "../workspace/WorkspaceFileTree";
 import {formatDiagnostic, sortDiagnostics} from "./practiceDiagnostics";
@@ -28,20 +28,45 @@ export function PracticePanel({
                                   onTest,
                                   onCreateFile,
                                   onVerify = () => undefined,
+                                  theme = "dark",
+                                  fullscreen = false,
+                                  onToggleFullscreen,
                               }: PracticePanelProps) {
     const [newFilePath, setNewFilePath] = useState("");
+
+    useEffect(() => {
+        if (!fullscreen) return;
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") onToggleFullscreen?.();
+        };
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        document.addEventListener("keydown", closeOnEscape);
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            document.removeEventListener("keydown", closeOnEscape);
+        };
+    }, [fullscreen, onToggleFullscreen]);
+
     const tree = buildFileTree([...files]);
     const orderedDiagnostics = sortDiagnostics(diagnostics);
     const actionsDisabled = loading || loadingContent || saving || creating;
 
     return (
-        <section className="workspace-panel" aria-labelledby="practice-title">
+        <section className={`workspace-panel ${fullscreen ? "workspace-panel-fullscreen" : ""}`}
+                 aria-labelledby="practice-title">
             <div className="workspace-heading">
                 <div>
                     <p className="mode-label">PRACTICE RUNTIME</p>
                     <h3 id="practice-title">代码练习</h3>
                 </div>
                 <div className="workspace-actions">
+                    {onToggleFullscreen && (
+                        <button type="button" className="secondary" onClick={onToggleFullscreen}
+                                aria-pressed={fullscreen}>
+                            {fullscreen ? "退出全屏" : "全屏编辑"}
+                        </button>
+                    )}
                     <button type="button" onClick={() => void onCompile()}
                             disabled={actionsDisabled || compiling || testing}
                             aria-busy={compiling}>
@@ -104,9 +129,9 @@ export function PracticePanel({
                         <p className="empty-state">正在读取文件…</p>
                     ) : selectedPath ? (
                         <Editor
-                            height="360px"
+                            height={fullscreen ? "calc(100vh - 16rem)" : "520px"}
                             language="typescript"
-                            theme="vs-dark"
+                            theme={theme === "light" ? "light" : "vs-dark"}
                             value={content}
                             onChange={(value) => onContentChange(value ?? "")}
                             options={{fontSize: 14, minimap: {enabled: false}, wordWrap: "on"}}

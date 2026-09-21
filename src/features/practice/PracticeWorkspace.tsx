@@ -1,5 +1,5 @@
 import {useEffect, useMemo, useState} from "react";
-import {type LearningProgress, LearnModePanel} from "../learn/LearnModePanel";
+import {LearningPathPanel, type LearningProgress, LearnModePanel} from "../learn/LearnModePanel";
 import {PracticePanel} from "./PracticePanel";
 import type {PracticeDiagnostic} from "./practiceTypes";
 import {createWorkspaceApi, type WorkspaceFileEntry} from "../workspace/workspaceApi";
@@ -11,9 +11,11 @@ type Props = {
     journeyId: number;
     onDirtyChange?: (dirty: boolean) => void;
     onProgressChanged?: (status: string, currentLearnUnitCode: string | null) => void;
+    theme?: "dark" | "light";
     workspaceVersion?: number;
     progressVersion?: number;
     contentVersion?: number;
+    learningLayout?: boolean;
 };
 
 type CompileResponse = {
@@ -40,9 +42,11 @@ export function PracticeWorkspace({
                                       journeyId,
                                       onDirtyChange,
                                       onProgressChanged,
+                                      theme = "dark",
                                       workspaceVersion = 0,
                                       progressVersion = 0,
                                       contentVersion = 0,
+                                      learningLayout = false,
                                   }: Props) {
     const api = useMemo(() => createWorkspaceApi(fetch, BACKEND_URL), []);
     const [files, setFiles] = useState<WorkspaceFileEntry[]>([]);
@@ -59,6 +63,7 @@ export function PracticeWorkspace({
     const [feedback, setFeedback] = useState<string | null>(null);
     const [progress, setProgress] = useState<LearningProgress | null>(null);
     const [progressLoading, setProgressLoading] = useState(true);
+    const [practiceFullscreen, setPracticeFullscreen] = useState(false);
 
     useEffect(() => {
         onDirtyChange?.(state.dirty);
@@ -277,9 +282,12 @@ export function PracticeWorkspace({
         }
     };
 
-    return <>
-        <LearnModePanel progress={progress} loading={progressLoading}/>
-        <PracticePanel
+    const lessonPanel = <LearnModePanel
+        progress={progress}
+        loading={progressLoading}
+        showPath={!learningLayout}
+    />;
+    const practicePanel = <PracticePanel
             files={files}
             selectedPath={state.selectedPath}
             content={state.draftContent}
@@ -302,14 +310,31 @@ export function PracticeWorkspace({
             onTest={runTests}
             onCreateFile={createFile}
             onVerify={verify}
-        />
-        {progressLoading ? (
+            theme={theme}
+            fullscreen={practiceFullscreen}
+            onToggleFullscreen={() => setPracticeFullscreen((current) => !current)}
+    />;
+    const completionMessage = progressLoading ? (
             <p className="session-status">正在读取当前学习单元…</p>
         ) : progress?.status === "COMPLETED" ? (
             <section className="status-card" aria-labelledby="learning-complete-title">
                 <h3 id="learning-complete-title">学习路径已完成</h3>
                 <p>已完成 {progress.completedCount} / {progress.totalCount} 个 LearnUnit。</p>
             </section>
-        ) : null}
+    ) : null;
+
+    if (!learningLayout) return <div className="learning-stack">
+        {lessonPanel}
+        {practicePanel}
+        {completionMessage}
+    </div>;
+
+    return <>
+        <aside className="learning-path-column">
+            <LearningPathPanel progress={progress} loading={progressLoading}/>
+        </aside>
+        <div className="learning-content-column">{lessonPanel}</div>
+        <div className="learning-practice-column">{practicePanel}</div>
+        {completionMessage && <div className="learning-completion-column">{completionMessage}</div>}
     </>;
 }

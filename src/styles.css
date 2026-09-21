@@ -3,10 +3,45 @@
     background: #0b1020;
     font-family: Inter, ui-sans-serif, system-ui, sans-serif;
     font-synthesis: none;
+    scrollbar-color: rgba(141, 169, 213, 0.55) transparent;
+    scrollbar-width: thin;
 }
 
 * {
     box-sizing: border-box;
+    scrollbar-color: rgba(141, 169, 213, 0.55) transparent;
+    scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: rgba(141, 169, 213, 0.55);
+    background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: #8da9d5;
+    background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+*::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 body {
@@ -26,25 +61,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 }
 
 .app-shell {
-    width: min(1180px, 100%);
+    width: 100%;
     min-height: 100vh;
     margin: auto;
-    padding: 8vh 1.5rem 3rem;
+    padding: 2rem clamp(1.5rem, 2.5vw, 4rem) 3rem;
 }
 
-.hero {
-    max-width: 720px;
-}
-
-.eyebrow {
-    margin: 0 0 1.25rem;
-    color: #8da9d5;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-}
-
-h1, h2, h3, p {
+h2, h3, p {
     margin: 0;
 }
 
@@ -71,12 +94,196 @@ h3 {
     margin-top: 1.5rem;
 }
 
+.health-strip {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 0;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid #293858;
+    border-radius: 0.75rem;
+    background: rgba(18, 28, 51, 0.7);
+}
+
+.health-strip .status-label {
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.health-strip dl {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem 1.25rem;
+    margin: 0 0 0 auto;
+}
+
+.health-strip dl div {
+    display: flex;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+}
+
+.health-strip dd {
+    text-align: left;
+}
+
+.health-strip .theme-toggle {
+    min-height: 2.2rem;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid #334568;
+    background: #17233e;
+    color: #d7e0ee;
+    font-size: 0.75rem;
+}
+
+.health-strip .theme-toggle:hover:not(:disabled) {
+    background: #293858;
+}
+
 .status-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
     gap: 1rem;
-    margin-top: 3.5rem;
+    margin-top: 1rem;
+}
+
+.learning-mode-grid {
+    grid-template-columns: var(--path-width, 14rem) minmax(0, 1fr) var(--tutor-width, 20rem);
+    align-items: start;
+    gap: 0.65rem;
+}
+
+.learning-path-column,
+.learning-content-column,
+.learning-practice-column,
+.learning-completion-column {
+    min-width: 0;
+}
+
+.learning-mode-grid .learning-path-column {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+}
+
+.learning-mode-grid .learning-content-column {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.learning-mode-grid .learning-practice-column {
+    grid-column: 2 / -1;
+    grid-row: 2;
+}
+
+.learning-mode-grid .learning-completion-column {
+    grid-column: 2 / -1;
+    grid-row: 3;
+}
+
+.learning-mode-grid .tutor-card {
+    grid-column: 3;
+    grid-row: 1;
+}
+
+.learning-mode-grid.path-collapsed .learning-path-column,
+.learning-mode-grid.tutor-collapsed .tutor-card {
+    display: none;
+}
+
+.resize-handle {
+    z-index: 12;
+    width: 0.25rem;
+    min-width: 0;
+    min-height: 4rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #71829f;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+.resize-handle:hover:not(:disabled),
+.resize-handle:focus-visible {
+    background: #8da9d5;
+}
+
+.path-resize-handle,
+.tutor-resize-handle {
+    grid-row: 1 / -1;
+    align-self: stretch;
+    justify-self: end;
+    margin-right: -0.3rem;
+}
+
+.path-resize-handle {
+    grid-column: 1;
+}
+
+.tutor-resize-handle {
+    grid-column: 2;
+}
+
+.panel-toggle {
+    z-index: 13;
+    width: 1.45rem;
+    min-height: 2rem;
+    padding: 0;
+    border: 1px solid #334568;
+    border-radius: 0.45rem;
+    background: #17233e;
+    color: #d7e0ee;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.panel-toggle:hover:not(:disabled) {
+    background: #293858;
+}
+
+.path-collapse-toggle,
+.tutor-collapse-toggle {
+    grid-row: 1;
+    align-self: start;
+    margin-top: 0.5rem;
+}
+
+.path-collapse-toggle {
+    grid-column: 1;
+    justify-self: start;
+    margin-left: -0.35rem;
+}
+
+.tutor-collapse-toggle {
+    grid-column: 3;
+    justify-self: end;
+    margin-right: -0.35rem;
+}
+
+.learning-path-panel {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    margin-top: 0;
+    padding: 1.35rem;
+    overflow: auto;
+}
+
+.learning-path-panel .chapter-path {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
+.learning-content-column > .learn-panel {
+    margin-top: 0;
+}
+
+.learning-practice-column .workspace-panel {
+    margin-top: 0.35rem;
+    padding: 1.2rem;
 }
 
 .status-card {
@@ -91,10 +298,6 @@ h3 {
 
 .tutor-card {
     grid-column: 1 / -1;
-}
-
-.compact-card {
-    align-self: start;
 }
 
 .card-heading {
@@ -376,7 +579,8 @@ button.secondary {
 .runtime-summary {
     max-height: 10rem;
     margin-top: 0.65rem;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding: 0.65rem 0.75rem;
     border: 1px solid #293858;
     border-radius: 0.55rem;
@@ -408,6 +612,10 @@ button.secondary {
     border: 1px solid #334568;
     border-radius: 0.75rem;
     background: rgba(11, 18, 36, 0.48);
+}
+
+.learning-mode-grid .learning-path-panel {
+    margin-top: 0;
 }
 
 .learn-heading {
@@ -465,7 +673,8 @@ button.secondary {
 .learn-content {
     max-height: 20rem;
     margin: 1rem 0 0;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding: 0.85rem;
     border: 1px solid #293858;
     border-radius: 0.55rem;
@@ -564,16 +773,19 @@ button.secondary {
 
 .chat-log {
     display: grid;
+    min-width: 0;
     min-height: 8rem;
     max-height: 25rem;
     gap: 0.75rem;
     margin-top: 1.25rem;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding: 0.1rem 0.25rem 0.1rem 0;
 }
 
 .message {
     max-width: 88%;
+    min-width: 0;
     padding: 0.75rem 0.85rem;
     border-radius: 0.75rem;
     background: #17233e;
@@ -599,6 +811,7 @@ button.secondary {
 }
 
 .message .markdown-message {
+    min-width: 0;
     margin-top: 0.35rem;
     color: #e8edf5;
     line-height: 1.5;
@@ -642,7 +855,9 @@ button.secondary {
 }
 
 .markdown-message pre {
+    max-width: 100%;
     overflow-x: auto;
+    overflow-y: hidden;
     padding: 0.7rem;
     border: 1px solid #334568;
     border-radius: 0.45rem;
@@ -664,10 +879,12 @@ button.secondary {
 }
 
 .markdown-message table {
+    max-width: 100%;
     width: 100%;
     border-collapse: collapse;
     display: block;
     overflow-x: auto;
+    overflow-y: hidden;
 }
 
 .markdown-message th,
@@ -716,6 +933,22 @@ button.secondary {
     background: rgba(11, 18, 36, 0.48);
 }
 
+.workspace-panel-fullscreen {
+    position: fixed;
+    inset: 1rem;
+    z-index: 100;
+    max-height: calc(100vh - 2rem);
+    margin: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: #101a31;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+.learning-practice-column .workspace-panel-fullscreen {
+    margin-top: 0;
+}
+
 .workspace-heading {
     display: flex;
     align-items: flex-end;
@@ -758,14 +991,23 @@ button.secondary {
     margin-top: 1rem;
 }
 
+.workspace-panel-fullscreen .workspace-layout {
+    min-height: calc(100vh - 17rem);
+}
+
 .workspace-files {
     min-width: 0;
-    max-height: 360px;
-    overflow: auto;
+    max-height: 520px;
+    overflow-x: hidden;
+    overflow-y: auto;
     padding: 0.45rem;
     border: 1px solid #293858;
     border-radius: 0.55rem;
     background: #0b1224;
+}
+
+.workspace-panel-fullscreen .workspace-files {
+    max-height: calc(100vh - 17rem);
 }
 
 .workspace-files ul {
@@ -825,10 +1067,14 @@ button.secondary {
 }
 
 .workspace-editor > .empty-state {
-    min-height: 360px;
+    min-height: 520px;
     margin: 0;
     padding: 1rem;
     background: #0b1224;
+}
+
+.workspace-panel-fullscreen .workspace-editor > .empty-state {
+    min-height: calc(100vh - 17rem);
 }
 
 .sr-only {
@@ -850,7 +1096,36 @@ button.secondary {
 
     .status-grid {
         grid-template-columns: 1fr;
-        margin-top: 2.5rem;
+        margin-top: 1rem;
+    }
+
+    .learning-mode-grid .learning-path-column,
+    .learning-mode-grid .learning-content-column,
+    .learning-mode-grid .learning-practice-column,
+    .learning-mode-grid .learning-completion-column,
+    .learning-mode-grid .tutor-card {
+        grid-column: 1;
+        grid-row: auto;
+    }
+
+    .resize-handle,
+    .panel-toggle {
+        display: none;
+    }
+
+    .health-strip {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .health-strip dl {
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .learning-path-panel {
+        position: static;
+        max-height: none;
     }
 }
 
@@ -861,6 +1136,10 @@ button.secondary {
     }
 
     .status-card {
+        padding: 1rem;
+    }
+
+    .learning-path-panel {
         padding: 1rem;
     }
 
@@ -881,6 +1160,7 @@ button.secondary {
         align-items: flex-start;
         flex-direction: column;
     }
+
 }
 
 @media (max-width: 720px) {
@@ -891,4 +1171,315 @@ button.secondary {
     .workspace-files {
         max-height: 12rem;
     }
+}
+
+:root[data-theme="light"] {
+    color-scheme: light;
+    color: #1f2937;
+    background: #f5f7fb;
+    scrollbar-color: #dbe1e8 transparent;
+    --light-page: #f5f7fb;
+    --light-surface: #ffffff;
+    --light-surface-soft: #f8fafc;
+    --light-surface-input: #f3f6fa;
+    --light-surface-control: #e9eff7;
+    --light-surface-selected: #e5effb;
+    --light-border: #d4dfec;
+    --light-border-strong: #c3d0e0;
+    --light-border-code: #b7c7d9;
+    --light-text: #1f2937;
+    --light-heading: #1f3b5d;
+    --light-muted: #5e6e84;
+    --light-subtle: #718096;
+    --light-dim: #8491a3;
+    --light-accent: #3f6fa8;
+    --light-accent-hover: #315b91;
+    --light-success: #16734e;
+    --light-success-soft: rgba(22, 115, 78, 0.12);
+    --light-warning: #8a5a00;
+    --light-error: #b63b3b;
+}
+
+:root[data-theme="light"] body {
+    background: radial-gradient(circle at top right, #e4edf8 0, var(--light-page) 48%);
+    color: var(--light-text);
+}
+
+:root[data-theme="light"] *,
+:root[data-theme="light"] *::-webkit-scrollbar {
+    scrollbar-color: #dbe1e8 transparent;
+}
+
+:root[data-theme="light"] *::-webkit-scrollbar-thumb {
+    background: #dbe1e8;
+}
+
+:root[data-theme="light"] *::-webkit-scrollbar-thumb:hover {
+    background: #c5ced9;
+}
+
+:root[data-theme="light"] .health-strip,
+:root[data-theme="light"] .status-card,
+:root[data-theme="light"] .learn-panel,
+:root[data-theme="light"] .workspace-panel,
+:root[data-theme="light"] .journey-item,
+:root[data-theme="light"] .archived-list li {
+    border-color: var(--light-border);
+    background: var(--light-surface);
+    color: var(--light-text);
+    box-shadow: 0 18px 60px rgba(31, 46, 69, 0.08);
+}
+
+:root[data-theme="light"] .journey-item.current {
+    border-color: var(--light-accent);
+    background: var(--light-surface-selected);
+}
+
+:root[data-theme="light"] .workspace-panel-fullscreen {
+    background: var(--light-page);
+    box-shadow: 0 24px 80px rgba(31, 46, 69, 0.22);
+}
+
+:root[data-theme="light"] .intro,
+:root[data-theme="light"] .session-status,
+:root[data-theme="light"] .journey-meta,
+:root[data-theme="light"] .archived-section,
+:root[data-theme="light"] .planning-note,
+:root[data-theme="light"] .learn-summary,
+:root[data-theme="light"] .learn-objective,
+:root[data-theme="light"] .workspace-path {
+    color: var(--light-muted);
+}
+
+:root[data-theme="light"] .profile-summary,
+:root[data-theme="light"] dd,
+:root[data-theme="light"] .planning-note,
+:root[data-theme="light"] .learn-content,
+:root[data-theme="light"] .message p,
+:root[data-theme="light"] .message .markdown-message {
+    color: var(--light-text);
+}
+
+:root[data-theme="light"] .profile-summary strong,
+:root[data-theme="light"] .markdown-message h1,
+:root[data-theme="light"] .markdown-message h2,
+:root[data-theme="light"] .markdown-message h3,
+:root[data-theme="light"] .markdown-message h4,
+:root[data-theme="light"] .markdown-message h5,
+:root[data-theme="light"] .markdown-message h6,
+:root[data-theme="light"] .markdown-message th {
+    color: var(--light-heading);
+}
+
+:root[data-theme="light"] dl div,
+:root[data-theme="light"] label,
+:root[data-theme="light"] .empty-state,
+:root[data-theme="light"] .composer-actions span,
+:root[data-theme="light"] .workspace-files li > span,
+:root[data-theme="light"] .message span,
+:root[data-theme="light"] .journey-status,
+:root[data-theme="light"] .chapter-path-item li small {
+    color: var(--light-subtle);
+}
+
+:root[data-theme="light"] .mode-label,
+:root[data-theme="light"] .unit-label,
+:root[data-theme="light"] .chapter-path-item h5 {
+    color: var(--light-accent);
+}
+
+:root[data-theme="light"] .chapter-path h4,
+:root[data-theme="light"] .lesson-section h4 {
+    color: var(--light-heading);
+}
+
+:root[data-theme="light"] .chapter-path-item li {
+    color: var(--light-muted);
+}
+
+:root[data-theme="light"] .chapter-path-item li.current {
+    background: var(--light-surface-selected);
+    color: #164e8a;
+}
+
+:root[data-theme="light"] .chapter-path-item li span:first-child {
+    color: var(--light-subtle);
+}
+
+:root[data-theme="light"] input,
+:root[data-theme="light"] textarea {
+    border-color: var(--light-border-strong);
+    background: var(--light-surface);
+    color: var(--light-text);
+}
+
+:root[data-theme="light"] input:focus,
+:root[data-theme="light"] textarea:focus {
+    border-color: var(--light-accent);
+    outline-color: rgba(63, 111, 168, 0.2);
+}
+
+:root[data-theme="light"] button {
+    background: var(--light-accent);
+    color: #ffffff;
+}
+
+:root[data-theme="light"] button:hover:not(:disabled) {
+    background: var(--light-accent-hover);
+}
+
+:root[data-theme="light"] .resize-handle {
+    background: transparent;
+    color: #aebccc;
+}
+
+:root[data-theme="light"] .resize-handle:hover:not(:disabled),
+:root[data-theme="light"] .resize-handle:focus-visible {
+    background: #dfe6ee;
+}
+
+:root[data-theme="light"] button.secondary,
+:root[data-theme="light"] .panel-toggle,
+:root[data-theme="light"] .journey-status {
+    border-color: var(--light-border);
+    background: var(--light-surface-control);
+    color: var(--light-text);
+}
+
+:root[data-theme="light"] .panel-toggle:hover:not(:disabled),
+:root[data-theme="light"] button.secondary:hover:not(:disabled) {
+    background: #dbe5f2;
+}
+
+:root[data-theme="light"] .health-strip .theme-toggle {
+    border-color: var(--light-border);
+    background: var(--light-surface-control);
+    color: var(--light-text);
+}
+
+:root[data-theme="light"] .health-strip .theme-toggle:hover:not(:disabled) {
+    background: #dbe5f2;
+}
+
+:root[data-theme="light"] .journey-status.current {
+    background: var(--light-success-soft);
+    color: var(--light-success);
+}
+
+:root[data-theme="light"] .learn-stages li {
+    border-color: var(--light-border-strong);
+    color: var(--light-muted);
+}
+
+:root[data-theme="light"] .learn-stages li span {
+    color: var(--light-subtle);
+}
+
+:root[data-theme="light"] .learn-stages li.completed,
+:root[data-theme="light"] .journey-ready,
+:root[data-theme="light"] .form-feedback,
+:root[data-theme="light"] .chapter-path-item li.completed {
+    color: var(--light-success);
+}
+
+:root[data-theme="light"] .learn-stages li.completed {
+    border-color: rgba(22, 115, 78, 0.42);
+}
+
+:root[data-theme="light"] .runtime-summary,
+:root[data-theme="light"] .learn-content,
+:root[data-theme="light"] .workspace-files,
+:root[data-theme="light"] .workspace-editor > .empty-state {
+    border-color: var(--light-border);
+    background: var(--light-surface-input);
+}
+
+:root[data-theme="light"] .runtime-summary,
+:root[data-theme="light"] .learn-content {
+    color: var(--light-text);
+}
+
+:root[data-theme="light"] .message {
+    background: var(--light-surface-control);
+}
+
+:root[data-theme="light"] .message.user {
+    background: #dbeafe;
+}
+
+:root[data-theme="light"] .markdown-message pre {
+    border-color: var(--light-border-code);
+    background: #eef3f8;
+}
+
+:root[data-theme="light"] .markdown-message code {
+    background: #e6edf5;
+}
+
+:root[data-theme="light"] .markdown-message th,
+:root[data-theme="light"] .markdown-message td {
+    border-color: var(--light-border-code);
+}
+
+:root[data-theme="light"] .markdown-message th {
+    background: #e5edf6;
+}
+
+:root[data-theme="light"] .workspace-files button {
+    min-height: 1.85rem;
+    padding: 0.35rem 0.55rem;
+    border-radius: 0.35rem;
+    background: transparent;
+    color: var(--light-text);
+    font-weight: 400;
+    transition: background 120ms ease, color 120ms ease;
+}
+
+:root[data-theme="light"] .workspace-files button:hover:not(:disabled),
+:root[data-theme="light"] .workspace-files button[aria-pressed="true"] {
+    background: #f6f8fa;
+    color: #24292f;
+}
+
+:root[data-theme="light"] .workspace-files button[aria-pressed="true"] {
+    background: #ddf4ff;
+    color: #0969da;
+    font-weight: 600;
+}
+
+:root[data-theme="light"] .workspace-files li > span {
+    padding: 0.35rem 0.55rem;
+    border-bottom: 1px solid #eaeef2;
+    color: #57606a;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+:root[data-theme="light"] .workspace-files ul ul {
+    margin-left: 0.55rem;
+    padding-left: 0.45rem;
+    border-left: 1px solid #d8dee4;
+}
+
+:root[data-theme="light"] .workspace-editor .monaco-editor,
+:root[data-theme="light"] .workspace-editor > .empty-state {
+    border-color: var(--light-border);
+}
+
+:root[data-theme="light"] .error-message {
+    color: var(--light-error);
+}
+
+:root[data-theme="light"] .status-label.online,
+:root[data-theme="light"] .status-label.connected {
+    color: var(--light-success);
+}
+
+:root[data-theme="light"] .status-label.loading,
+:root[data-theme="light"] .status-label.connecting {
+    color: var(--light-warning);
+}
+
+:root[data-theme="light"] .status-label.error {
+    color: var(--light-error);
 }

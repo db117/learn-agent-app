@@ -34,4 +34,7 @@ export type PracticePanelProps = {
     onTest: () => void | Promise<void>;
     onCreateFile: (path: string) => void | Promise<void>;
     onVerify?: () => void | Promise<void>;
+    theme?: "dark" | "light";
+    fullscreen?: boolean;
+    onToggleFullscreen?: () => void;
 };

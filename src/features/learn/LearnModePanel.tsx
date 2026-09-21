@@ -30,6 +30,7 @@ export type LearningUnitProgress = {
 type Props = {
     progress: LearningProgress | null;
     loading?: boolean;
+    showPath?: boolean;
 };
 
 const stages = ["Explain", "Example", "Practice"];
@@ -39,7 +40,7 @@ type LessonSection = {
     content: string;
 };
 
-export function LearnModePanel({progress, loading = false}: Props) {
+export function LearnModePanel({progress, loading = false, showPath = true}: Props) {
     if (loading) {
         return <section className="learn-panel" aria-labelledby="learn-mode-title">
             <p className="mode-label">LEARN MODE</p>
@@ -54,7 +55,7 @@ export function LearnModePanel({progress, loading = false}: Props) {
             <p className="mode-label">LEARN MODE</p>
             <h3 id="learn-mode-title">学习路径已完成</h3>
             <p className="learn-summary">已完成 {progress.completedCount} / {progress.totalCount} 个 LearnUnit。</p>
-            <ChapterPath chapters={progress.chapters}/>
+            {showPath && <ChapterPath chapters={progress.chapters}/>}
         </section>;
     }
 
@@ -86,6 +87,21 @@ export function LearnModePanel({progress, loading = false}: Props) {
         {progress.currentLearnUnitContent && (
             <LessonContent content={progress.currentLearnUnitContent}/>
         )}
+        {showPath && <ChapterPath chapters={progress.chapters}/>}
+    </section>;
+}
+
+export function LearningPathPanel({progress, loading = false}: Omit<Props, "showPath">) {
+    if (loading) {
+        return <section className="learn-panel learning-path-panel" aria-label="章节学习路径">
+            <p className="mode-label">COURSE PATH</p>
+            <p className="session-status">正在加载课程路径…</p>
+        </section>;
+    }
+
+    if (!progress) return null;
+
+    return <section className="learn-panel learning-path-panel" aria-label="章节学习路径">
         <ChapterPath chapters={progress.chapters}/>
     </section>;
 }

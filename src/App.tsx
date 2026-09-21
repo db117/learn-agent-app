@@ -11,6 +11,7 @@ type SessionMode = "PLANNING" | "LEARNING";
 type TutorMessage = { role: "user" | "assistant"; text: string; timestamp?: string };
 type TutorEvent = { type: string; text?: string; errorCode?: string };
 type TutorError = { code?: string; message?: string };
+type Theme = "dark" | "light";
 type Learner = { id: number; displayName: string; backgroundSummary: string };
 type Journey = {
     id: number;
@@ -23,6 +24,25 @@ type Journey = {
 };
 type Workspace = { kind: string; id: number; reference: string };
 type Bootstrap = { learner: Learner | null; journeys: Journey[]; workspace: Workspace | null };
+type ResizablePanel = "path" | "tutor";
+type ResizeState = { side: ResizablePanel; startX: number; startWidth: number };
+
+const PATH_WIDTH_DEFAULT = 240;
+const TUTOR_WIDTH_DEFAULT = 340;
+const PATH_WIDTH_MIN = 180;
+const PATH_WIDTH_MAX = 360;
+const TUTOR_WIDTH_MIN = 280;
+const TUTOR_WIDTH_MAX = 480;
+const THEME_STORAGE_KEY = "learn-agent-theme";
+
+function readStoredTheme(): Theme {
+    if (typeof window === "undefined") return "dark";
+    try {
+        return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+    } catch {
+        return "dark";
+    }
+}
 
 function formatValue(value: unknown) {
     if (value === undefined || value === null) return "—";
@@ -84,6 +104,7 @@ async function readSse(response: Response, onEvent: (event: TutorEvent) => void)
 }
 
 export default function App() {
+    const [theme, setTheme] = useState<Theme>(readStoredTheme);
     const [health, setHealth] = useState<Health | null>(null);
     const [healthState, setHealthState] = useState<"loading" | "online" | "error">("loading");
     const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
@@ -113,8 +134,75 @@ export default function App() {
     const [error, setError] = useState<string | null>(null);
     const [loadingSession, setLoadingSession] = useState(false);
     const [sending, setSending] = useState(false);
+    const [pathWidth, setPathWidth] = useState(PATH_WIDTH_DEFAULT);
+    const [tutorWidth, setTutorWidth] = useState(TUTOR_WIDTH_DEFAULT);
+    const [pathCollapsed, setPathCollapsed] = useState(false);
+    const [tutorCollapsed, setTutorCollapsed] = useState(false);
+    const [resizeState, setResizeState] = useState<ResizeState | null>(null);
     const streamController = useRef<AbortController | null>(null);
     const sessionTargetRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        document.documentElement.dataset.theme = theme;
+        try {
+            window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+        } catch {
+            // 本地存储不可用时仍保留当前页面的主题切换。
+        }
+    }, [theme]);
+
+    const adjustPanelWidth = (side: ResizablePanel, boundaryDelta: number) => {
+        if (side === "path") {
+            setPathCollapsed(false);
+            setPathWidth((width) => Math.min(PATH_WIDTH_MAX, Math.max(PATH_WIDTH_MIN, width + boundaryDelta)));
+        } else {
+            setTutorCollapsed(false);
+            setTutorWidth((width) => Math.min(TUTOR_WIDTH_MAX, Math.max(TUTOR_WIDTH_MIN, width - boundaryDelta)));
+        }
+    };
+
+    const beginResize = (side: ResizablePanel, event: React.PointerEvent<HTMLButtonElement>) => {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setResizeState({
+            side,
+            startX: event.clientX,
+            startWidth: side === "path"
+                ? (pathCollapsed ? 0 : pathWidth)
+                : (tutorCollapsed ? 0 : tutorWidth),
+        });
+    };
+
+    const updateResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+        if (!resizeState) return;
+        const boundaryDelta = event.clientX - resizeState.startX;
+        const nextWidth = resizeState.side === "path"
+            ? resizeState.startWidth + boundaryDelta
+            : resizeState.startWidth - boundaryDelta;
+        const minWidth = resizeState.side === "path" ? PATH_WIDTH_MIN : TUTOR_WIDTH_MIN;
+        const maxWidth = resizeState.side === "path" ? PATH_WIDTH_MAX : TUTOR_WIDTH_MAX;
+        const boundedWidth = Math.min(maxWidth, Math.max(minWidth, nextWidth));
+        if (resizeState.side === "path") {
+            setPathCollapsed(false);
+            setPathWidth(boundedWidth);
+        } else {
+            setTutorCollapsed(false);
+            setTutorWidth(boundedWidth);
+        }
+    };
+
+    const endResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+        setResizeState(null);
+    };
+
+    const handleResizeKeyDown = (side: ResizablePanel, event: React.KeyboardEvent<HTMLButtonElement>) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        adjustPanelWidth(side, event.key === "ArrowRight" ? 16 : -16);
+    };
 
     const removePendingAssistant = () => {
         setMessages((current) => current.at(-1)?.role === "assistant" ? current.slice(0, -1) : current);
@@ -458,21 +546,28 @@ export default function App() {
     };
 
     const showLearningCard = sessionTargetKey !== null || learningCompleted;
+    const learningLayout = currentJourney?.learningJourneyId != null
+        && currentJourney.learningJourneyStatus === "ACTIVE"
+        && visibleSessionMode === "LEARNING"
+        && showLearningCard;
+    const learningGridClassName = [
+        "status-grid",
+        learningLayout && "learning-mode-grid",
+        learningLayout && pathCollapsed && "path-collapsed",
+        learningLayout && tutorCollapsed && "tutor-collapsed",
+    ].filter(Boolean).join(" ");
+    const learningGridStyle = learningLayout ? {
+        "--path-width": pathCollapsed ? "0px" : `${pathWidth}px`,
+        "--tutor-width": tutorCollapsed ? "0px" : `${tutorWidth}px`,
+    } as React.CSSProperties : undefined;
 
     return (
         <main className="app-shell">
-            <section className="hero">
-                <p className="eyebrow">LEARN AGENT V2 · TUTOR RUNTIME</p>
-                <h1>和 TutorAgent 一起学习。</h1>
-                <p className="intro">从你的背景和目标开始，逐步进入适合自己的学习 Journey。</p>
-            </section>
-
             {(bootstrapError || error) && (
                 <p className="error-message global-error" role="alert">{bootstrapError ?? error}</p>
             )}
 
-            <section className="status-grid" aria-label="学习环境">
-                <article className="status-card compact-card" aria-labelledby="health-title">
+            <article className="health-strip" aria-labelledby="health-title">
                     <div className="card-heading">
                         <span className={`status-dot ${healthState}`} aria-hidden="true"/>
                         <h2 id="health-title">Backend health</h2>
@@ -486,7 +581,18 @@ export default function App() {
                             </div>
                         ))}
                     </dl>
-                </article>
+                <button
+                    type="button"
+                    className="theme-toggle"
+                    aria-pressed={theme === "light"}
+                    aria-label={theme === "light" ? "切换深色模式" : "切换浅色模式"}
+                    onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}
+                >
+                    {theme === "light" ? "深色模式" : "浅色模式"}
+                </button>
+            </article>
+
+            <section className={learningGridClassName} style={learningGridStyle} aria-label="学习环境">
 
                 {!bootstrap && bootstrapState === "loading" && (
                     <article className="status-card onboarding-card" aria-busy="true">
@@ -535,7 +641,7 @@ export default function App() {
                     </article>
                 )}
 
-                {bootstrap?.learner && (
+                {!learningLayout && bootstrap?.learner && (
                     <article className="status-card journey-card" aria-labelledby="journey-title">
                         <div className="card-heading">
                             <span className="status-dot connected" aria-hidden="true"/>
@@ -665,6 +771,71 @@ export default function App() {
                     </article>
                 )}
 
+                {learningLayout && bootstrap?.learner && currentJourney && (
+                    <>
+                        <button
+                            type="button"
+                            className="resize-handle path-resize-handle"
+                            aria-label="拖动调整课程路径宽度"
+                            aria-orientation="vertical"
+                            aria-valuenow={pathCollapsed ? 0 : pathWidth}
+                            aria-valuemin={PATH_WIDTH_MIN}
+                            aria-valuemax={PATH_WIDTH_MAX}
+                            title="拖动调整课程路径宽度，方向键微调"
+                            onPointerDown={(event) => beginResize("path", event)}
+                            onPointerMove={updateResize}
+                            onPointerUp={endResize}
+                            onPointerCancel={endResize}
+                            onKeyDown={(event) => handleResizeKeyDown("path", event)}
+                        />
+                        <button
+                            type="button"
+                            className="resize-handle tutor-resize-handle"
+                            aria-label="拖动调整 Tutor Session 宽度"
+                            aria-orientation="vertical"
+                            aria-valuenow={tutorCollapsed ? 0 : tutorWidth}
+                            aria-valuemin={TUTOR_WIDTH_MIN}
+                            aria-valuemax={TUTOR_WIDTH_MAX}
+                            title="拖动调整 Tutor Session 宽度，方向键微调"
+                            onPointerDown={(event) => beginResize("tutor", event)}
+                            onPointerMove={updateResize}
+                            onPointerUp={endResize}
+                            onPointerCancel={endResize}
+                            onKeyDown={(event) => handleResizeKeyDown("tutor", event)}
+                        />
+                        <button
+                            type="button"
+                            className="panel-toggle path-collapse-toggle"
+                            aria-label={pathCollapsed ? "展开课程路径" : "向左折叠课程路径"}
+                            aria-expanded={!pathCollapsed}
+                            title={pathCollapsed ? "展开课程路径" : "向左折叠课程路径"}
+                            onClick={() => setPathCollapsed((collapsed) => !collapsed)}
+                        >
+                            {pathCollapsed ? "›" : "‹"}
+                        </button>
+                        <button
+                            type="button"
+                            className="panel-toggle tutor-collapse-toggle"
+                            aria-label={tutorCollapsed ? "展开 Tutor Session" : "向右折叠 Tutor Session"}
+                            aria-expanded={!tutorCollapsed}
+                            title={tutorCollapsed ? "展开 Tutor Session" : "向右折叠 Tutor Session"}
+                            onClick={() => setTutorCollapsed((collapsed) => !collapsed)}
+                        >
+                            {tutorCollapsed ? "‹" : "›"}
+                        </button>
+                        <PracticeWorkspace
+                            journeyId={currentJourney.id}
+                            learningLayout
+                            onDirtyChange={setWorkspaceDirty}
+                            onProgressChanged={handleProgressChanged}
+                            theme={theme}
+                            workspaceVersion={workspaceVersion}
+                            progressVersion={progressVersion}
+                            contentVersion={contentVersion}
+                        />
+                    </>
+                )}
+
                 {bootstrap?.learner && currentJourney && showLearningCard && (
                     <article className="status-card tutor-card" aria-labelledby="tutor-title">
                         <div className="card-heading card-heading-actions">
@@ -705,12 +876,13 @@ export default function App() {
                                 </button>
                             </div>
                         )}
-                        {(visibleSessionMode === "LEARNING" || learningCompleted)
+                        {!learningLayout && (visibleSessionMode === "LEARNING" || learningCompleted)
                             && currentJourney.learningJourneyId != null && (
                                 <PracticeWorkspace
                                     journeyId={currentJourney.id}
                                     onDirtyChange={setWorkspaceDirty}
                                     onProgressChanged={handleProgressChanged}
+                                    theme={theme}
                                     workspaceVersion={workspaceVersion}
                                     progressVersion={progressVersion}
                                     contentVersion={contentVersion}
