@@ -6,15 +6,7 @@ import com.db117.learnagent.learning.application.JourneyApplicationService;
 import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.practice.domain.ChoiceOption;
-import com.db117.learnagent.practice.domain.ChoiceQuestion;
-import com.db117.learnagent.practice.domain.PracticeAttempt;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.PracticeTaskRepository;
-import com.db117.learnagent.practice.domain.PracticeTaskStatus;
-import com.db117.learnagent.practice.domain.RuntimeResult;
-import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.practice.domain.*;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,12 +19,12 @@ import jakarta.inject.Inject;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 /** TutorAgent 的选择题领域工具；只校验并持久化题目和答案，不调用模型。 */
 @Dependent
 public final class TutorPracticeTools {
+    private static final String CODE_TASK_TYPE = "CODE";
     private static final String CHOICE_TASK_TYPE = "CHOICE";
     private static final List<String> OPTION_IDS = List.of("a", "b", "c", "d");
     private static final int MAX_QUESTION_LENGTH = 20_000;
@@ -99,6 +91,12 @@ public final class TutorPracticeTools {
         }
         if (task.status() != PracticeTaskStatus.OPEN || task.learnUnitId() != requireLearnUnitId(unit)) {
             throw LearningRequestException.conflict("CHOICE_TASK_NOT_OPEN", "选择题不属于当前可答的 LearnUnit");
+        }
+        if (practiceTasks.findByLearnUnit(journey.id(), task.learnUnitId()).stream()
+                .filter(value -> CODE_TASK_TYPE.equals(value.type()))
+                .noneMatch(value -> value.status() == PracticeTaskStatus.VERIFIED)) {
+            throw LearningRequestException.conflict(
+                    "CODE_PRACTICE_REQUIRED", "请先完成代码练习，再回答选择题");
         }
         var question = Objects.requireNonNull(task.choiceQuestion(), "choice task question must not be null");
         if (!question.hasOption(optionId)) {

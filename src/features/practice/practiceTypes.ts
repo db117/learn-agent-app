@@ -11,6 +11,18 @@ export type PracticeDiagnostic = {
     message: string;
 };
 
+export type ChoiceOption = {
+    id: string;
+    label: string;
+};
+
+export type ChoiceQuestion = {
+    taskId: number;
+    title: string;
+    prompt: string;
+    options: readonly ChoiceOption[];
+};
+
 export type PracticePanelProps = {
     files: readonly WorkspaceFileEntry[];
     selectedPath: string | null;
@@ -24,6 +36,12 @@ export type PracticePanelProps = {
     testing?: boolean;
     verifying?: boolean;
     practiceVerified?: boolean;
+    codeVerified?: boolean;
+    choiceQuestion?: ChoiceQuestion | null;
+    choiceLoading?: boolean;
+    choiceSubmitting?: boolean;
+    choiceFeedback?: string | null;
+    selectedChoiceId?: string | null;
     feedback?: string | null;
     runtimeSummary?: string | null;
     diagnostics?: readonly PracticeDiagnostic[];
@@ -34,6 +52,8 @@ export type PracticePanelProps = {
     onTest: () => void | Promise<void>;
     onCreateFile: (path: string) => void | Promise<void>;
     onVerify?: () => void | Promise<void>;
+    onSelectChoice?: (optionId: string) => void;
+    onVerifyChoice?: () => void | Promise<void>;
     theme?: "dark" | "light";
     fullscreen?: boolean;
     onToggleFullscreen?: () => void;

@@ -3,7 +3,7 @@ import {renderToStaticMarkup} from "react-dom/server";
 import {describe, expect, it, vi} from "vitest";
 import {PracticePanel} from "./PracticePanel";
 import {formatDiagnostic, sortDiagnostics} from "./practiceDiagnostics";
-import type {PracticeDiagnostic, PracticePanelProps} from "./practiceTypes";
+import type {ChoiceQuestion, PracticeDiagnostic, PracticePanelProps} from "./practiceTypes";
 
 const diagnostics: PracticeDiagnostic[] = [
     {
@@ -65,4 +65,29 @@ describe("PracticePanel", () => {
         expect(markup).toContain("failed to start COMPILE: pnpm.cmd");
     });
 
+    it("shows the choice stage only after code verification", () => {
+        const choiceQuestion: ChoiceQuestion = {
+            taskId: 11,
+            title: "选择题：类型检查",
+            prompt: "TypeScript 的类型检查主要发生在哪里？",
+            options: [
+                {id: "a", label: "编译期"},
+                {id: "b", label: "运行时"},
+            ],
+        };
+        const lockedMarkup = renderToStaticMarkup(createElement(PracticePanel, panelProps({choiceQuestion})));
+        expect(lockedMarkup).toContain("代码练习");
+        expect(lockedMarkup).not.toContain("TypeScript 的类型检查主要发生在哪里？");
+
+        const markup = renderToStaticMarkup(createElement(PracticePanel, panelProps({
+            choiceQuestion,
+            codeVerified: true,
+        })));
+
+        expect(markup).toContain("CHOICE CHECK · 已解锁");
+        expect(markup).toContain("TypeScript 的类型检查主要发生在哪里？");
+        expect(markup).toContain('class="stored-choice-options"');
+        expect(markup).toContain("编译期");
+        expect(markup).not.toContain("correctOptionId");
+    });
 });

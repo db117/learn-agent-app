@@ -18,6 +18,12 @@ export function PracticePanel({
                                   testing = false,
                                   verifying = false,
                                   practiceVerified = false,
+                                  codeVerified = false,
+                                  choiceQuestion = null,
+                                  choiceLoading = false,
+                                  choiceSubmitting = false,
+                                  choiceFeedback = null,
+                                  selectedChoiceId = null,
                                   feedback = null,
                                   runtimeSummary = null,
                                   diagnostics = [],
@@ -28,6 +34,8 @@ export function PracticePanel({
                                   onTest,
                                   onCreateFile,
                                   onVerify = () => undefined,
+                                  onSelectChoice = () => undefined,
+                                  onVerifyChoice = () => undefined,
                                   theme = "dark",
                                   fullscreen = false,
                                   onToggleFullscreen,
@@ -51,16 +59,37 @@ export function PracticePanel({
     const tree = buildFileTree([...files]);
     const orderedDiagnostics = sortDiagnostics(diagnostics);
     const actionsDisabled = loading || loadingContent || saving || creating;
+    const showChoiceStage = codeVerified && choiceQuestion !== null;
 
     return (
         <section className={`workspace-panel ${fullscreen ? "workspace-panel-fullscreen" : ""}`}
                  aria-labelledby="practice-title">
-            <div className="workspace-heading">
+            <div className="practice-flow-heading">
                 <div>
-                    <p className="mode-label">PRACTICE RUNTIME</p>
-                    <h3 id="practice-title">代码练习</h3>
+                    <p className="mode-label">PRACTICE FLOW</p>
+                    <h3 id="practice-title">{showChoiceStage ? "选择题检查" : codeVerified ? "等待选择题" : "代码练习"}</h3>
                 </div>
-                <div className="workspace-actions">
+                <ol className="practice-stages" aria-label="Practice 流程">
+                    <li className={!codeVerified ? "active" : "completed"}
+                        aria-current={!codeVerified ? "step" : undefined}>
+                        <span aria-hidden="true">{codeVerified ? "✓" : "1"}</span>
+                        代码练习
+                    </li>
+                    <li className={showChoiceStage ? "active" : codeVerified ? "waiting" : "locked"}
+                        aria-current={showChoiceStage ? "step" : undefined}>
+                        <span aria-hidden="true">{showChoiceStage ? "2" : codeVerified ? "…" : "2"}</span>
+                        选择题
+                    </li>
+                </ol>
+            </div>
+
+            {!codeVerified ? <>
+                <div className="workspace-heading">
+                    <div>
+                        <p className="mode-label">CODE PRACTICE</p>
+                        <h4>先完成代码，再进入理解检查</h4>
+                    </div>
+                    <div className="workspace-actions">
                     {onToggleFullscreen && (
                         <button type="button" className="secondary" onClick={onToggleFullscreen}
                                 aria-pressed={fullscreen}>
@@ -83,7 +112,7 @@ export function PracticePanel({
                         {saving ? "保存中…" : "保存"}
                     </button>
                     <button type="button" className="secondary" onClick={() => void onVerify()}
-                            disabled={actionsDisabled || compiling || testing || verifying || practiceVerified}
+                            disabled={actionsDisabled || compiling || testing || verifying || codeVerified || practiceVerified}
                             aria-busy={verifying}>
                         {verifying ? "验证中…" : practiceVerified ? "Practice 已记录" : "验证并记录"}
                     </button>
@@ -156,6 +185,52 @@ export function PracticePanel({
                     </ol>
                 )}
             </section>
+            </> : null}
+
+            {codeVerified && choiceLoading &&
+                <p className="choice-question-loading" role="status">正在读取已保存选择题…</p>}
+            {codeVerified && !choiceLoading && !choiceQuestion && (
+                <p className="choice-question-loading" role="status">代码练习已通过，正在等待当前单元的选择题。</p>
+            )}
+            {showChoiceStage && (
+                <section className="stored-choice-question choice-stage" aria-labelledby="stored-choice-title">
+                    <div className="stored-choice-heading">
+                        <div>
+                            <p className="mode-label">CHOICE CHECK · 已解锁</p>
+                            <h4 id="stored-choice-title">{choiceQuestion.title}</h4>
+                        </div>
+                        <span className="choice-question-badge">第二阶段</span>
+                    </div>
+                    <p className="stored-choice-prompt">{choiceQuestion.prompt}</p>
+                    <fieldset className="stored-choice-options" disabled={choiceSubmitting}>
+                        <legend className="sr-only">选择一个答案</legend>
+                        {choiceQuestion.options.map((option) => (
+                            <label
+                                className={`stored-choice-option ${selectedChoiceId === option.id ? "selected" : ""}`}
+                                key={option.id}>
+                                <input
+                                    type="radio"
+                                    name={`practice-choice-${choiceQuestion.taskId}`}
+                                    value={option.id}
+                                    checked={selectedChoiceId === option.id}
+                                    onChange={() => onSelectChoice(option.id)}
+                                />
+                                <span className="stored-choice-option-id" aria-hidden="true">
+                                    {option.id.toUpperCase()}
+                                </span>
+                                <span>{option.label}</span>
+                            </label>
+                        ))}
+                    </fieldset>
+                    <div className="choice-submit-row">
+                        <button type="button" onClick={() => void onVerifyChoice()}
+                                disabled={!selectedChoiceId || choiceSubmitting}>
+                            {choiceSubmitting ? "检查中…" : "提交答案"}
+                        </button>
+                        {choiceFeedback && <p className="choice-feedback" role="status">{choiceFeedback}</p>}
+                    </div>
+                </section>
+            )}
         </section>
     );
 }

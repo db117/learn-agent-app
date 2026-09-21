@@ -7,19 +7,17 @@ import com.db117.learnagent.learning.application.JourneyApplicationService;
 import com.db117.learnagent.learning.domain.Chapter;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.practice.domain.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class TutorPracticeToolsTest {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -29,7 +27,7 @@ class TutorPracticeToolsTest {
         var journey = learningJourney();
         var updated = journey.recordPracticeVerified("variables", Instant.parse("2026-01-01T00:01:00Z"));
         var journeys = new StubJourneys(journey, updated);
-        var tasks = new InMemoryPracticeTasks();
+        var tasks = new InMemoryPracticeTasks(verifiedCodeTask());
         var tools = new TutorPracticeTools(journeys, tasks);
         var context = context(journey);
 
@@ -101,6 +99,31 @@ class TutorPracticeToolsTest {
         return created.withPersistedIds(1L, created.chapters(), List.of(unit), created.pathItems());
     }
 
+    private static PracticeTask verifiedCodeTask() {
+        var task = PracticeTask.create(
+                1L,
+                1L,
+                "typescript",
+                "CODE",
+                "代码练习",
+                "完成代码练习",
+                1,
+                "",
+                new VerificationPolicy(true, true, false, false),
+                Instant.parse("2026-01-01T00:00:00Z"));
+        var evidence = new PracticeEvidence(
+                true,
+                true,
+                1,
+                false,
+                RuntimeResult.NOT_RUN,
+                List.of("src/index.ts"),
+                Instant.parse("2026-01-01T00:00:30Z"));
+        var verified = task.recordAttempt(PracticeAttempt.submit(
+                evidence, Instant.parse("2026-01-01T00:00:30Z")));
+        return verified.withPersistedIds(99L, verified.attempts());
+    }
+
     private static final class StubJourneys extends JourneyApplicationService {
         private LearningJourney current;
         private final LearningJourney completed;
@@ -128,29 +151,36 @@ class TutorPracticeToolsTest {
     }
 
     private static final class InMemoryPracticeTasks implements PracticeTaskRepository {
-        private PracticeTask task;
+        private final List<PracticeTask> tasks = new ArrayList<>();
+
+        private InMemoryPracticeTasks(PracticeTask initial) {
+            tasks.add(initial);
+        }
 
         @Override
         public PracticeTask save(PracticeTask candidate) {
-            task = candidate.id() == null
-                    ? candidate.withPersistedIds(1L, candidate.attempts())
+            var persisted = candidate.id() == null
+                    ? candidate.withPersistedIds(tasks.size() + 1L, candidate.attempts())
                     : candidate;
-            return task;
+            tasks.removeIf(value -> value.id().equals(persisted.id()));
+            tasks.add(persisted);
+            return persisted;
         }
 
         @Override
         public Optional<PracticeTask> findById(long id) {
-            return task != null && task.id() == id ? Optional.of(task) : Optional.empty();
+            return tasks.stream().filter(value -> value.id() == id).findFirst();
         }
 
         @Override
         public List<PracticeTask> findByLearnUnit(long journeyId, long learnUnitId) {
-            return task != null && task.journeyId() == journeyId && task.learnUnitId() == learnUnitId
-                    ? List.of(task) : List.of();
+            return tasks.stream()
+                    .filter(value -> value.journeyId() == journeyId && value.learnUnitId() == learnUnitId)
+                    .toList();
         }
 
         private PracticeTask task() {
-            return task;
+            return tasks.stream().filter(value -> "CHOICE".equals(value.type())).findFirst().orElseThrow();
         }
     }
 }

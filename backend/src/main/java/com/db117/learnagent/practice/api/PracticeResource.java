@@ -9,20 +9,10 @@ import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
 import com.db117.learnagent.practice.application.PracticeRuntimeService;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.PracticeTaskRepository;
-import com.db117.learnagent.practice.domain.PracticeTaskStatus;
-import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.practice.domain.*;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.BadRequestException;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.NotFoundException;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 
 import java.time.Instant;
@@ -36,6 +26,7 @@ import java.util.Objects;
 public final class PracticeResource {
     private static final String TYPESCRIPT_STARTER_SOURCE = "export {};";
     private static final String CODE_TASK_TYPE = "CODE";
+    private static final String CHOICE_TASK_TYPE = "CHOICE";
     private final WorkspaceApplicationService workspaces;
     private final PracticeRuntimeService runtime;
     private final PracticeTaskRepository practiceTasks;
@@ -75,6 +66,80 @@ public final class PracticeResource {
         }
         return ProgramResponse.from(runtime.runProgram(
                 workspaces.learningWorkspace(journeyId), request.scriptPath(), request.arguments()));
+    }
+
+    /** 返回当前 LearnUnit 已保存的选择题安全投影；不返回正确选项或作答证据。 */
+    @GET
+    @Path("/choice")
+    public ChoiceResponse choice(@PathParam("journeyId") long journeyId) {
+        var learningJourney = journeys.learningJourneyFor(journeyId);
+        var currentItem = learningJourney.currentItem();
+        if (currentItem == null) {
+            return ChoiceResponse.empty(false);
+        }
+        var unit = learningJourney.learnUnit(currentItem.learnUnitCode());
+        var learnUnitId = Objects.requireNonNull(unit.id(), "persisted LearnUnit id must not be null");
+        var tasks = practiceTasks.findByLearnUnit(learningJourney.id(), learnUnitId);
+        var codeVerified = hasVerifiedCodeTask(tasks);
+        return tasks.stream()
+                .filter(value -> value.status() == PracticeTaskStatus.OPEN)
+                .filter(value -> CHOICE_TASK_TYPE.equals(value.type()))
+                .findFirst()
+                .map(value -> ChoiceResponse.from(value, codeVerified))
+                .orElseGet(() -> ChoiceResponse.empty(codeVerified));
+    }
+
+    /** 提交当前 LearnUnit 的选择题；代码阶段通过后才允许写入选择题证据。 */
+    @POST
+    @Path("/tasks/{taskId}/choice/verify")
+    public ChoiceVerifyResponse verifyChoice(
+            @PathParam("journeyId") long journeyId,
+            @PathParam("taskId") long taskId,
+            ChoiceRequest request) {
+        var learningJourney = journeys.learningJourneyFor(journeyId);
+        var currentItem = learningJourney.currentItem();
+        if (currentItem == null) {
+            throw LearningRequestException.conflict("LEARNING_JOURNEY_COMPLETED", "学习路径已经完成");
+        }
+        if (request == null || request.optionId() == null || request.optionId().isBlank()) {
+            throw LearningRequestException.badRequest("INVALID_PRACTICE_ANSWER", "optionId 不能为空");
+        }
+        var unit = learningJourney.learnUnit(currentItem.learnUnitCode());
+        var learnUnitId = requireLearnUnitId(unit);
+        var tasks = practiceTasks.findByLearnUnit(learningJourney.id(), learnUnitId);
+        if (!hasVerifiedCodeTask(tasks)) {
+            throw LearningRequestException.conflict(
+                    "CODE_PRACTICE_REQUIRED", "请先完成代码练习，再回答选择题");
+        }
+        var task = practiceTasks.findById(taskId)
+                .filter(value -> value.journeyId() == learningJourney.id())
+                .orElseThrow(() -> new NotFoundException("PracticeTask 不存在"));
+        requireChoiceTask(task);
+        if (task.status() != PracticeTaskStatus.OPEN || task.learnUnitId() != learnUnitId) {
+            throw LearningRequestException.conflict("CHOICE_TASK_NOT_OPEN", "选择题不属于当前可答的 LearnUnit");
+        }
+        var question = Objects.requireNonNull(task.choiceQuestion(), "choice task question must not be null");
+        if (!question.hasOption(request.optionId())) {
+            throw LearningRequestException.badRequest("INVALID_PRACTICE_ANSWER", "optionId 不属于当前选择题");
+        }
+
+        var correct = question.isCorrect(request.optionId());
+        var evidence = new PracticeEvidence(
+                false,
+                false,
+                0,
+                false,
+                RuntimeResult.NOT_RUN,
+                List.of(),
+                correct ? Instant.now() : null,
+                correct);
+        var saved = practiceTasks.save(task.recordAttempt(
+                PracticeAttempt.submit(evidence, Instant.now())));
+        var updated = recordLearningProgress(journeyId, learningJourney, saved, evidence);
+        var advanced = !Objects.equals(
+                learningJourney.currentItem() == null ? null : learningJourney.currentItem().learnUnitCode(),
+                updated.currentItem() == null ? null : updated.currentItem().learnUnitCode());
+        return ChoiceVerifyResponse.from(saved, evidence, updated, advanced);
     }
 
     @POST
@@ -137,6 +202,13 @@ public final class PracticeResource {
         if (!evidence.isVerified(task.verificationPolicy())) {
             return before;
         }
+        // 有选择题时，代码证据只关闭代码阶段；选择题证据才关闭当前 LearnUnit。
+        if (CODE_TASK_TYPE.equals(task.type())
+                && practiceTasks.findByLearnUnit(before.id(), task.learnUnitId()).stream()
+                .anyMatch(value -> CHOICE_TASK_TYPE.equals(value.type())
+                        && value.status() == PracticeTaskStatus.OPEN)) {
+            return before;
+        }
         var learnUnitCode = before.learnUnits().stream()
                 .filter(unit -> Objects.equals(unit.id(), task.learnUnitId()))
                 .map(unit -> unit.code())
@@ -153,6 +225,18 @@ public final class PracticeResource {
         if (!CODE_TASK_TYPE.equals(task.type())) {
             throw LearningRequestException.badRequest("NOT_CODE_TASK", "该 PracticeTask 不是编码题");
         }
+    }
+
+    private static void requireChoiceTask(PracticeTask task) {
+        if (!CHOICE_TASK_TYPE.equals(task.type())) {
+            throw LearningRequestException.badRequest("NOT_CHOICE_TASK", "该 PracticeTask 不是选择题");
+        }
+    }
+
+    private static boolean hasVerifiedCodeTask(List<PracticeTask> tasks) {
+        return tasks.stream()
+                .filter(value -> CODE_TASK_TYPE.equals(value.type()))
+                .anyMatch(value -> value.status() == PracticeTaskStatus.VERIFIED);
     }
 
     /**
@@ -233,6 +317,86 @@ public final class PracticeResource {
         static ProgramResponse from(ExecutionResult result) {
             return new ProgramResponse(
                     result.success(), result.exitCode(), result.summary(), result.duration().toMillis());
+        }
+    }
+
+    /**
+     * 当前 LearnUnit 的已保存选择题；只投影学习者可以看到的题干和选项。
+     *
+     * @param available 当前 LearnUnit 是否存在可展示的已保存选择题
+     * @param codeVerified 当前 LearnUnit 的编码题是否已经通过
+     * @param taskId 选择题 PracticeTask 的稳定主键；没有题目时为空
+     * @param title 选择题标题；没有题目时为空
+     * @param prompt 学习者可见的题干；没有题目时为空
+     * @param options 学习者可见的选项；不包含正确选项标记
+     */
+    public record ChoiceResponse(
+            boolean available,
+            boolean codeVerified,
+            Long taskId,
+            String title,
+            String prompt,
+            List<ChoiceOption> options) {
+        public ChoiceResponse {
+            options = List.copyOf(options == null ? List.of() : options);
+        }
+
+        static ChoiceResponse empty(boolean codeVerified) {
+            return new ChoiceResponse(false, codeVerified, null, null, null, List.of());
+        }
+
+        static ChoiceResponse from(PracticeTask task, boolean codeVerified) {
+            var question = Objects.requireNonNull(task.choiceQuestion(), "choice task question must not be null");
+            return new ChoiceResponse(
+                    true,
+                    codeVerified,
+                    Objects.requireNonNull(task.id(), "persisted task id must not be null"),
+                    task.title(),
+                    question.prompt(),
+                    question.options());
+        }
+    }
+
+    /**
+     * 选择题答案请求。
+     *
+     * @param optionId 学习者提交的选项 ID；只接受当前题目公开的选项
+     */
+    public record ChoiceRequest(String optionId) {
+    }
+
+    /**
+     * 选择题验证后的稳定摘要；不返回正确选项本身。
+     *
+     * @param taskId 选择题 PracticeTask 的稳定主键
+     * @param status 验证后的任务状态
+     * @param verified 本次 Evidence 是否满足选择题验证策略
+     * @param choiceCorrect 本次答案是否正确
+     * @param learningJourneyStatus 回写 Learning Domain 后的 Journey 状态
+     * @param currentLearnUnitCode 回写后的当前 LearnUnit；路径完成后为空
+     * @param advanced 本次答案是否推进了路径
+     */
+    public record ChoiceVerifyResponse(
+            long taskId,
+            String status,
+            boolean verified,
+            boolean choiceCorrect,
+            String learningJourneyStatus,
+            String currentLearnUnitCode,
+            boolean advanced) {
+        static ChoiceVerifyResponse from(
+                PracticeTask task,
+                PracticeEvidence evidence,
+                LearningJourney after,
+                boolean advanced) {
+            return new ChoiceVerifyResponse(
+                    Objects.requireNonNull(task.id(), "persisted task id must not be null"),
+                    task.status().name(),
+                    evidence.isVerified(task.verificationPolicy()),
+                    evidence.choiceCorrect(),
+                    after.status().name(),
+                    after.currentItem() == null ? null : after.currentItem().learnUnitCode(),
+                    advanced);
         }
     }
 

@@ -47,6 +47,14 @@ test("learner completes Learn Mode through the real browser", async ({page}) => 
     await expect(page.locator(".unit-label")).toHaveText(/当前 LearnUnit：\S+/);
     await expect(chat.locator(".message.assistant").last()).toContainText(/\S+/);
 
+    const sendTutorMessage = page.getByRole("button", {name: "发送", exact: true});
+    await page.getByLabel("发送给 TutorAgent").fill(
+        "请基于当前 LearnUnit 的课程内容生成并保存一道四选一选择题，先不要提交答案。",
+    );
+    await expect(sendTutorMessage).toBeEnabled({timeout: 120_000});
+    await sendTutorMessage.click();
+    await expect(chat.locator(".message.assistant").last()).toContainText(/[Aa][.、]/, {timeout: 180_000});
+
     await page.getByLabel("新建文件路径").fill("ts-runtime-practice/src/created.ts");
     await page.getByRole("button", {name: "新建文件", exact: true}).click();
     await expect(page.getByText("已创建 ts-runtime-practice/src/created.ts")).toBeVisible();
@@ -87,6 +95,41 @@ test("learner completes Learn Mode through the real browser", async ({page}) => 
         }
 
         completed++;
+        if (completed === 1) {
+            await expect(page.getByRole("heading", {name: "选择题检查"})).toBeVisible({timeout: 120_000});
+            const choiceOptions = page.locator(".stored-choice-option");
+            await expect(choiceOptions).toHaveCount(4);
+
+            let choicePassed = false;
+            for (let optionIndex = 0; optionIndex < 4 && !choicePassed; optionIndex++) {
+                await choiceOptions.nth(optionIndex).click();
+                const [choiceResponse] = await Promise.all([
+                    page.waitForResponse((response) =>
+                        response.request().method() === "POST"
+                        && response.url().includes("/practice/tasks/")
+                        && response.url().endsWith("/choice/verify")),
+                    page.getByRole("button", {name: "提交答案", exact: true}).click(),
+                ]);
+                expect(choiceResponse.ok()).toBe(true);
+                const choiceResult = await choiceResponse.json() as {
+                    verified: boolean;
+                    choiceCorrect: boolean;
+                    advanced: boolean;
+                };
+                if (!choiceResult.verified) {
+                    await expect(page.locator(".choice-feedback")).toContainText("还不对");
+                    continue;
+                }
+                expect(choiceResult.choiceCorrect).toBe(true);
+                expect(choiceResult.advanced).toBe(true);
+                choicePassed = true;
+                await expect(page.getByRole("heading", {name: "选择题检查"})).toHaveCount(0);
+                await expect(page.locator(".learn-heading .journey-status"))
+                    .toHaveText(`${completed} / ${initialProgress.total}`, {timeout: 120_000});
+            }
+            expect(choicePassed).toBe(true);
+        }
+
         if (completed < initialProgress.total) {
             await expect(page.locator(".learn-heading .journey-status"))
                 .toHaveText(`${completed} / ${initialProgress.total}`, {timeout: 120_000});

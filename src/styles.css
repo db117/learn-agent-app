@@ -933,6 +933,206 @@ button.secondary {
     background: rgba(11, 18, 36, 0.48);
 }
 
+.practice-flow-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid #293858;
+}
+
+.practice-flow-heading .mode-label {
+    margin-top: 0;
+}
+
+.practice-flow-heading h3 {
+    margin: 0.25rem 0 0;
+}
+
+.practice-stages {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 0.65rem;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.practice-stages li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: #71829f;
+    font-size: 0.76rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.practice-stages li + li::before {
+    content: "→";
+    margin-right: 0.2rem;
+    color: #526788;
+}
+
+.practice-stages li span {
+    display: grid;
+    width: 1.35rem;
+    height: 1.35rem;
+    place-items: center;
+    border: 1px solid #425a82;
+    border-radius: 50%;
+    color: #9fb9e5;
+    font-size: 0.7rem;
+}
+
+.practice-stages li.active {
+    color: #e8edf5;
+}
+
+.practice-stages li.active span {
+    border-color: #79a8ed;
+    background: rgba(80, 139, 236, 0.2);
+    color: #dceaff;
+}
+
+.practice-stages li.completed {
+    color: #78e0ad;
+}
+
+.practice-stages li.completed span {
+    border-color: rgba(120, 224, 173, 0.55);
+    color: #78e0ad;
+}
+
+.workspace-heading h4 {
+    margin: 0.25rem 0 0;
+    color: #e8edf5;
+}
+
+.stored-choice-question {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid #334568;
+    border-radius: 0.7rem;
+    background: rgba(18, 29, 55, 0.72);
+}
+
+.stored-choice-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+}
+
+.stored-choice-heading .mode-label {
+    margin-top: 0;
+}
+
+.stored-choice-heading h4 {
+    margin: 0.25rem 0 0;
+    color: #f1f5ff;
+    line-height: 1.35;
+}
+
+.choice-question-badge {
+    flex: 0 0 auto;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #5576a8;
+    border-radius: 999px;
+    color: #9fc4f1;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.stored-choice-prompt {
+    margin: 0.85rem 0 0;
+    color: #e8edf5;
+    line-height: 1.55;
+}
+
+.stored-choice-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+    margin: 0.9rem 0 0;
+    padding: 0;
+    border: 0;
+    min-inline-size: 0;
+}
+
+.stored-choice-option {
+    display: grid;
+    grid-template-columns: 1.7rem minmax(0, 1fr);
+    gap: 0.65rem;
+    align-items: start;
+    min-width: 0;
+    padding: 0.75rem 0.8rem;
+    border: 1px solid #334568;
+    border-radius: 0.65rem;
+    background: rgba(7, 12, 25, 0.38);
+    color: #e8edf5;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+}
+
+.stored-choice-option input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.stored-choice-option:hover,
+.stored-choice-option.selected {
+    border-color: #79a8ed;
+    background: rgba(80, 139, 236, 0.16);
+}
+
+.stored-choice-option:focus-within {
+    outline: 2px solid rgba(121, 168, 237, 0.7);
+    outline-offset: 2px;
+}
+
+.stored-choice-option:has(input:disabled) {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.stored-choice-option-id {
+    display: grid;
+    width: 1.55rem;
+    height: 1.55rem;
+    place-items: center;
+    border: 1px solid #5576a8;
+    border-radius: 50%;
+    color: #9fc4f1;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.choice-question-loading {
+    margin-top: 0.9rem;
+    color: #8391aa;
+    font-size: 0.8rem;
+}
+
+.choice-submit-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 0.9rem;
+}
+
+.choice-feedback {
+    margin: 0;
+    color: #9fc4f1;
+    font-size: 0.82rem;
+}
+
 .workspace-panel-fullscreen {
     position: fixed;
     inset: 1rem;
@@ -1165,6 +1365,10 @@ button.secondary {
 
 @media (max-width: 720px) {
     .workspace-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .stored-choice-options {
         grid-template-columns: 1fr;
     }
 
@@ -1405,6 +1609,88 @@ button.secondary {
 
 :root[data-theme="light"] .message.user {
     background: #dbeafe;
+}
+
+:root[data-theme="light"] .stored-choice-question {
+    border-color: var(--light-border);
+    background: #f8fafc;
+    box-shadow: 0 10px 28px rgba(31, 46, 69, 0.06);
+}
+
+:root[data-theme="light"] .practice-flow-heading {
+    border-color: var(--light-border);
+}
+
+:root[data-theme="light"] .practice-stages li {
+    color: var(--light-subtle);
+}
+
+:root[data-theme="light"] .practice-stages li.active {
+    color: var(--light-heading);
+}
+
+:root[data-theme="light"] .practice-stages li.completed {
+    color: var(--light-success);
+}
+
+:root[data-theme="light"] .practice-stages li span {
+    border-color: var(--light-border-strong);
+    color: var(--light-subtle);
+}
+
+:root[data-theme="light"] .practice-stages li.active span {
+    border-color: #8eb3d7;
+    background: var(--light-surface-selected);
+    color: var(--light-accent);
+}
+
+:root[data-theme="light"] .practice-stages li.completed span {
+    border-color: rgba(22, 115, 78, 0.42);
+    color: var(--light-success);
+}
+
+:root[data-theme="light"] .workspace-heading h4 {
+    color: var(--light-heading);
+}
+
+:root[data-theme="light"] .stored-choice-heading h4 {
+    color: var(--light-heading);
+}
+
+:root[data-theme="light"] .choice-question-badge {
+    border-color: #c7d8e9;
+    color: var(--light-accent);
+}
+
+:root[data-theme="light"] .stored-choice-prompt,
+:root[data-theme="light"] .stored-choice-option {
+    color: var(--light-text);
+}
+
+:root[data-theme="light"] .stored-choice-option {
+    border-color: #d8dee4;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(31, 46, 69, 0.05);
+}
+
+:root[data-theme="light"] .stored-choice-option:hover,
+:root[data-theme="light"] .stored-choice-option.selected {
+    border-color: #8eb3d7;
+    background: var(--light-surface-selected);
+}
+
+:root[data-theme="light"] .stored-choice-option-id {
+    border-color: #c7d8e9;
+    background: #eef4fa;
+    color: var(--light-accent);
+}
+
+:root[data-theme="light"] .choice-question-loading {
+    color: var(--light-subtle);
+}
+
+:root[data-theme="light"] .choice-feedback {
+    color: var(--light-accent);
 }
 
 :root[data-theme="light"] .markdown-message pre {

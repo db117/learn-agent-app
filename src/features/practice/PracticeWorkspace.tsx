@@ -1,7 +1,7 @@
 import {useEffect, useMemo, useState} from "react";
 import {LearningPathPanel, type LearningProgress, LearnModePanel} from "../learn/LearnModePanel";
 import {PracticePanel} from "./PracticePanel";
-import type {PracticeDiagnostic} from "./practiceTypes";
+import type {ChoiceQuestion, PracticeDiagnostic} from "./practiceTypes";
 import {createWorkspaceApi, type WorkspaceFileEntry} from "../workspace/workspaceApi";
 import {beginSave, editDraft, failSave, finishSave, initialSaveState, selectFile} from "../workspace/saveState";
 
@@ -38,6 +38,25 @@ type VerifyResponse = {
     advanced: boolean;
 };
 
+type ChoiceResponse = {
+    available: boolean;
+    codeVerified: boolean;
+    taskId: number | null;
+    title: string | null;
+    prompt: string | null;
+    options: ChoiceQuestion["options"];
+};
+
+type ChoiceVerifyResponse = {
+    taskId: number;
+    status: string;
+    verified: boolean;
+    choiceCorrect: boolean;
+    learningJourneyStatus: string;
+    currentLearnUnitCode: string | null;
+    advanced: boolean;
+};
+
 export function PracticeWorkspace({
                                       journeyId,
                                       onDirtyChange,
@@ -63,6 +82,12 @@ export function PracticeWorkspace({
     const [feedback, setFeedback] = useState<string | null>(null);
     const [progress, setProgress] = useState<LearningProgress | null>(null);
     const [progressLoading, setProgressLoading] = useState(true);
+    const [choiceQuestion, setChoiceQuestion] = useState<ChoiceQuestion | null>(null);
+    const [choiceLoading, setChoiceLoading] = useState(true);
+    const [codeVerified, setCodeVerified] = useState(false);
+    const [choiceSubmitting, setChoiceSubmitting] = useState(false);
+    const [choiceFeedback, setChoiceFeedback] = useState<string | null>(null);
+    const [selectedChoiceId, setSelectedChoiceId] = useState<string | null>(null);
     const [practiceFullscreen, setPracticeFullscreen] = useState(false);
 
     useEffect(() => {
@@ -100,6 +125,35 @@ export function PracticeWorkspace({
         }
     };
 
+    const loadChoiceQuestion = async (signal?: AbortSignal) => {
+        setChoiceLoading(true);
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/journeys/${journeyId}/practice/choice`, {signal});
+            if (!response.ok) throw new Error("无法读取已保存选择题");
+            const next = await response.json() as ChoiceResponse;
+            if (!signal?.aborted) {
+                setCodeVerified(next.codeVerified);
+                setChoiceQuestion(next.available && next.taskId !== null && next.title !== null && next.prompt !== null
+                    ? {
+                        taskId: next.taskId,
+                        title: next.title,
+                        prompt: next.prompt,
+                        options: next.options,
+                    }
+                    : null);
+                setSelectedChoiceId(null);
+                setChoiceFeedback(null);
+            }
+        } catch (error: unknown) {
+            if (!signal?.aborted) {
+                setChoiceQuestion(null);
+                setFeedback(error instanceof Error ? error.message : "无法读取已保存选择题");
+            }
+        } finally {
+            if (!signal?.aborted) setChoiceLoading(false);
+        }
+    };
+
     useEffect(() => {
         const controller = new AbortController();
         setState(initialSaveState());
@@ -107,9 +161,16 @@ export function PracticeWorkspace({
         setDiagnostics([]);
         setRuntimeSummary(null);
         setFeedback(null);
+        setChoiceQuestion(null);
+        setChoiceLoading(true);
+        setCodeVerified(false);
+        setChoiceSubmitting(false);
+        setChoiceFeedback(null);
+        setSelectedChoiceId(null);
         setCreatingFile(false);
         setLoading(true);
         void loadProgress(controller.signal);
+        void loadChoiceQuestion(controller.signal);
         api.listFiles("journey", journeyId)
             .then((nextFiles) => {
                 if (controller.signal.aborted) return;
@@ -144,6 +205,7 @@ export function PracticeWorkspace({
         if (contentVersion === 0) return;
         const controller = new AbortController();
         void loadProgress(controller.signal);
+        void loadChoiceQuestion(controller.signal);
         return () => controller.abort();
     }, [contentVersion, journeyId]);
 
@@ -266,12 +328,13 @@ export function PracticeWorkspace({
             });
             if (!response.ok) throw new Error("Practice 验证请求失败");
             const result = await response.json() as VerifyResponse;
+            setCodeVerified(result.verified && !result.advanced);
             setFeedback(result.advanced
                 ? "Practice 已通过，已进入下一个 LearnUnit。"
                 : result.verified
                     ? "Practice 已记录。"
                     : "Practice 尚未通过，请根据编译和测试结果继续修改。");
-            if (result.verified) {
+            if (result.advanced) {
                 onProgressChanged?.(result.learningJourneyStatus, result.currentLearnUnitCode);
             }
             await loadProgress();
@@ -279,6 +342,35 @@ export function PracticeWorkspace({
             setFeedback(error instanceof Error ? error.message : "无法验证 Practice");
         } finally {
             setVerifying(false);
+        }
+    };
+
+    const verifyChoice = async () => {
+        if (!choiceQuestion || !selectedChoiceId || choiceSubmitting) return;
+        setChoiceSubmitting(true);
+        setChoiceFeedback(null);
+        try {
+            const response = await fetch(
+                `${BACKEND_URL}/api/journeys/${journeyId}/practice/tasks/${choiceQuestion.taskId}/choice/verify`,
+                {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({optionId: selectedChoiceId}),
+                });
+            if (!response.ok) throw new Error("选择题提交失败");
+            const result = await response.json() as ChoiceVerifyResponse;
+            if (!result.verified) {
+                setChoiceFeedback("还不对，再试一次；可以回看上面的课程内容。");
+                return;
+            }
+            setChoiceFeedback("回答正确，正在进入下一个 LearnUnit…");
+            if (result.advanced) {
+                onProgressChanged?.(result.learningJourneyStatus, result.currentLearnUnitCode);
+            }
+        } catch (error: unknown) {
+            setChoiceFeedback(error instanceof Error ? error.message : "无法提交选择题");
+        } finally {
+            setChoiceSubmitting(false);
         }
     };
 
@@ -300,6 +392,12 @@ export function PracticeWorkspace({
             testing={testing}
             verifying={verifying}
             practiceVerified={progress?.practiceVerified}
+            codeVerified={codeVerified}
+            choiceQuestion={choiceQuestion}
+            choiceLoading={choiceLoading}
+            choiceSubmitting={choiceSubmitting}
+            choiceFeedback={choiceFeedback}
+            selectedChoiceId={selectedChoiceId}
             feedback={feedback}
             runtimeSummary={runtimeSummary}
             diagnostics={diagnostics}
@@ -310,6 +408,8 @@ export function PracticeWorkspace({
             onTest={runTests}
             onCreateFile={createFile}
             onVerify={verify}
+            onSelectChoice={setSelectedChoiceId}
+            onVerifyChoice={verifyChoice}
             theme={theme}
             fullscreen={practiceFullscreen}
             onToggleFullscreen={() => setPracticeFullscreen((current) => !current)}
