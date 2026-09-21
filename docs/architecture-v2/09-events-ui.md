@@ -63,9 +63,9 @@ TutorAgent → save_practice_test → PracticeTask（只返回题干和选项）
 加入 `TutorEventType`，并通过同一安全投影提供；不得直接暴露 AgentScope raw event、
 宿主路径、完整日志、提示词、答案、secret 或私有推理。
 
-规划确认只保存 LearnUnit 大纲；进入 Learn Mode 时，`GET /api/journeys/{journeyId}/learning`
-和 LEARNING Session 的上下文装配会触发当前 LearnUnit 内容的按需生成。生成后的
-Concept、Example、Practice 作为 Domain 内容快照返回，后续 Practice REST 只读取该快照。
+规划确认只保存 LearnUnit 大纲；进入 Learn Mode 时，`learning-content-generation` Skill 根据当前上下文生成
+Concept、Example、Practice，并调用 `save_learning_content` 工具保存 Domain 内容快照。`GET /api/journeys/{journeyId}/learning`
+和后续 Practice REST 只读取该快照。规划草稿由 `learning-outline-generation` Skill 直接生成，不再通过 Java Generator 工具调用模型。
 
 ## 不展示 Chain-of-Thought
 

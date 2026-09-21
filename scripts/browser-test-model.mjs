@@ -37,34 +37,46 @@ function textContent(value) {
     return "";
 }
 
+function toolCall(name, args) {
+    return {
+        id: `browser-tool-${Date.now()}`,
+        type: "function",
+        function: {name, arguments: JSON.stringify(args)},
+    };
+}
+
+function hasLoadedSkill(prompt, skillId) {
+    return prompt.includes(`Successfully loaded skill: ${skillId}`);
+}
+
+function hasSavedContent(prompt) {
+    return prompt.includes("learnUnitCode");
+}
+
 function responseContent(body) {
     const messages = Array.isArray(body.messages) ? body.messages : [];
     const prompt = textContent(messages);
-    if (prompt.includes("CHOICE_QUESTION_GENERATION")) {
-        return JSON.stringify({
-            prompt: "模型生成选择题：请判断本单元的核心目标。",
-            options: [
-                {id: "a", label: "完成当前 LearnUnit 的学习目标。"},
-                {id: "b", label: "只修改无关的界面样式。"},
-                {id: "c", label: "跳过当前学习目标。"},
-                {id: "d", label: "删除本单元的练习。"},
-            ],
-            correctOptionId: "d",
-        });
+    if (prompt.includes("session-mode: PLANNING")) return {text: plan};
+    if (prompt.includes("session-mode: LEARNING") && !hasLoadedSkill(prompt, "learning-content-generation")) {
+        return {toolCall: toolCall("load_skill_through_path", {
+            skillId: "learning-content-generation_learn-agent-built-in",
+            path: "SKILL.md",
+        })};
     }
-    if (prompt.includes("LEARN_UNIT_CONTENT_GENERATION")) {
-        return JSON.stringify({
-            concept: "模型生成的 Concept：理解当前 LearnUnit 的核心概念。",
-            example: "export const answer: number = 42;",
-            practice: "模型生成的 Practice：完成当前 LearnUnit 的编码练习。",
-        });
+    if (hasLoadedSkill(prompt, "learning-content-generation") && !hasSavedContent(prompt)) {
+        return {toolCall: toolCall("save_learning_content", {
+            content_json: JSON.stringify({
+                concept: "模型生成的 Concept：理解当前 LearnUnit 的核心概念。",
+                example: "export const answer: number = 42;",
+                practice: "模型生成的 Practice：完成当前 LearnUnit 的编码练习。",
+            }),
+        })};
     }
-    if (prompt.includes("session-mode: PLANNING")) return plan;
     const current = prompt.match(/current-learn-unit:\s*([^\s<]+)/)?.[1] ?? "current";
-    return `已进入 ${current}。Concept、Example 和 Practice 已准备好，请完成当前练习后再继续。`;
+    return {text: `已进入 ${current}。Concept、Example 和 Practice 已准备好，请完成当前练习后再继续。`};
 }
 
-function writeStream(response, content) {
+function writeStream(response, result) {
     const id = `browser-test-${Date.now()}`;
     const common = {id, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: "browser-test"};
     response.writeHead(200, {
@@ -72,13 +84,13 @@ function writeStream(response, content) {
         Connection: "keep-alive",
         "Content-Type": "text/event-stream",
     });
+    const delta = result.toolCall
+        ? {role: "assistant", tool_calls: [result.toolCall]}
+        : {role: "assistant", content: result.text};
+    response.write(`data: ${JSON.stringify({...common, choices: [{index: 0, delta, finish_reason: null}]})}\n\n`);
     response.write(`data: ${JSON.stringify({
         ...common,
-        choices: [{index: 0, delta: {role: "assistant", content}, finish_reason: null}],
-    })}\n\n`);
-    response.write(`data: ${JSON.stringify({
-        ...common,
-        choices: [{index: 0, delta: {}, finish_reason: "stop"}],
+        choices: [{index: 0, delta: {}, finish_reason: result.toolCall ? "tool_calls" : "stop"}],
     })}\n\n`);
     response.end("data: [DONE]\n\n");
 }
@@ -98,9 +110,9 @@ const server = http.createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    const content = responseContent(body);
+    const result = responseContent(body);
     if (body.stream) {
-        writeStream(response, content);
+        writeStream(response, result);
         return;
     }
     response.writeHead(200, {"Content-Type": "application/json"});
@@ -109,7 +121,13 @@ const server = http.createServer(async (request, response) => {
         object: "chat.completion",
         created: Math.floor(Date.now() / 1000),
         model: "browser-test",
-        choices: [{index: 0, message: {role: "assistant", content}, finish_reason: "stop"}],
+        choices: [{
+            index: 0,
+            message: result.toolCall
+                ? {role: "assistant", tool_calls: [result.toolCall]}
+                : {role: "assistant", content: result.text},
+            finish_reason: result.toolCall ? "tool_calls" : "stop",
+        }],
     }));
 });
 

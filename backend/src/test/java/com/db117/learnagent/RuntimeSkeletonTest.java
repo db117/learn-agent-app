@@ -151,9 +151,9 @@ class RuntimeSkeletonTest {
                 HttpRequest.newBuilder(learningUrl.toURI()).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(HttpURLConnection.HTTP_OK, learning.statusCode());
-        assertTrue(learning.body().contains("模型生成的 Concept"));
-        assertTrue(learningJourneyRepository.findById(linked.learningJourneyId()).orElseThrow()
-                .learnUnits().getFirst().content().contains("## Concept"));
+        assertTrue(learning.body().contains("\"currentLearnUnitContent\":\"\""));
+        assertEquals("", learningJourneyRepository.findById(linked.learningJourneyId()).orElseThrow()
+                .learnUnits().getFirst().content());
     }
 
     @Test

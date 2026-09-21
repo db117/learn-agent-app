@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 @TestProfile(TutorToolCdiTest.IsolatedToolProfile.class)
 class TutorToolCdiTest {
     @Inject
-    TutorGenerationTools generationTools;
+    TutorLearningTools learningTools;
 
     @Inject
     TutorWorkspaceTools workspaceTools;
@@ -27,17 +27,13 @@ class TutorToolCdiTest {
 
     @Test
     void cdiToolBeansRegisterTheirAgentScopeTools() {
-        var generationToolkit = new Toolkit();
-        generationToolkit.registerTool(generationTools);
+        var learningToolkit = new Toolkit();
+        learningToolkit.registerTool(learningTools);
 
         var workspaceToolkit = new Toolkit();
         workspaceToolkit.registerTool(workspaceTools);
 
-        assertEquals(
-                java.util.Set.of(
-                        "generate_learning_outline",
-                        "generate_learning_content"),
-                generationToolkit.getToolNames());
+        assertEquals(java.util.Set.of("save_learning_content"), learningToolkit.getToolNames());
         var practiceToolkit = new Toolkit();
         practiceToolkit.registerTool(practiceTools);
         assertEquals(

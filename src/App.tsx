@@ -3,30 +3,8 @@ import {MarkdownMessage} from "./features/agent/MarkdownMessage";
 import {PracticeWorkspace} from "./features/practice/PracticeWorkspace";
 
 const BACKEND_URL = "http://127.0.0.1:18080";
-const PLANNING_PROMPT = `请根据我的 Learner 背景和 Journey 目标生成学习路径。请由你根据学习目标的范围、难度、学习者背景和可验证性自主决定 chapters 的数量，以及每个 chapter 的 units 数量；不要假设固定数量，也不要为了凑数拆分内容。
-只返回一个 JSON 对象，不要 Markdown、代码围栏、解释或额外文字。格式必须是：
-{
-  "chapters": [
-    {
-      "code": "lowercase-kebab-case",
-      "title": "章节标题",
-      "units": [
-        {
-          "code": "lowercase-kebab-case",
-          "title": "学习单元标题",
-          "objective": "完成本单元后能做到什么"
-        },
-        {
-          "code": "another-unit",
-          "title": "另一个学习单元",
-          "objective": "完成本单元后能做到什么"
-        }
-      ]
-    }
-  ]
-}
-每个 unit 只描述学习大纲，不要生成 Concept、Example、Practice 或任何题目内容；用户进入某个 LearnUnit 后，系统再通过大模型生成该阶段的 Concept、Example 和 Practice。章节和单元必须按学习顺序排列。Practice 通过后才完成该单元。`;
-const LEARNING_PROMPT = "开始当前 LearnUnit。请根据当前单元目标，先用清晰的 Concept 和 Example 讲解，再明确说明 Practice 要求；等待学习者完成 Practice 后再推进，不要提前标记完成。";
+const PLANNING_PROMPT = "请开始生成当前 Journey 的学习路径草稿。";
+const LEARNING_PROMPT = "请开始当前 LearnUnit。";
 
 type Health = Record<string, unknown>;
 type SessionMode = "PLANNING" | "LEARNING";
@@ -120,6 +98,7 @@ export default function App() {
     const [workspaceDirty, setWorkspaceDirty] = useState(false);
     const [workspaceVersion, setWorkspaceVersion] = useState(0);
     const [progressVersion, setProgressVersion] = useState(0);
+    const [contentVersion, setContentVersion] = useState(0);
     const [learningCompleted, setLearningCompleted] = useState(false);
     const [planningJourneyId, setPlanningJourneyId] = useState<number | null>(null);
     const [pendingPlanningPrompt, setPendingPlanningPrompt] = useState(false);
@@ -395,7 +374,12 @@ export default function App() {
                         return next;
                     });
                 }
-                if (event.type === "turn.completed") setActivity("TutorAgent 已完成回答");
+                if (event.type === "turn.completed") {
+                    setActivity("TutorAgent 已完成回答");
+                    if (visibleSessionMode === "LEARNING") {
+                        setContentVersion((version) => version + 1);
+                    }
+                }
                 if (event.type === "turn.cancelled") {
                     removePendingAssistant();
                     setActivity("Tutor Turn 已取消");
@@ -729,6 +713,7 @@ export default function App() {
                                     onProgressChanged={handleProgressChanged}
                                     workspaceVersion={workspaceVersion}
                                     progressVersion={progressVersion}
+                                    contentVersion={contentVersion}
                                 />
                         )}
                         <p className="session-status" role="status" aria-live="polite">

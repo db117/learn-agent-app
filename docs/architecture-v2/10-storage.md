@@ -50,8 +50,8 @@ journey.learning_journey_id
 
 Journey 可以先没有 LearningJourney，且此时 `learningJourneyId` 为空；规划草稿和 Tutor 对话继续由 AgentScope
 Runtime 管理，确认后才写入路径事实。确认规划时，应用层按草稿的有序段落/阶段只保存大纲字段的多个 LearnUnit、
-LearningPathItem，再把新 LearningJourney 的 ID 挂回 Journey。进入当前 LearnUnit 后，应用层将模型生成的
-Concept、Example、Practice 内容快照写回对应 LearnUnit。后续 Bootstrap 通过该 ID 初始化
+LearningPathItem，再把新 LearningJourney 的 ID 挂回 Journey。进入当前 LearnUnit 后，`learning-content-generation` Skill
+生成 Concept、Example、Practice，再由数据库工具将内容快照写回对应 LearnUnit。后续 Bootstrap 通过该 ID 初始化
 Workspace，并创建/恢复 LEARNING Tutor Session；Session 只读取当前 LearnUnit。
 
 PracticeAttempt 和 PracticeEvidence 是不可变历史记录；重试产生新记录。Learning Domain 根据通过的

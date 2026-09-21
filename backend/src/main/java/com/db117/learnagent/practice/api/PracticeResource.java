@@ -5,7 +5,6 @@ import com.db117.learnagent.execution.TypeScriptCompileResult;
 import com.db117.learnagent.execution.TypeScriptDiagnostic;
 import com.db117.learnagent.execution.TypeScriptTestResult;
 import com.db117.learnagent.learning.application.JourneyApplicationService;
-import com.db117.learnagent.learning.application.LearnUnitContentService;
 import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
@@ -41,20 +40,17 @@ public final class PracticeResource {
     private final PracticeRuntimeService runtime;
     private final PracticeTaskRepository practiceTasks;
     private final JourneyApplicationService journeys;
-    private final LearnUnitContentService learnUnitContent;
 
     @Inject
     public PracticeResource(
             WorkspaceApplicationService workspaces,
             PracticeRuntimeService runtime,
             PracticeTaskRepository practiceTasks,
-            JourneyApplicationService journeys,
-            LearnUnitContentService learnUnitContent) {
+            JourneyApplicationService journeys) {
         this.workspaces = workspaces;
         this.runtime = runtime;
         this.practiceTasks = practiceTasks;
         this.journeys = journeys;
-        this.learnUnitContent = learnUnitContent;
     }
 
     @POST
@@ -86,7 +82,7 @@ public final class PracticeResource {
     public VerifyResponse verify(
             @PathParam("journeyId") long journeyId,
             @PathParam("taskId") long taskId) {
-        var learningJourney = learnUnitContent.ensureCurrentContent(journeys.learningJourneyFor(journeyId));
+        var learningJourney = journeys.learningJourneyFor(journeyId);
         var task = practiceTasks.findById(taskId)
                 .filter(value -> value.journeyId() == learningJourney.id())
                 .orElseThrow(() -> new NotFoundException("PracticeTask 不存在"));
@@ -100,7 +96,7 @@ public final class PracticeResource {
     @POST
     @Path("/verify")
     public VerifyResponse verifyCurrent(@PathParam("journeyId") long journeyId) {
-        var learningJourney = learnUnitContent.ensureCurrentContent(journeys.learningJourneyFor(journeyId));
+        var learningJourney = journeys.learningJourneyFor(journeyId);
         var currentItem = learningJourney.currentItem();
         if (currentItem == null) {
             throw LearningRequestException.conflict("LEARNING_JOURNEY_COMPLETED", "学习路径已经完成");

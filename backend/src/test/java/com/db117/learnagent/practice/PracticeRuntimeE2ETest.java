@@ -78,8 +78,7 @@ class PracticeRuntimeE2ETest {
                 get("/api/bootstrap", 200).body(), "learningJourneyId");
         var learning = get("/api/journeys/" + journeyId + "/learning", 200);
         assertTrue(learning.body().contains("\"currentLearnUnitContent\":"));
-        assertTrue(learning.body().contains("## Concept"));
-        assertTrue(learning.body().contains("## Example"));
+        assertTrue(learning.body().contains("\"currentLearnUnitContent\":\"\""));
 
         var files = get("/api/journeys/" + journeyId + "/workspace/files", 200);
         assertTrue(files.body().contains("src/index.ts"));
@@ -87,7 +86,7 @@ class PracticeRuntimeE2ETest {
         var initialVerification = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
         assertTrue(initialVerification.body().contains("\"verified\":false"));
         long taskId = jsonLong(initialVerification.body(), "taskId");
-        assertEquals("模型生成的 Practice：完成「变量与类型」对应的练习。",
+        assertEquals("能够声明变量并理解基本类型",
                 practiceTasks.findById(taskId).orElseThrow().description());
 
         putFile("/api/journeys/" + journeyId + "/workspace/files/src/index.ts",

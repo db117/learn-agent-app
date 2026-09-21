@@ -1,7 +1,6 @@
 package com.db117.learnagent.learning.api;
 
 import com.db117.learnagent.learning.application.JourneyApplicationService;
-import com.db117.learnagent.learning.application.LearnUnitContentService;
 import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import com.db117.learnagent.workspace.application.WorkspaceInitializationException;
@@ -21,15 +20,12 @@ import jakarta.ws.rs.core.MediaType;
 public class JourneyResource {
     private final JourneyApplicationService journeys;
     private final WorkspaceApplicationService workspaces;
-    private final LearnUnitContentService learnUnitContent;
 
     public JourneyResource(
             JourneyApplicationService journeys,
-            WorkspaceApplicationService workspaces,
-            LearnUnitContentService learnUnitContent) {
+            WorkspaceApplicationService workspaces) {
         this.journeys = journeys;
         this.workspaces = workspaces;
-        this.learnUnitContent = learnUnitContent;
     }
 
     @GET
@@ -88,7 +84,7 @@ public class JourneyResource {
     public LearningProgressResponse learning(@PathParam("journeyId") long journeyId) {
         return LearningProgressResponse.from(
                 journeyId,
-                learnUnitContent.ensureCurrentContent(journeys.learningJourneyFor(journeyId)));
+                journeys.learningJourneyFor(journeyId));
     }
 
 }

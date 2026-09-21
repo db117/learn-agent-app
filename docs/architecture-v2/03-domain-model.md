@@ -25,7 +25,7 @@ Learner 1 ── * Journey 1 ── 0..1 LearningJourney ── * LearnUnit
 一个 Journey 最终只能有一份 LearningJourney。规划过程中的路径是 Agent State 草稿，用户确认后才进入 Domain State；Tutor 不得直接
 写入 Journey、LearnUnit、mastery 或 completion。
 
-`LearnUnit` 回答： **学什么？** 规划确认时只保存 code、title、objective；进入当前单元后再补写由模型生成的内容快照。
+`LearnUnit` 回答： **学什么？** 规划确认时只保存 code、title、objective；进入当前单元后由 Skill 生成、由工具保存内容快照。
 
 ## Practice Domain
 

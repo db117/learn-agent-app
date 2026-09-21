@@ -2,6 +2,7 @@ package com.db117.learnagent.agent.runtime;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
@@ -24,7 +25,7 @@ final class ProviderEnvelopeHttpTransport implements HttpTransport {
 
     @Override
     public HttpResponse execute(HttpRequest request) {
-        var response = delegate.execute(request);
+        var response = delegate.execute(normalizeToolSchemas(request));
         if (!response.isSuccessful() || !isProviderError(response.getBody())) {
             return response;
         }
@@ -37,7 +38,7 @@ final class ProviderEnvelopeHttpTransport implements HttpTransport {
 
     @Override
     public Flux<String> stream(HttpRequest request) {
-        return delegate.stream(request)
+        return delegate.stream(normalizeToolSchemas(request))
                 .handle((data, sink) -> {
                     if (isProviderError(data)) {
                         sink.error(new HttpTransportException(
@@ -67,6 +68,57 @@ final class ProviderEnvelopeHttpTransport implements HttpTransport {
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    /**
+     * 兼容当前 OpenAI-compatible 网关只接受基础工具参数 schema 的限制；工具实现仍在服务端校验真实参数。
+     */
+    private static HttpRequest normalizeToolSchemas(HttpRequest request) {
+        if (request.getBody() == null || !request.getBody().contains("\"tools\"")) {
+            return request;
+        }
+        try {
+            var root = JSON.readTree(request.getBody());
+            var tools = root == null ? null : root.get("tools");
+            var changed = false;
+            if (tools != null && tools.isArray()) {
+                for (var tool : tools) {
+                    var parameters = tool.path("function").get("parameters");
+                    if (parameters != null) {
+                        changed |= stripUnsupportedKeywords(parameters);
+                    }
+                }
+            }
+            if (!changed) {
+                return request;
+            }
+            return HttpRequest.builder()
+                    .url(request.getUrl())
+                    .method(request.getMethod())
+                    .headers(request.getHeaders())
+                    .body(JSON.writeValueAsString(root))
+                    .build();
+        } catch (Exception ignored) {
+            return request;
+        }
+    }
+
+    private static boolean stripUnsupportedKeywords(JsonNode node) {
+        var changed = false;
+        if (node instanceof ObjectNode object) {
+            changed = object.remove("required") != null;
+            changed |= object.remove("enum") != null;
+            changed |= object.remove("description") != null;
+            var fields = object.fields();
+            while (fields.hasNext()) {
+                changed |= stripUnsupportedKeywords(fields.next().getValue());
+            }
+        } else if (node != null && node.isArray()) {
+            for (var child : node) {
+                changed |= stripUnsupportedKeywords(child);
+            }
+        }
+        return changed;
     }
 
     @Override

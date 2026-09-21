@@ -31,7 +31,7 @@ Bootstrap 不止负责创建 Journey，还负责把已确认的路径交给学�
   → Bootstrap 重新读取 Journey
   → 发现 learningJourneyId 后初始化 Learning Workspace
   → 创建或恢复 LEARNING Tutor Session
-  → 进入当前 LearnUnit，应用层按需生成并保存 Concept/Example/Practice 内容
+  → 进入当前 LearnUnit，learning-content-generation Skill 生成内容并调用工具保存 Concept/Example/Practice 快照
   → TutorContextAssembler 加载当前 LearningPathItem 和 current LearnUnit
   → 应用自动发送开始提示，触发首个 Tutor 学习回合
 ```
@@ -49,8 +49,9 @@ Domain State；PLANNING/LEARNING Session、规划草稿、Tutor 上下文和消�
 Tutor 的首个学习回合。完成当前单元后，Learning Domain 根据 PracticeEvidence 决定是否推进到下一个
 `PENDING` LearningPathItem；Bootstrap 不自行推进学习状态。
 
-本阶段只约定确认后的大纲如何物化为 LearningJourney、LearnUnit 和 LearningPathItem；学习内容由 Learn Mode
-在进入当前 LearnUnit 后按需生成。本阶段也不把规划草稿直接当作 Domain State。
+本阶段只约定确认后的大纲如何物化为 LearningJourney、LearnUnit 和 LearningPathItem；学习内容由
+`learning-content-generation` Skill 在进入当前 LearnUnit 后按需生成，再由受限工具保存。本阶段也不把规划草稿直接当作
+Domain State。
 
 **DoD：**本地数据库可恢复 Learner、Journey 和当前选择；首次打开不再要求手填 ID；Tutor 可以在无当前
 LearnUnit 时进入规划模式；确认后可恢复完整有序的 LearningJourney；Bootstrap 可据此初始化 Workspace、

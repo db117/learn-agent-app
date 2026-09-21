@@ -32,6 +32,7 @@ import java.util.Set;
 public class JourneyApplicationService {
     private static final String TYPESCRIPT_LANGUAGE_PACK = "typescript";
     private static final int MAX_PLAN_LENGTH = 20_000;
+    private static final int MAX_CONTENT_LENGTH = 12_000;
     private static final ObjectMapper JSON = new ObjectMapper();
     private final LearnerRepository learnerRepository;
     private final JourneyRepository journeyRepository;
@@ -155,6 +156,31 @@ public class JourneyApplicationService {
                 .filter(value -> value.learnerId() == learner.id())
                 .orElseThrow(() -> LearningRequestException.notFound(
                         "LEARNING_JOURNEY_NOT_FOUND", "学习路径不存在"));
+    }
+
+    /** 保存当前 LearnUnit 的首次教学内容快照；不修改路径进度或 Practice 事实。 */
+    public LearningJourney recordLearnUnitContent(
+            long journeyId,
+            String learnUnitCode,
+            String content) {
+        if (content == null || content.isBlank() || content.length() > MAX_CONTENT_LENGTH) {
+            throw LearningRequestException.badRequest("INVALID_LEARNING_CONTENT", "学习内容不能为空或过长");
+        }
+        var learningJourney = learningJourneyFor(journeyId);
+        try {
+            var current = learningJourney.currentItem();
+            if (current == null || !current.learnUnitCode().equals(learnUnitCode)) {
+                throw new DomainRuleViolation("content must belong to the current LearnUnit");
+            }
+            var unit = learningJourney.learnUnit(learnUnitCode);
+            if (!unit.content().isBlank()) {
+                return learningJourney;
+            }
+            return learningJourneyRepository.save(
+                    learningJourney.materializeLearnUnitContent(learnUnitCode, content.strip()));
+        } catch (DomainRuleViolation error) {
+            throw LearningRequestException.badRequest("INVALID_LEARNING_CONTENT", error.getMessage());
+        }
     }
 
     /** 将通过的 Practice 证据写回 Learning Domain，并按领域规则推进当前单元。 */

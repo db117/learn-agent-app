@@ -1,7 +1,7 @@
 package com.db117.learnagent.agent.runtime;
 
 import com.db117.learnagent.agent.application.TutorContext;
-import com.db117.learnagent.agent.tool.TutorGenerationTools;
+import com.db117.learnagent.agent.tool.TutorLearningTools;
 import com.db117.learnagent.agent.tool.TutorPracticeTools;
 import com.db117.learnagent.agent.tool.TutorWorkspaceTools;
 import com.db117.learnagent.config.RuntimeConfig;
@@ -60,14 +60,14 @@ public class TutorAgentRuntime {
             你可以使用当前 Learning Workspace 的 list_files、read_file、write_file、initialize_npm_project、install_typescript、compile_project、compile、run_tests、run_program 工具。
             write_file 会自动创建缺失的父目录；需要完成带项目目录的练习时，先用 initialize_npm_project，再写入项目文件，随后用 install_typescript、compile_project 和 run_program 按题目顺序验证。
             当学习者明确要求创建、修改、编译或运行文件时，必须实际调用对应工具完成，不要只描述操作步骤或让学习者自行执行；仅在学习者要求讲解时才只返回说明。
-            只能操作当前 Learning Workspace；所有 npm、tsc、node 操作都必须通过固定 ExecutionEnvironment；绝不执行任意 shell，绝不写入 Workspace 之外，绝不直接修改 Domain 进度。
+            只能操作当前 Learning Workspace；所有 npm、tsc、node 操作都必须通过固定 ExecutionEnvironment；绝不执行任意 shell，绝不写入 Workspace 之外。除已加载 Skill 明确指定的受限 Domain 工具外，不直接修改 Domain；工具返回成功后只根据真实结果回答。
             讲解代码问题前，先读取相关文件或运行 compile；需要验证时运行 run_tests，并根据真实诊断给出下一步提示。
             可用 Skill 是只读内置能力；需要专门方法时先加载对应 Skill，再使用其已激活的工具。
             """;
 
     private final TutorModel tutorModel;
     private final TutorWorkspaceTools workspaceTools;
-    private final TutorGenerationTools generationTools;
+    private final TutorLearningTools learningTools;
     private final TutorPracticeTools practiceTools;
     private final Path agentWorkspace;
     private final JsonFileAgentStateStore stateStore;
@@ -80,21 +80,13 @@ public class TutorAgentRuntime {
             RuntimeConfig config,
             TutorModel tutorModel,
             TutorWorkspaceTools workspaceTools,
-            TutorGenerationTools generationTools,
+            TutorLearningTools learningTools,
             TutorPracticeTools practiceTools) {
-        this(config, tutorModel, null, workspaceTools, generationTools, practiceTools);
-    }
-
-    TutorAgentRuntime(
-            RuntimeConfig config,
-            TutorModel tutorModel,
-            TutorWorkspaceTools workspaceTools,
-            TutorGenerationTools generationTools) {
-        this(config, tutorModel, null, workspaceTools, generationTools, null);
+        this(config, tutorModel, null, workspaceTools, learningTools, practiceTools);
     }
 
     TutorAgentRuntime(RuntimeConfig config, TutorModel tutorModel, Path workspaceOverride) {
-        this(config, tutorModel, workspaceOverride, null, null);
+        this(config, tutorModel, workspaceOverride, null, null, null);
     }
 
     TutorAgentRuntime(
@@ -102,7 +94,7 @@ public class TutorAgentRuntime {
             TutorModel tutorModel,
             Path workspaceOverride,
             TutorWorkspaceTools workspaceTools) {
-        this(config, tutorModel, workspaceOverride, workspaceTools, null);
+        this(config, tutorModel, workspaceOverride, workspaceTools, null, null);
     }
 
     TutorAgentRuntime(
@@ -110,20 +102,11 @@ public class TutorAgentRuntime {
             TutorModel tutorModel,
             Path workspaceOverride,
             TutorWorkspaceTools workspaceTools,
-            TutorGenerationTools generationTools) {
-        this(config, tutorModel, workspaceOverride, workspaceTools, generationTools, null);
-    }
-
-    TutorAgentRuntime(
-            RuntimeConfig config,
-            TutorModel tutorModel,
-            Path workspaceOverride,
-            TutorWorkspaceTools workspaceTools,
-            TutorGenerationTools generationTools,
+            TutorLearningTools learningTools,
             TutorPracticeTools practiceTools) {
         this.tutorModel = tutorModel;
         this.workspaceTools = workspaceTools;
-        this.generationTools = generationTools;
+        this.learningTools = learningTools;
         this.practiceTools = practiceTools;
         this.memoryEnabled = config.memoryEnabled();
         this.agentWorkspace = workspaceOverride == null
@@ -191,9 +174,9 @@ public class TutorAgentRuntime {
         if (workspaceTools != null) {
             toolkit.registerTool(workspaceTools);
         }
-        if (generationTools != null) {
-            toolkit.registerTool(generationTools);
-            registerGenerationToolGroups(toolkit);
+        if (learningTools != null) {
+            toolkit.registerTool(learningTools);
+            registerLearningToolGroup(toolkit);
         }
         if (practiceTools != null) {
             toolkit.registerTool(practiceTools);
@@ -263,27 +246,19 @@ public class TutorAgentRuntime {
         return built;
     }
 
-    private void registerGenerationToolGroups(Toolkit toolkit) {
-        toolkit.createSkillToolGroup(
-                "learning_outline_generation_tools",
-                "学习大纲生成工具；仅在 learning-outline-generation Skill 激活后可用。",
-                false,
-                "learning-outline-generation");
-        toolkit.addToolToGroup("learning_outline_generation_tools", "generate_learning_outline");
-        toolkit.createSkillToolGroup(
-                "learning_content_generation_tools",
-                "学习内容生成工具；仅在 learning-content-generation Skill 激活后可用。",
-                false,
-                "learning-content-generation");
-        toolkit.addToolToGroup("learning_content_generation_tools", "generate_learning_content");
+    private void registerLearningToolGroup(Toolkit toolkit) {
+        toolkit.createToolGroup(
+                "learning_content_tools",
+                "学习内容持久化工具；只校验并保存当前 LearnUnit 内容快照。",
+                true);
+        toolkit.addToolToGroup("learning_content_tools", "save_learning_content");
     }
 
     private void registerPracticeToolGroup(Toolkit toolkit) {
-        toolkit.createSkillToolGroup(
+        toolkit.createToolGroup(
                 "practice_test_generation_tools",
-                "测试生成工具；仅在 practice-test-generation Skill 激活后可用。",
-                false,
-                "practice-test-generation");
+                "测试工具；只校验并保存当前 LearnUnit 题目，验证答案时追加 PracticeEvidence。",
+                true);
         toolkit.addToolToGroup("practice_test_generation_tools", "save_practice_test");
         toolkit.addToolToGroup("practice_test_generation_tools", "verify_practice_test");
     }

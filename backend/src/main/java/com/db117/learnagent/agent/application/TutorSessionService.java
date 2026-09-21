@@ -9,6 +9,9 @@ import com.db117.learnagent.agent.api.TutorMessage;
 import com.db117.learnagent.agent.api.TutorSessionMode;
 import com.db117.learnagent.agent.api.TutorSessionResponse;
 import com.db117.learnagent.agent.runtime.TutorAgentRuntime;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
@@ -46,6 +49,8 @@ public class TutorSessionService {
     private static final String COMPLETED = "COMPLETED";
     private static final String FAILED = "FAILED";
     private static final String CANCELLED = "CANCELLED";
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final JsonNode PLANNING_OUTPUT_SCHEMA = planningOutputSchema();
     private static final StreamOptions STREAM_OPTIONS = StreamOptions.builder()
             .eventTypes(EventType.ALL)
             .incremental(true)
@@ -162,8 +167,14 @@ public class TutorSessionService {
                 active.event(TutorEventType.ACTIVITY, "正在加载学习上下文", null),
                 active.event(TutorEventType.ACTIVITY, "模型正在组织回答", null));
         try {
-            var modelEvents = runtime.agent().stream(
-                    List.of(active.userMessage), STREAM_OPTIONS, active.context);
+            var modelEvents = active.binding.mode() == TutorSessionMode.PLANNING
+                    ? runtime.agent().stream(
+                            List.of(active.userMessage),
+                            STREAM_OPTIONS,
+                            PLANNING_OUTPUT_SCHEMA,
+                            active.context)
+                    : runtime.agent().stream(
+                            List.of(active.userMessage), STREAM_OPTIONS, active.context);
             return Flux.concat(
                             prefix,
                             project(modelEvents, active),
@@ -181,6 +192,51 @@ public class TutorSessionService {
                 activeTurns.remove(active.binding.sessionId(), active);
             }
             throw TutorRequestException.serviceUnavailable("MODEL_REQUEST_FAILED", "Tutor 模型暂时不可用");
+        }
+    }
+
+    private static JsonNode planningOutputSchema() {
+        try {
+            return JSON.readTree("""
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "chapters": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 50,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "code": {"type": "string", "pattern": "[a-z][a-z0-9]*(?:-[a-z0-9]+)+"},
+                              "title": {"type": "string"},
+                              "units": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 50,
+                                "items": {
+                                  "type": "object",
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "code": {"type": "string", "pattern": "[a-z][a-z0-9]*(?:-[a-z0-9]+)+"},
+                                    "title": {"type": "string"},
+                                    "objective": {"type": "string"}
+                                  },
+                                  "required": ["code", "title", "objective"]
+                                }
+                              }
+                            },
+                            "required": ["code", "title", "units"]
+                          }
+                        }
+                      },
+                      "required": ["chapters"]
+                    }
+                    """);
+        } catch (JsonProcessingException error) {
+            throw new ExceptionInInitializerError(error);
         }
     }
 

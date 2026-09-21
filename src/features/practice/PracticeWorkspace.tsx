@@ -13,6 +13,7 @@ type Props = {
     onProgressChanged?: (status: string, currentLearnUnitCode: string | null) => void;
     workspaceVersion?: number;
     progressVersion?: number;
+    contentVersion?: number;
 };
 
 type CompileResponse = {
@@ -41,6 +42,7 @@ export function PracticeWorkspace({
                                       onProgressChanged,
                                       workspaceVersion = 0,
                                       progressVersion = 0,
+                                      contentVersion = 0,
                                   }: Props) {
     const api = useMemo(() => createWorkspaceApi(fetch, BACKEND_URL), []);
     const [files, setFiles] = useState<WorkspaceFileEntry[]>([]);
@@ -132,6 +134,13 @@ export function PracticeWorkspace({
             cancelled = true;
         };
     }, [api, journeyId, workspaceVersion]);
+
+    useEffect(() => {
+        if (contentVersion === 0) return;
+        const controller = new AbortController();
+        void loadProgress(controller.signal);
+        return () => controller.abort();
+    }, [contentVersion, journeyId]);
 
     const selectWorkspaceFile = (path: string) => {
         if (path === state.selectedPath) return;

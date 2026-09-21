@@ -19,7 +19,7 @@ import java.util.Objects;
  * @param currentLearnUnitCode 当前路径项对应的 LearnUnit 编码；规划模式尚未生成时为空
  * @param currentLearnUnitTitle 当前 LearnUnit 标题；规划模式尚未生成时为空
  * @param currentObjective 当前 LearnUnit 学习目标；规划模式尚未生成时为空
- * @param currentContent 当前 LearnUnit 内容快照；规划模式尚未生成时为空
+ * @param currentContent 当前 LearnUnit 内容快照；首次进入单元、Skill 尚未保存时为空
  * @param currentStatus 当前路径项状态；规划模式尚未生成时为空
  * @param practiceVerified 当前路径项是否已有通过的 Practice 证据
  * @param completedItemCount 当前 Journey 已完成或跳过的路径项数量
@@ -54,13 +54,13 @@ public record TutorContext(
         learnerBackgroundSummary = requireText(learnerBackgroundSummary, "learnerBackgroundSummary");
         journeyGoalDescription = requireText(journeyGoalDescription, "journeyGoalDescription");
         mode = Objects.requireNonNull(mode, "mode must not be null");
+        currentContent = currentContent == null ? "" : currentContent.strip();
         if (mode == TutorSessionMode.LEARNING) {
             journeyTitle = requireText(journeyTitle, "journeyTitle");
             languagePackId = requireText(languagePackId, "languagePackId");
             currentLearnUnitCode = requireText(currentLearnUnitCode, "currentLearnUnitCode");
             currentLearnUnitTitle = requireText(currentLearnUnitTitle, "currentLearnUnitTitle");
             currentObjective = requireText(currentObjective, "currentObjective");
-            currentContent = requireText(currentContent, "currentContent");
             currentStatus = Objects.requireNonNull(currentStatus, "currentStatus must not be null");
         }
         if (completedItemCount < 0 || totalItemCount < 0 || completedItemCount > totalItemCount) {
@@ -107,7 +107,16 @@ public record TutorContext(
                 workspace.kind(),
                 workspace.id());
         if (mode == TutorSessionMode.PLANNING) {
-            return context + "\n当前处于路径规划模式。请围绕 Journey 目标与 Learner 背景讨论并提出可调整的学习路径；不要声称已经保存路径。";
+            return context + "\n当前处于路径规划模式。请直接根据 Journey 目标与 Learner 背景生成候选学习路径，不要追问；不要声称已经保存路径。";
+        }
+        if (currentContent.isBlank()) {
+            return context + """
+
+                    当前处于 Learn Mode，且当前 LearnUnit 尚未有内容。必须先加载 learning-content-generation Skill，
+                    然后只调用 save_learning_content 保存当前 LearnUnit 的 Concept、Example、Practice；不要调用
+                    list_files、read_file、write_file 或其他 Workspace 工具来生成课程内容。保存成功后再简短讲解，
+                    不要声称已经完成 Practice。
+                    """;
         }
         return context;
     }

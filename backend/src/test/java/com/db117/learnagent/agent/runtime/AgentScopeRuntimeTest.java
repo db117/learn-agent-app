@@ -13,8 +13,6 @@ import com.db117.learnagent.execution.TypeScriptCompiler;
 import com.db117.learnagent.execution.TypeScriptTestRunner;
 import com.db117.learnagent.language.LanguagePackCatalog;
 import com.db117.learnagent.language.typescript.TypeScriptLanguagePack;
-import com.db117.learnagent.learning.application.LearnUnitContentGenerator;
-import com.db117.learnagent.learning.application.LearnUnitContentService;
 import com.db117.learnagent.learning.domain.Chapter;
 import com.db117.learnagent.learning.domain.Journey;
 import com.db117.learnagent.learning.domain.JourneyRepository;
@@ -455,10 +453,7 @@ class AgentScopeRuntimeTest {
         return new TutorContextAssembler(
                 learners,
                 journeys,
-                learningJourneys,
-                new LearnUnitContentService(
-                        learningJourneys,
-                        new LearnUnitContentGenerator(new TutorModel(null))));
+                learningJourneys);
     }
 
     private static final class FakeLearnerRepository implements LearnerRepository {
