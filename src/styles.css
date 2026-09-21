@@ -751,45 +751,6 @@ button.secondary {
     gap: 0.55rem;
 }
 
-.choice-practice {
-    margin-top: 1rem;
-    padding: 1rem;
-    border: 1px solid #3a527c;
-    border-radius: 0.65rem;
-    background: rgba(25, 39, 70, 0.5);
-}
-
-.choice-practice h4 {
-    margin: 0.35rem 0 0;
-}
-
-.choice-practice p:not(.mode-label) {
-    line-height: 1.5;
-}
-
-.choice-options {
-    display: grid;
-    gap: 0.55rem;
-    margin: 1rem 0;
-    padding: 0;
-    border: 0;
-}
-
-.choice-options label {
-    display: flex;
-    gap: 0.55rem;
-    align-items: flex-start;
-    padding: 0.65rem 0.75rem;
-    border: 1px solid #334568;
-    border-radius: 0.5rem;
-    cursor: pointer;
-}
-
-.choice-options label:has(input:checked) {
-    border-color: #78e0ad;
-    background: rgba(120, 224, 173, 0.08);
-}
-
 .workspace-layout {
     display: grid;
     grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);

@@ -1,7 +1,7 @@
 import {useEffect, useMemo, useState} from "react";
 import {type LearningProgress, LearnModePanel} from "../learn/LearnModePanel";
 import {PracticePanel} from "./PracticePanel";
-import type {ChoiceQuestion, PracticeDiagnostic} from "./practiceTypes";
+import type {PracticeDiagnostic} from "./practiceTypes";
 import {createWorkspaceApi, type WorkspaceFileEntry} from "../workspace/workspaceApi";
 import {beginSave, editDraft, failSave, finishSave, initialSaveState, selectFile} from "../workspace/saveState";
 
@@ -33,10 +33,7 @@ type VerifyResponse = {
     learningJourneyStatus: string;
     currentLearnUnitCode: string | null;
     advanced: boolean;
-    choiceCorrect: boolean;
 };
-
-type ChoiceStartResponse = ChoiceQuestion;
 
 export function PracticeWorkspace({
                                       journeyId,
@@ -60,10 +57,6 @@ export function PracticeWorkspace({
     const [feedback, setFeedback] = useState<string | null>(null);
     const [progress, setProgress] = useState<LearningProgress | null>(null);
     const [progressLoading, setProgressLoading] = useState(true);
-    const [choiceQuestion, setChoiceQuestion] = useState<ChoiceQuestion | null>(null);
-    const [choiceLoading, setChoiceLoading] = useState(false);
-    const [choiceSubmitting, setChoiceSubmitting] = useState(false);
-    const [selectedChoiceId, setSelectedChoiceId] = useState<string | null>(null);
 
     useEffect(() => {
         onDirtyChange?.(state.dirty);
@@ -107,10 +100,6 @@ export function PracticeWorkspace({
         setDiagnostics([]);
         setRuntimeSummary(null);
         setFeedback(null);
-        setChoiceQuestion(null);
-        setChoiceLoading(false);
-        setChoiceSubmitting(false);
-        setSelectedChoiceId(null);
         setCreatingFile(false);
         setLoading(true);
         void loadProgress(controller.signal);
@@ -279,59 +268,6 @@ export function PracticeWorkspace({
         }
     };
 
-    const startChoice = async () => {
-        if (choiceLoading || choiceSubmitting || progress?.practiceVerified) return;
-        setChoiceLoading(true);
-        setFeedback(null);
-        try {
-            const response = await fetch(`${BACKEND_URL}/api/journeys/${journeyId}/practice/choice/start`, {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: "{}",
-            });
-            if (!response.ok) throw new Error("选择题加载失败");
-            const result = await response.json() as ChoiceStartResponse;
-            setChoiceQuestion(result);
-            setSelectedChoiceId(null);
-        } catch (error: unknown) {
-            setFeedback(error instanceof Error ? error.message : "无法加载选择题");
-        } finally {
-            setChoiceLoading(false);
-        }
-    };
-
-    const submitChoice = async () => {
-        if (!choiceQuestion || !selectedChoiceId || choiceSubmitting) return;
-        setChoiceSubmitting(true);
-        setFeedback(null);
-        try {
-            const response = await fetch(
-                `${BACKEND_URL}/api/journeys/${journeyId}/practice/choice/${choiceQuestion.taskId}/verify`,
-                {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({optionId: selectedChoiceId}),
-                });
-            if (!response.ok) throw new Error("选择题提交失败");
-            const result = await response.json() as VerifyResponse;
-            setFeedback(result.choiceCorrect
-                ? result.advanced
-                    ? "选择题已通过，已进入下一个 LearnUnit。"
-                    : "选择题已通过。"
-                : "选择不正确，请再试一次。");
-            if (result.verified) {
-                setChoiceQuestion(null);
-                setSelectedChoiceId(null);
-                onProgressChanged?.(result.learningJourneyStatus, result.currentLearnUnitCode);
-            }
-            await loadProgress();
-        } catch (error: unknown) {
-            setFeedback(error instanceof Error ? error.message : "无法提交选择题");
-        } finally {
-            setChoiceSubmitting(false);
-        }
-    };
-
     return <>
         <LearnModePanel progress={progress} loading={progressLoading}/>
         <PracticePanel
@@ -350,10 +286,6 @@ export function PracticeWorkspace({
             feedback={feedback}
             runtimeSummary={runtimeSummary}
             diagnostics={diagnostics}
-            choiceQuestion={choiceQuestion}
-            choiceLoading={choiceLoading}
-            choiceSubmitting={choiceSubmitting}
-            selectedChoiceId={selectedChoiceId}
             onSelectFile={selectWorkspaceFile}
             onContentChange={(content) => setState((current) => editDraft(current, content))}
             onSave={save}
@@ -361,9 +293,6 @@ export function PracticeWorkspace({
             onTest={runTests}
             onCreateFile={createFile}
             onVerify={verify}
-            onStartChoice={startChoice}
-            onSelectChoice={setSelectedChoiceId}
-            onSubmitChoice={submitChoice}
         />
         {progressLoading ? (
             <p className="session-status">正在读取当前学习单元…</p>

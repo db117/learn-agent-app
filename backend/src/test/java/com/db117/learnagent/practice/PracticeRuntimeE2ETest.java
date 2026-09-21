@@ -137,37 +137,14 @@ class PracticeRuntimeE2ETest {
         assertEquals(1, evidence.testCount());
         assertNotNull(evidence.verifiedAt());
 
-        var choiceStart = post("/api/journeys/" + journeyId + "/practice/choice/start", null, 200);
-        long choiceTaskId = jsonLong(choiceStart.body(), "taskId");
-        assertTrue(choiceStart.body().contains("\"prompt\":"));
-        assertTrue(choiceStart.body().contains("\"options\":"));
-        assertTrue(choiceStart.body().contains("模型生成题目"));
-        assertFalse(choiceStart.body().contains("correctOptionId"));
-        var createdChoiceTask = practiceTasks.findById(choiceTaskId).orElseThrow();
-        assertEquals("CHOICE", createdChoiceTask.type());
-        assertTrue(createdChoiceTask.choiceQuestion().prompt().contains("模型生成题目"));
-
-        var wrongChoice = post(
-                "/api/journeys/" + journeyId + "/practice/choice/" + choiceTaskId + "/verify",
-                "{\"optionId\":\"b\"}",
-                200);
-        assertTrue(wrongChoice.body().contains("\"verified\":false"));
-        assertTrue(wrongChoice.body().contains("\"choiceCorrect\":false"));
-        assertSafeVerifyResponse(wrongChoice.body());
-        assertEquals("functions", learningJourneys.findById(learningJourneyId).orElseThrow()
-                .currentItem().learnUnitCode());
-
-        var correctChoice = post(
-                "/api/journeys/" + journeyId + "/practice/choice/" + choiceTaskId + "/verify",
-                "{\"optionId\":\"a\"}",
-                200);
-        assertTrue(correctChoice.body().contains("\"verified\":true"));
-        assertTrue(correctChoice.body().contains("\"choiceCorrect\":true"));
-        assertSafeVerifyResponse(correctChoice.body());
-        var choiceTask = practiceTasks.findById(choiceTaskId).orElseThrow();
-        assertEquals("VERIFIED", choiceTask.status().name());
-        assertEquals(2, choiceTask.attempts().size());
-        assertTrue(choiceTask.attempts().getLast().evidence().choiceCorrect());
+        var secondVerification = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
+        assertTrue(secondVerification.body().contains("\"verified\":true"));
+        assertSafeVerifyResponse(secondVerification.body());
+        long secondTaskId = jsonLong(secondVerification.body(), "taskId");
+        var secondTask = practiceTasks.findById(secondTaskId).orElseThrow();
+        assertEquals("CODE", secondTask.type());
+        assertEquals("VERIFIED", secondTask.status().name());
+        assertEquals(1, secondTask.attempts().size());
 
         var persisted = learningJourneys.findById(learningJourneyId).orElseThrow();
         assertEquals("COMPLETED", persisted.status().name());
@@ -231,8 +208,7 @@ class PracticeRuntimeE2ETest {
     private static void assertSafeVerifyResponse(String body) {
         var fields = Set.of(
                 "taskId", "status", "verified", "compilePassed", "testsPassed", "testCount",
-                "submittedFiles", "verifiedAt", "learningJourneyStatus", "currentLearnUnitCode", "advanced",
-                "choiceCorrect");
+                "submittedFiles", "verifiedAt", "learningJourneyStatus", "currentLearnUnitCode", "advanced");
         for (var field : fields) {
             assertTrue(body.contains("\"" + field + "\":"), () -> "Missing VerifyResponse field: " + field);
         }

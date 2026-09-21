@@ -2,6 +2,7 @@ package com.db117.learnagent.agent.runtime;
 
 import com.db117.learnagent.agent.application.TutorContext;
 import com.db117.learnagent.agent.tool.TutorGenerationTools;
+import com.db117.learnagent.agent.tool.TutorPracticeTools;
 import com.db117.learnagent.agent.tool.TutorWorkspaceTools;
 import com.db117.learnagent.config.RuntimeConfig;
 import io.agentscope.core.agent.RuntimeContext;
@@ -67,6 +68,7 @@ public class TutorAgentRuntime {
     private final TutorModel tutorModel;
     private final TutorWorkspaceTools workspaceTools;
     private final TutorGenerationTools generationTools;
+    private final TutorPracticeTools practiceTools;
     private final Path agentWorkspace;
     private final JsonFileAgentStateStore stateStore;
     private final boolean memoryEnabled;
@@ -78,8 +80,17 @@ public class TutorAgentRuntime {
             RuntimeConfig config,
             TutorModel tutorModel,
             TutorWorkspaceTools workspaceTools,
+            TutorGenerationTools generationTools,
+            TutorPracticeTools practiceTools) {
+        this(config, tutorModel, null, workspaceTools, generationTools, practiceTools);
+    }
+
+    TutorAgentRuntime(
+            RuntimeConfig config,
+            TutorModel tutorModel,
+            TutorWorkspaceTools workspaceTools,
             TutorGenerationTools generationTools) {
-        this(config, tutorModel, null, workspaceTools, generationTools);
+        this(config, tutorModel, null, workspaceTools, generationTools, null);
     }
 
     TutorAgentRuntime(RuntimeConfig config, TutorModel tutorModel, Path workspaceOverride) {
@@ -100,9 +111,20 @@ public class TutorAgentRuntime {
             Path workspaceOverride,
             TutorWorkspaceTools workspaceTools,
             TutorGenerationTools generationTools) {
+        this(config, tutorModel, workspaceOverride, workspaceTools, generationTools, null);
+    }
+
+    TutorAgentRuntime(
+            RuntimeConfig config,
+            TutorModel tutorModel,
+            Path workspaceOverride,
+            TutorWorkspaceTools workspaceTools,
+            TutorGenerationTools generationTools,
+            TutorPracticeTools practiceTools) {
         this.tutorModel = tutorModel;
         this.workspaceTools = workspaceTools;
         this.generationTools = generationTools;
+        this.practiceTools = practiceTools;
         this.memoryEnabled = config.memoryEnabled();
         this.agentWorkspace = workspaceOverride == null
                 ? Path.of(config.dataDir()).resolve("agent")
@@ -172,6 +194,10 @@ public class TutorAgentRuntime {
         if (generationTools != null) {
             toolkit.registerTool(generationTools);
             registerGenerationToolGroups(toolkit);
+        }
+        if (practiceTools != null) {
+            toolkit.registerTool(practiceTools);
+            registerPracticeToolGroup(toolkit);
         }
         var applicationTools = Set.copyOf(toolkit.getToolNames());
         try {
@@ -250,12 +276,16 @@ public class TutorAgentRuntime {
                 false,
                 "learning-content-generation");
         toolkit.addToolToGroup("learning_content_generation_tools", "generate_learning_content");
+    }
+
+    private void registerPracticeToolGroup(Toolkit toolkit) {
         toolkit.createSkillToolGroup(
                 "practice_test_generation_tools",
                 "测试生成工具；仅在 practice-test-generation Skill 激活后可用。",
                 false,
                 "practice-test-generation");
-        toolkit.addToolToGroup("practice_test_generation_tools", "generate_practice_test");
+        toolkit.addToolToGroup("practice_test_generation_tools", "save_practice_test");
+        toolkit.addToolToGroup("practice_test_generation_tools", "verify_practice_test");
     }
 
     // 使用应用类加载器读取 Quarkus dev 模式下的内置 Skill；AgentScope 默认类加载器看不到应用资源。

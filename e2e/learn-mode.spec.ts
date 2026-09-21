@@ -63,46 +63,7 @@ test("learner completes Learn Mode through the real browser", async ({page}) => 
 
     let completed = initialProgress.completed;
     let firstAttempt = true;
-    let choiceAttempted = false;
     while (completed < initialProgress.total) {
-        if (!choiceAttempted && completed === 1) {
-            await expect(page.getByRole("button", {name: "开始选择题"})).toBeEnabled({timeout: 120_000});
-            await page.getByRole("button", {name: "开始选择题"}).click();
-            await expect(page.locator("#choice-question-title")).toBeVisible({timeout: 120_000});
-            const options = page.getByRole("radio", {name: /.+/});
-            await expect(options).toHaveCount(4);
-            await expect(page.locator(".choice-practice p").nth(1)).not.toHaveText("");
-            await expect(page.locator(".choice-practice")).not.toContainText("correctOptionId");
-
-            let choiceVerified = false;
-            for (let optionIndex = 0; optionIndex < 4; optionIndex++) {
-                await page.getByRole("radio", {name: /.+/}).nth(optionIndex).check();
-                const responsePromise = page.waitForResponse((response) =>
-                    response.request().method() === "POST"
-                    && response.url().includes("/practice/choice/")
-                    && !response.url().endsWith("/choice/start"));
-                await page.getByRole("button", {name: "提交选择题"}).click();
-                const response = await responsePromise;
-                expect(response.ok()).toBeTruthy();
-                const result = await response.json() as { verified: boolean; choiceCorrect: boolean };
-                if (result.verified) {
-                    choiceVerified = true;
-                    break;
-                }
-                await expect(page.locator("p.form-feedback").filter({hasText: "选择不正确"})).toBeVisible();
-                await expect(page.locator(".learn-heading .journey-status"))
-                    .toHaveText(`${completed} / ${initialProgress.total}`);
-            }
-            expect(choiceVerified).toBe(true);
-            choiceAttempted = true;
-            completed++;
-            if (completed < initialProgress.total) {
-                await expect(page.locator(".learn-heading .journey-status"))
-                    .toHaveText(`${completed} / ${initialProgress.total}`, {timeout: 120_000});
-            }
-            continue;
-        }
-
         await expect(page.getByRole("button", {name: "验证并记录"})).toBeEnabled({timeout: 120_000});
         await page.getByRole("button", {name: "index.ts", exact: true}).click();
         await expect(page.locator(".workspace-path")).toHaveText("src/index.ts");

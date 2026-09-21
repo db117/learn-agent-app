@@ -5,8 +5,22 @@ description: 为当前 LearnUnit 生成一道基于现有内容的四选一练�
 
 # Practice Test Generation
 
-使用 `generate_practice_test` 工具调用现有 ChoiceQuestionGenerator。题目只能由当前 LearnUnit
-的目标和内容支持，必须有四个有迷惑性但无歧义的选项。向学习者展示题干和选项，不泄露正确答案。
+由 TutorAgent 直接根据当前 LearnUnit 的标题、目标和内容生成题目，不调用生成类工具。
 
-这项能力不替代固定的 code-task、Vitest 或 ExecutionEnvironment 流程。用户提交答案后，现有 Practice API 负责判定、记录
-PracticeEvidence，并按 Learning Domain 规则推进进度。
+严格遵守以下流程：
+
+1. 只根据当前 LearnUnit 生成一道单选题；不得引入内容之外的事实。
+2. 题目必须恰好有四个选项，选项 ID 固定为 `a`、`b`、`c`、`d`，且只有一个选项正确。
+3. 先在模型内部组织如下 JSON，再调用 `save_practice_test` 保存；不要把 `correctOptionId` 展示给学习者：
+
+   ```json
+   {"prompt":"题干","options":[{"id":"a","label":"..."},{"id":"b","label":"..."},{"id":"c","label":"..."},{"id":"d","label":"..."}],"correctOptionId":"a"}
+   ```
+
+4. 只向学习者展示保存工具返回的题干和四个选项，然后等待学习者回答。
+5. 收到选项 ID 后调用 `verify_practice_test`；根据工具返回结果解释对错，不自行修改掌握度、完成状态或证据。
+
+不要输出内部 JSON、正确答案、模型私有推理或数据库细节。
+
+这项能力不替代固定的 code-task、Vitest 或 ExecutionEnvironment 流程。选择题工具负责把判题结果记录为
+PracticeEvidence，并由 Learning Domain 按既有规则推进进度。

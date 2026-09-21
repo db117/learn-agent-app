@@ -43,17 +43,15 @@ POST /api/journeys/{journeyId}/practice/verify
 → React PracticeWorkspace
 ```
 
-选择题使用同一条 Practice REST 链路，但答案判定在后端完成：
+选择题由 `practice-test-generation` Skill 驱动，题目由 TutorAgent 主模型根据当前 LearnUnit 生成；数据库工具只负责
+校验、保存题目快照和判定答案：
 
 ```text
-POST /api/journeys/{journeyId}/practice/choice/start
-→ ChoiceStartResponse（只含题干和选项）
-→ React PracticeWorkspace
-→ POST /api/journeys/{journeyId}/practice/choice/{taskId}/verify
-→ VerifyResponse
+TutorAgent → save_practice_test → PracticeTask（只返回题干和选项）
+→ 学习者回答 → verify_practice_test → PracticeEvidence → Learning Domain
 ```
 
-ChoiceStartResponse 不返回正确选项；选择题和编码题都通过 PracticeEvidence 回写 Learning Domain。
+工具结果不返回正确选项；选择题和编码题都通过 PracticeEvidence 回写 Learning Domain。
 
 `VerifyResponse` 只包含验证摘要、相对提交文件和 Learning Domain 推进结果；验证
 成功时才会写入 `PracticeEvidence` 并推动领域状态，失败时不会推进领域状态。当前

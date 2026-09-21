@@ -21,10 +21,6 @@ export function PracticePanel({
                                   feedback = null,
                                   runtimeSummary = null,
                                   diagnostics = [],
-                                  choiceQuestion = null,
-                                  choiceLoading = false,
-                                  choiceSubmitting = false,
-                                  selectedChoiceId = null,
                                   onSelectFile,
                                   onContentChange,
                                   onSave,
@@ -32,9 +28,6 @@ export function PracticePanel({
                                   onTest,
                                   onCreateFile,
                                   onVerify = () => undefined,
-                                  onStartChoice = () => undefined,
-                                  onSelectChoice = () => undefined,
-                                  onSubmitChoice = () => undefined,
                               }: PracticePanelProps) {
     const [newFilePath, setNewFilePath] = useState("");
     const tree = buildFileTree([...files]);
@@ -49,11 +42,6 @@ export function PracticePanel({
                     <h3 id="practice-title">代码练习</h3>
                 </div>
                 <div className="workspace-actions">
-                    <button type="button" className="secondary" onClick={() => void onStartChoice()}
-                            disabled={actionsDisabled || choiceLoading || choiceSubmitting || practiceVerified}
-                            aria-busy={choiceLoading}>
-                        {choiceLoading ? "加载中…" : "开始选择题"}
-                    </button>
                     <button type="button" onClick={() => void onCompile()}
                             disabled={actionsDisabled || compiling || testing}
                             aria-busy={compiling}>
@@ -99,35 +87,6 @@ export function PracticePanel({
 
             {feedback && <p className="form-feedback" role="alert">{feedback}</p>}
             {runtimeSummary && <pre className="runtime-summary" aria-label="执行摘要">{runtimeSummary}</pre>}
-
-            {choiceQuestion && (
-                <section className="choice-practice" aria-labelledby="choice-question-title">
-                    <p className="mode-label">CHOICE PRACTICE</p>
-                    <h4 id="choice-question-title">{choiceQuestion.title}</h4>
-                    <p>{choiceQuestion.prompt}</p>
-                    <fieldset className="choice-options">
-                        <legend className="sr-only">选择一个答案</legend>
-                        {choiceQuestion.options.map((option) => (
-                            <label key={option.id}>
-                                <input
-                                    type="radio"
-                                    name="choice-answer"
-                                    value={option.id}
-                                    checked={selectedChoiceId === option.id}
-                                    onChange={() => onSelectChoice(option.id)}
-                                    disabled={choiceSubmitting}
-                                />
-                                <span>{option.label}</span>
-                            </label>
-                        ))}
-                    </fieldset>
-                    <button type="button" onClick={() => void onSubmitChoice()}
-                            disabled={!selectedChoiceId || choiceSubmitting || practiceVerified}
-                            aria-busy={choiceSubmitting}>
-                        {choiceSubmitting ? "提交中…" : "提交选择题"}
-                    </button>
-                </section>
-            )}
 
             <div className="workspace-layout">
                 <nav className="workspace-files" aria-label="Practice Workspace 文件树">
