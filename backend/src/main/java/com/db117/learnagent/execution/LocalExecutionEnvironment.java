@@ -43,15 +43,15 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
 
     @Override
     public ExecutionResult execute(Workspace workspace, ExecutionRequest request) {
-        var root = validateWorkspace(workspace);
+        Path root = validateWorkspace(workspace);
         if (request == null) {
             throw new IllegalArgumentException("request must not be null");
         }
-        var workingDirectory = workingDirectory(root, request);
-        var command = command(root, request);
+        Path workingDirectory = workingDirectory(root, request);
+        List<String> command = command(root, request);
         if (requiresTypeScriptToolchain(request.operation()) && !hasTypeScriptToolchain(root)) {
             // 首次编译或测试前只安装 Workspace 声明的依赖，并禁止依赖脚本执行。
-            var installation = run(root, "dependency installation", dependencyInstallationCommand(),
+            ExecutionResult installation = run(root, "dependency installation", dependencyInstallationCommand(),
                     DEPENDENCY_INSTALL_TIMEOUT);
             if (!installation.success()) {
                 return new ExecutionResult(
@@ -61,7 +61,7 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
                         installation.duration());
             }
         }
-        var executionTimeout = request.operation() == ExecutionOperation.INSTALL_TYPESCRIPT
+        Duration executionTimeout = request.operation() == ExecutionOperation.INSTALL_TYPESCRIPT
                 ? DEPENDENCY_INSTALL_TIMEOUT
                 : timeout;
         return run(workingDirectory, request.operation().name(), command, executionTimeout);
@@ -76,7 +76,7 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
     }
 
     private static boolean hasLocalBinary(Path root, String name) {
-        var bin = root.resolve("node_modules").resolve(".bin");
+        Path bin = root.resolve("node_modules").resolve(".bin");
         return Files.exists(bin.resolve(name), LinkOption.NOFOLLOW_LINKS)
                 || Files.exists(bin.resolve(name + ".cmd"), LinkOption.NOFOLLOW_LINKS)
                 || Files.exists(bin.resolve(name + ".ps1"), LinkOption.NOFOLLOW_LINKS);
@@ -128,7 +128,7 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
         if (request.arguments().size() != 1) {
             throw new IllegalArgumentException(request.operation() + " requires one project path");
         }
-        var project = root.resolve(relativePath(root, request.arguments().getFirst())).normalize();
+        Path project = root.resolve(relativePath(root, request.arguments().getFirst())).normalize();
         if (request.operation() == ExecutionOperation.INITIALIZE_NPM_PROJECT) {
             try {
                 Files.createDirectories(project);
@@ -150,8 +150,8 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
 
     private static List<String> commandWithPaths(List<String> fixedCommand, Path root,
                                                  List<String> arguments) {
-        var command = new ArrayList<>(fixedCommand);
-        for (var argument : arguments) {
+        ArrayList<String> command = new ArrayList<>(fixedCommand);
+        for (String argument : arguments) {
             command.add(relativePath(root, argument).toString());
         }
         return command;
@@ -161,7 +161,7 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
         if (arguments.isEmpty()) {
             throw new IllegalArgumentException("RUN_PROGRAM requires a script path");
         }
-        var command = new ArrayList<String>(arguments.size() + 1);
+        ArrayList<String> command = new ArrayList<String>(arguments.size() + 1);
         command.add("node");
         command.add(relativePath(root, arguments.getFirst()).toString());
         command.addAll(arguments.subList(1, arguments.size()));
@@ -169,15 +169,15 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
     }
 
     private ExecutionResult run(Path root, String operation, List<String> command, Duration executionTimeout) {
-        var startedAt = System.nanoTime();
+        long startedAt = System.nanoTime();
         try (ExecutorService readers = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
             Process process;
             try {
-                var builder = new ProcessBuilder(command)
+                ProcessBuilder builder = new ProcessBuilder(command)
                         .directory(root.toFile())
                         .redirectErrorStream(false);
-                var environment = builder.environment();
-                var path = System.getenv("PATH");
+                java.util.Map<String, String> environment = builder.environment();
+                String path = System.getenv("PATH");
                 environment.clear();
                 if (path != null) {
                     environment.put("PATH", path);
@@ -209,12 +209,12 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
                 terminate(process);
             }
 
-            var output = output(stdout, stderr);
-            var summary = formatSummary(output.stdout(), output.stderr());
+            LocalExecutionEnvironment.ProcessOutput output = output(stdout, stderr);
+            String summary = formatSummary(output.stdout(), output.stderr());
             if (!completed) {
                 summary = "execution timed out after " + executionTimeout + "\n" + summary;
             }
-            var exitCode = completed ? process.exitValue() : -1;
+            int exitCode = completed ? process.exitValue() : -1;
             return result(completed && exitCode == 0, exitCode, summary, startedAt);
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
@@ -230,22 +230,22 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
     }
 
     private static CapturedOutput capture(InputStream input) {
-        var output = new ByteArrayOutputStream(MAX_OUTPUT_BYTES_PER_STREAM);
-        var buffer = new byte[8192];
-        var truncated = false;
+        ByteArrayOutputStream output = new ByteArrayOutputStream(MAX_OUTPUT_BYTES_PER_STREAM);
+        byte[] buffer = new byte[8192];
+        boolean truncated = false;
         try (input) {
             int read;
             while ((read = input.read(buffer)) != -1) {
-                var accepted = Math.min(read, MAX_OUTPUT_BYTES_PER_STREAM - output.size());
+                int accepted = Math.min(read, MAX_OUTPUT_BYTES_PER_STREAM - output.size());
                 if (accepted > 0) {
                     output.write(buffer, 0, accepted);
                 }
                 truncated |= accepted < read;
             }
         } catch (IOException error) {
-            var suffix = "[output read failed: " + message(error) + "]";
-            var bytes = suffix.getBytes(StandardCharsets.UTF_8);
-            var accepted = Math.min(bytes.length, MAX_OUTPUT_BYTES_PER_STREAM - output.size());
+            String suffix = "[output read failed: " + message(error) + "]";
+            byte[] bytes = suffix.getBytes(StandardCharsets.UTF_8);
+            int accepted = Math.min(bytes.length, MAX_OUTPUT_BYTES_PER_STREAM - output.size());
             if (accepted > 0) {
                 output.write(bytes, 0, accepted);
             }
@@ -255,7 +255,7 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
     }
 
     private static String formatSummary(CapturedOutput stdout, CapturedOutput stderr) {
-        var summary = new StringBuilder();
+        StringBuilder summary = new StringBuilder();
         appendOutput(summary, "stdout", stdout);
         appendOutput(summary, "stderr", stderr);
         return summary.toString();
@@ -289,7 +289,7 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
         if (workspace == null) {
             throw new IllegalArgumentException("workspace must not be null");
         }
-        var root = workspace.root();
+        Path root = workspace.root();
         if (root == null || Files.isSymbolicLink(root)
                 || !Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) {
             throw new IllegalArgumentException("Workspace root must be an existing non-symlink directory");
@@ -307,8 +307,8 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
         } catch (java.nio.file.InvalidPathException error) {
             throw new IllegalArgumentException("argument must be a valid Workspace path", error);
         }
-        var containsParent = false;
-        for (var part : relative) {
+        boolean containsParent = false;
+        for (Path part : relative) {
             if (part.toString().equals("..")) {
                 containsParent = true;
                 break;
@@ -317,12 +317,12 @@ public final class LocalExecutionEnvironment implements ExecutionEnvironment {
         if (relative.isAbsolute() || relative.getNameCount() == 0 || containsParent) {
             throw new IllegalArgumentException("argument must stay inside Workspace: " + value);
         }
-        var resolved = root.resolve(relative).normalize();
+        Path resolved = root.resolve(relative).normalize();
         if (!resolved.startsWith(root)) {
             throw new IllegalArgumentException("argument must stay inside Workspace: " + value);
         }
-        var current = root;
-        for (var part : relative) {
+        Path current = root;
+        for (Path part : relative) {
             current = current.resolve(part);
             if (Files.isSymbolicLink(current)) {
                 throw new IllegalArgumentException("argument must not traverse a symlink: " + value);

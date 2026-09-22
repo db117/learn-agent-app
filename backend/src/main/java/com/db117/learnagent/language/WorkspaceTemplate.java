@@ -16,7 +16,7 @@ public record WorkspaceTemplate(String path, String content) {
     public WorkspaceTemplate {
         path = DomainChecks.text(path, "path");
         try {
-            var normalized = Path.of(path).normalize();
+            Path normalized = Path.of(path).normalize();
             if (Path.of(path).isAbsolute()
                     || normalized.getNameCount() == 0
                     || normalized.startsWith("..")) {

@@ -6,12 +6,14 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LanguagePackTest {
     @Test
     void builtInTypeScriptPackDeclaresStableCore() {
-        var pack = new TypeScriptLanguagePack();
+        TypeScriptLanguagePack pack = new TypeScriptLanguagePack();
 
         assertEquals("typescript", pack.id());
         assertEquals("TypeScript", pack.metadata().displayName());
@@ -20,7 +22,7 @@ class LanguagePackTest {
         assertEquals("pnpm", pack.toolchain().packageManager());
         assertEquals("tsc", pack.toolchain().compiler());
         assertEquals("vitest", pack.toolchain().testRunner());
-        var templates = pack.templates().templates();
+        List<WorkspaceTemplate> templates = pack.templates().templates();
         assertEquals(List.of("package.json", "tsconfig.json", "vitest.config.mjs", "src/index.ts",
                         "src/index.test.mjs"),
                 templates.stream().map(WorkspaceTemplate::path).toList());
@@ -34,17 +36,17 @@ class LanguagePackTest {
 
     @Test
     void catalogFindsByIdAndRejectsUnknownId() {
-        var pack = new TypeScriptLanguagePack();
-        var catalog = new LanguagePackCatalog(List.of(pack));
+        TypeScriptLanguagePack pack = new TypeScriptLanguagePack();
+        LanguagePackCatalog catalog = new LanguagePackCatalog(List.of(pack));
 
         assertEquals(pack, catalog.get("typescript"));
-        var error = assertThrows(IllegalArgumentException.class, () -> catalog.get("rust"));
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> catalog.get("rust"));
         assertEquals("Unknown language pack id: rust", error.getMessage());
     }
 
     @Test
     void catalogRejectsDuplicateIds() {
-        var error = assertThrows(IllegalStateException.class,
+        IllegalStateException error = assertThrows(IllegalStateException.class,
                 () -> new LanguagePackCatalog(List.of(
                         new TypeScriptLanguagePack(), new TypeScriptLanguagePack())));
 
@@ -53,7 +55,7 @@ class LanguagePackTest {
 
     @Test
     void workspaceTemplateMustStayInsideWorkspace() {
-        var error = assertThrows(IllegalArgumentException.class,
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> new WorkspaceTemplate("../outside.ts", "export {};"));
 
         assertEquals("path must be a relative Workspace path: ../outside.ts", error.getMessage());

@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ChoicePracticeDomainTest {
     @Test
     void choiceQuestionAcceptsOnlyDeclaredOptions() {
-        var question = new ChoiceQuestion(
+        ChoiceQuestion question = new ChoiceQuestion(
                 "哪个目标属于本单元？",
                 List.of(
                         new ChoiceOption("objective", "理解变量类型"),
@@ -36,10 +36,10 @@ class ChoicePracticeDomainTest {
 
     @Test
     void choicePolicyRequiresCorrectAnswer() {
-        var policy = new VerificationPolicy(false, false, false, false, true);
-        var failed = new PracticeEvidence(
+        VerificationPolicy policy = new VerificationPolicy(false, false, false, false, true);
+        PracticeEvidence failed = new PracticeEvidence(
                 false, false, 0, false, RuntimeResult.NOT_RUN, List.of(), Instant.now(), false);
-        var passed = new PracticeEvidence(
+        PracticeEvidence passed = new PracticeEvidence(
                 false, false, 0, false, RuntimeResult.NOT_RUN, List.of(), Instant.now(), true);
 
         assertFalse(policy.accepts(failed));
@@ -49,12 +49,12 @@ class ChoicePracticeDomainTest {
 
     @Test
     void choiceTaskKeepsTheGeneratedQuestionSnapshot() {
-        var question = new ChoiceQuestion(
+        ChoiceQuestion question = new ChoiceQuestion(
                 "哪一项正确？",
                 List.of(new ChoiceOption("a", "正确"), new ChoiceOption("b", "错误")),
                 "a");
 
-        var task = PracticeTask.create(
+        PracticeTask task = PracticeTask.create(
                 1,
                 1,
                 "typescript",

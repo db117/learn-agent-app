@@ -9,10 +9,25 @@ import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
 import com.db117.learnagent.practice.application.PracticeRuntimeService;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.practice.domain.ChoiceOption;
+import com.db117.learnagent.practice.domain.ChoiceQuestion;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.practice.domain.PracticeTaskStatus;
+import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
 import java.time.Instant;
@@ -72,15 +87,15 @@ public final class PracticeResource {
     @GET
     @Path("/choice")
     public ChoiceResponse choice(@PathParam("journeyId") long journeyId) {
-        var learningJourney = journeys.learningJourneyFor(journeyId);
-        var currentItem = learningJourney.currentItem();
+        LearningJourney learningJourney = journeys.learningJourneyFor(journeyId);
+        com.db117.learnagent.learning.domain.LearningPathItem currentItem = learningJourney.currentItem();
         if (currentItem == null) {
             return ChoiceResponse.empty(false);
         }
-        var unit = learningJourney.learnUnit(currentItem.learnUnitCode());
-        var learnUnitId = Objects.requireNonNull(unit.id(), "persisted LearnUnit id must not be null");
-        var tasks = practiceTasks.findByLearnUnit(learningJourney.id(), learnUnitId);
-        var codeVerified = hasVerifiedCodeTask(tasks);
+        LearnUnit unit = learningJourney.learnUnit(currentItem.learnUnitCode());
+        Long learnUnitId = Objects.requireNonNull(unit.id(), "persisted LearnUnit id must not be null");
+        List<PracticeTask> tasks = practiceTasks.findByLearnUnit(learningJourney.id(), learnUnitId);
+        boolean codeVerified = hasVerifiedCodeTask(tasks);
         return tasks.stream()
                 .filter(value -> value.status() == PracticeTaskStatus.OPEN)
                 .filter(value -> CHOICE_TASK_TYPE.equals(value.type()))
@@ -96,35 +111,35 @@ public final class PracticeResource {
             @PathParam("journeyId") long journeyId,
             @PathParam("taskId") long taskId,
             ChoiceRequest request) {
-        var learningJourney = journeys.learningJourneyFor(journeyId);
-        var currentItem = learningJourney.currentItem();
+        LearningJourney learningJourney = journeys.learningJourneyFor(journeyId);
+        com.db117.learnagent.learning.domain.LearningPathItem currentItem = learningJourney.currentItem();
         if (currentItem == null) {
             throw LearningRequestException.conflict("LEARNING_JOURNEY_COMPLETED", "学习路径已经完成");
         }
         if (request == null || request.optionId() == null || request.optionId().isBlank()) {
             throw LearningRequestException.badRequest("INVALID_PRACTICE_ANSWER", "optionId 不能为空");
         }
-        var unit = learningJourney.learnUnit(currentItem.learnUnitCode());
-        var learnUnitId = requireLearnUnitId(unit);
-        var tasks = practiceTasks.findByLearnUnit(learningJourney.id(), learnUnitId);
+        LearnUnit unit = learningJourney.learnUnit(currentItem.learnUnitCode());
+        long learnUnitId = requireLearnUnitId(unit);
+        List<PracticeTask> tasks = practiceTasks.findByLearnUnit(learningJourney.id(), learnUnitId);
         if (!hasVerifiedCodeTask(tasks)) {
             throw LearningRequestException.conflict(
                     "CODE_PRACTICE_REQUIRED", "请先完成代码练习，再回答选择题");
         }
-        var task = practiceTasks.findById(taskId)
+        PracticeTask task = practiceTasks.findById(taskId)
                 .filter(value -> value.journeyId() == learningJourney.id())
                 .orElseThrow(() -> new NotFoundException("PracticeTask 不存在"));
         requireChoiceTask(task);
         if (task.status() != PracticeTaskStatus.OPEN || task.learnUnitId() != learnUnitId) {
             throw LearningRequestException.conflict("CHOICE_TASK_NOT_OPEN", "选择题不属于当前可答的 LearnUnit");
         }
-        var question = Objects.requireNonNull(task.choiceQuestion(), "choice task question must not be null");
+        ChoiceQuestion question = Objects.requireNonNull(task.choiceQuestion(), "choice task question must not be null");
         if (!question.hasOption(request.optionId())) {
             throw LearningRequestException.badRequest("INVALID_PRACTICE_ANSWER", "optionId 不属于当前选择题");
         }
 
-        var correct = question.isCorrect(request.optionId());
-        var evidence = new PracticeEvidence(
+        boolean correct = question.isCorrect(request.optionId());
+        PracticeEvidence evidence = new PracticeEvidence(
                 false,
                 false,
                 0,
@@ -133,10 +148,10 @@ public final class PracticeResource {
                 List.of(),
                 correct ? Instant.now() : null,
                 correct);
-        var saved = practiceTasks.save(task.recordAttempt(
+        PracticeTask saved = practiceTasks.save(task.recordAttempt(
                 PracticeAttempt.submit(evidence, Instant.now())));
-        var updated = recordLearningProgress(journeyId, learningJourney, saved, evidence);
-        var advanced = !Objects.equals(
+        LearningJourney updated = recordLearningProgress(journeyId, learningJourney, saved, evidence);
+        boolean advanced = !Objects.equals(
                 learningJourney.currentItem() == null ? null : learningJourney.currentItem().learnUnitCode(),
                 updated.currentItem() == null ? null : updated.currentItem().learnUnitCode());
         return ChoiceVerifyResponse.from(saved, evidence, updated, advanced);
@@ -147,13 +162,13 @@ public final class PracticeResource {
     public VerifyResponse verify(
             @PathParam("journeyId") long journeyId,
             @PathParam("taskId") long taskId) {
-        var learningJourney = journeys.learningJourneyFor(journeyId);
-        var task = practiceTasks.findById(taskId)
+        LearningJourney learningJourney = journeys.learningJourneyFor(journeyId);
+        PracticeTask task = practiceTasks.findById(taskId)
                 .filter(value -> value.journeyId() == learningJourney.id())
                 .orElseThrow(() -> new NotFoundException("PracticeTask 不存在"));
         requireCodeTask(task);
-        var result = runtime.verify(task, workspaces.learningWorkspace(journeyId));
-        var updated = recordLearningProgress(journeyId, learningJourney, result);
+        PracticeRuntimeService.PracticeVerification result = runtime.verify(task, workspaces.learningWorkspace(journeyId));
+        LearningJourney updated = recordLearningProgress(journeyId, learningJourney, result);
         return VerifyResponse.from(result.task(), result.evidence(), learningJourney, updated);
     }
 
@@ -161,18 +176,18 @@ public final class PracticeResource {
     @POST
     @Path("/verify")
     public VerifyResponse verifyCurrent(@PathParam("journeyId") long journeyId) {
-        var learningJourney = journeys.learningJourneyFor(journeyId);
-        var currentItem = learningJourney.currentItem();
+        LearningJourney learningJourney = journeys.learningJourneyFor(journeyId);
+        com.db117.learnagent.learning.domain.LearningPathItem currentItem = learningJourney.currentItem();
         if (currentItem == null) {
             throw LearningRequestException.conflict("LEARNING_JOURNEY_COMPLETED", "学习路径已经完成");
         }
-        var unit = learningJourney.learnUnit(currentItem.learnUnitCode());
-        var learnUnitId = Objects.requireNonNull(unit.id(), "persisted LearnUnit id must not be null");
-        var candidates = practiceTasks.findByLearnUnit(learningJourney.id(), learnUnitId);
+        LearnUnit unit = learningJourney.learnUnit(currentItem.learnUnitCode());
+        Long learnUnitId = Objects.requireNonNull(unit.id(), "persisted LearnUnit id must not be null");
+        List<PracticeTask> candidates = practiceTasks.findByLearnUnit(learningJourney.id(), learnUnitId);
         if (currentItem.practiceVerified()) {
             throw LearningRequestException.conflict("PRACTICE_ALREADY_VERIFIED", "当前单元的 Practice 已验证");
         }
-        var task = candidates.stream()
+        PracticeTask task = candidates.stream()
                 .filter(value -> value.status() == PracticeTaskStatus.OPEN)
                 .filter(value -> CODE_TASK_TYPE.equals(value.type()))
                 .findFirst()
@@ -187,8 +202,8 @@ public final class PracticeResource {
                         TYPESCRIPT_STARTER_SOURCE,
                         new VerificationPolicy(true, true, false, false),
                         Instant.now())));
-        var result = runtime.verify(task, workspaces.learningWorkspace(journeyId));
-        var updated = recordLearningProgress(journeyId, learningJourney, result);
+        PracticeRuntimeService.PracticeVerification result = runtime.verify(task, workspaces.learningWorkspace(journeyId));
+        LearningJourney updated = recordLearningProgress(journeyId, learningJourney, result);
         return VerifyResponse.from(result.task(), result.evidence(), learningJourney, updated);
     }
 
@@ -209,7 +224,7 @@ public final class PracticeResource {
                         && value.status() == PracticeTaskStatus.OPEN)) {
             return before;
         }
-        var learnUnitCode = before.learnUnits().stream()
+        String learnUnitCode = before.learnUnits().stream()
                 .filter(unit -> Objects.equals(unit.id(), task.learnUnitId()))
                 .map(unit -> unit.code())
                 .findFirst()
@@ -255,7 +270,7 @@ public final class PracticeResource {
             long durationMillis,
             List<TypeScriptDiagnostic> diagnostics) {
         static CompileResponse from(TypeScriptCompileResult result) {
-            var execution = result.execution();
+            ExecutionResult execution = result.execution();
             return new CompileResponse(
                     execution.success(), execution.exitCode(), execution.summary(),
                     execution.duration().toMillis(), result.diagnostics());
@@ -280,7 +295,7 @@ public final class PracticeResource {
             int testCount,
             boolean passed) {
         static TestResponse from(TypeScriptTestResult result) {
-            var execution = result.execution();
+            ExecutionResult execution = result.execution();
             return new TestResponse(
                     execution.success(), execution.exitCode(), execution.summary(),
                     execution.duration().toMillis(), result.testCount(), result.passed());
@@ -346,7 +361,7 @@ public final class PracticeResource {
         }
 
         static ChoiceResponse from(PracticeTask task, boolean codeVerified) {
-            var question = Objects.requireNonNull(task.choiceQuestion(), "choice task question must not be null");
+            ChoiceQuestion question = Objects.requireNonNull(task.choiceQuestion(), "choice task question must not be null");
             return new ChoiceResponse(
                     true,
                     codeVerified,

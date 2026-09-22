@@ -148,19 +148,19 @@ class JourneyApplicationServiceTest {
 
     @Test
     void confirmingPlanningDraftCreatesAndAttachesLearningJourney() {
-        var learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
-        var journey = new Journey(
+        Learner learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
+        Journey journey = new Journey(
                 7L, learner.id(), "学习 TypeScript", com.db117.learnagent.learning.domain.JourneyStatus.ACTIVE,
                 CREATED_AT, null, null, true);
-        var learningJourneys = new FakeLearningJourneyRepository();
-        var journeys = new FakeJourneyRepository(journey);
-        var service = new JourneyApplicationService(
+        JourneyApplicationServiceTest.FakeLearningJourneyRepository learningJourneys = new FakeLearningJourneyRepository();
+        JourneyApplicationServiceTest.FakeJourneyRepository journeys = new FakeJourneyRepository(journey);
+        JourneyApplicationService service = new JourneyApplicationService(
                 new FakeLearnerRepository(learner),
                 journeys,
                 learningJourneys,
                 Clock.fixed(CREATED_AT, ZoneOffset.UTC));
 
-        var confirmed = service.confirmPlan(journey.id(), PLAN);
+        Journey confirmed = service.confirmPlan(journey.id(), PLAN);
 
         assertNotNull(learningJourneys.saved);
         assertEquals("typescript", learningJourneys.saved.languagePackId());
@@ -173,13 +173,13 @@ class JourneyApplicationServiceTest {
 
     @Test
     void confirmingMarkdownWrappedPlanningDraftExtractsJsonObject() {
-        var learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
-        var journey = new Journey(
+        Learner learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
+        Journey journey = new Journey(
                 7L, learner.id(), "学习 TypeScript", com.db117.learnagent.learning.domain.JourneyStatus.ACTIVE,
                 CREATED_AT, null, null, true);
-        var learningJourneys = new FakeLearningJourneyRepository();
-        var journeys = new FakeJourneyRepository(journey);
-        var service = new JourneyApplicationService(
+        JourneyApplicationServiceTest.FakeLearningJourneyRepository learningJourneys = new FakeLearningJourneyRepository();
+        JourneyApplicationServiceTest.FakeJourneyRepository journeys = new FakeJourneyRepository(journey);
+        JourneyApplicationService service = new JourneyApplicationService(
                 new FakeLearnerRepository(learner),
                 journeys,
                 learningJourneys,
@@ -193,13 +193,13 @@ class JourneyApplicationServiceTest {
 
     @Test
     void confirmingChapterPlanPreservesThreeChaptersAndSixUnits() {
-        var learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
-        var journey = new Journey(
+        Learner learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
+        Journey journey = new Journey(
                 7L, learner.id(), "学习 TypeScript", com.db117.learnagent.learning.domain.JourneyStatus.ACTIVE,
                 CREATED_AT, null, null, true);
-        var learningJourneys = new FakeLearningJourneyRepository();
-        var journeys = new FakeJourneyRepository(journey);
-        var service = new JourneyApplicationService(
+        JourneyApplicationServiceTest.FakeLearningJourneyRepository learningJourneys = new FakeLearningJourneyRepository();
+        JourneyApplicationServiceTest.FakeJourneyRepository journeys = new FakeJourneyRepository(journey);
+        JourneyApplicationService service = new JourneyApplicationService(
                 new FakeLearnerRepository(learner),
                 journeys,
                 learningJourneys,
@@ -214,15 +214,15 @@ class JourneyApplicationServiceTest {
         assertEquals(List.of("foundations", "foundations", "functions", "functions", "async", "async"),
                 learningJourneys.saved.learnUnits().stream().map(value -> value.chapterCode()).toList());
 
-        var afterVariables = service.recordPracticeVerified(journey.id(), "variables");
+        LearningJourney afterVariables = service.recordPracticeVerified(journey.id(), "variables");
         assertEquals("types", afterVariables.currentItem().learnUnitCode());
-        var afterTypes = service.recordPracticeVerified(journey.id(), "types");
+        LearningJourney afterTypes = service.recordPracticeVerified(journey.id(), "types");
         assertEquals("parameters", afterTypes.currentItem().learnUnitCode());
         service.recordPracticeVerified(journey.id(), "parameters");
-        var afterReturns = service.recordPracticeVerified(journey.id(), "returns");
+        LearningJourney afterReturns = service.recordPracticeVerified(journey.id(), "returns");
         assertEquals("promise", afterReturns.currentItem().learnUnitCode());
         service.recordPracticeVerified(journey.id(), "promise");
-        var completed = service.recordPracticeVerified(journey.id(), "await");
+        LearningJourney completed = service.recordPracticeVerified(journey.id(), "await");
 
         assertEquals("COMPLETED", completed.status().name());
         assertNull(completed.currentItem());
@@ -233,12 +233,12 @@ class JourneyApplicationServiceTest {
 
     @Test
     void confirmingPlanMaterializesOnlyTheLearningOutline() {
-        var learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
-        var journey = new Journey(
+        Learner learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
+        Journey journey = new Journey(
                 7L, learner.id(), "学习 TypeScript", com.db117.learnagent.learning.domain.JourneyStatus.ACTIVE,
                 CREATED_AT, null, null, true);
-        var learningJourneys = new FakeLearningJourneyRepository();
-        var service = new JourneyApplicationService(
+        JourneyApplicationServiceTest.FakeLearningJourneyRepository learningJourneys = new FakeLearningJourneyRepository();
+        JourneyApplicationService service = new JourneyApplicationService(
                 new FakeLearnerRepository(learner),
                 new FakeJourneyRepository(journey),
                 learningJourneys,
@@ -253,19 +253,19 @@ class JourneyApplicationServiceTest {
 
     @Test
     void practiceAdvancesToTheNextMaterializedUnit() {
-        var learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
-        var journey = new Journey(
+        Learner learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
+        Journey journey = new Journey(
                 7L, learner.id(), "学习 TypeScript", com.db117.learnagent.learning.domain.JourneyStatus.ACTIVE,
                 CREATED_AT, null, null, true);
-        var learningJourneys = new FakeLearningJourneyRepository();
-        var service = new JourneyApplicationService(
+        JourneyApplicationServiceTest.FakeLearningJourneyRepository learningJourneys = new FakeLearningJourneyRepository();
+        JourneyApplicationService service = new JourneyApplicationService(
                 new FakeLearnerRepository(learner),
                 new FakeJourneyRepository(journey),
                 learningJourneys,
                 Clock.fixed(CREATED_AT, ZoneOffset.UTC));
 
         service.confirmPlan(journey.id(), PLAN);
-        var afterPractice = service.recordPracticeVerified(journey.id(), "variables");
+        LearningJourney afterPractice = service.recordPracticeVerified(journey.id(), "variables");
 
         assertEquals("functions", afterPractice.currentItem().learnUnitCode());
         assertEquals("ACTIVE", afterPractice.status().name());
@@ -276,18 +276,18 @@ class JourneyApplicationServiceTest {
 
     @Test
     void failedAttachCleansUpTheNewUnlinkedLearningJourney() {
-        var learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
-        var journey = new Journey(
+        Learner learner = new Learner(1L, "学习者", "TypeScript developer", CREATED_AT);
+        Journey journey = new Journey(
                 7L, learner.id(), "学习 TypeScript", com.db117.learnagent.learning.domain.JourneyStatus.ACTIVE,
                 CREATED_AT, null, null, true);
-        var learningJourneys = new FakeLearningJourneyRepository();
-        var service = new JourneyApplicationService(
+        JourneyApplicationServiceTest.FakeLearningJourneyRepository learningJourneys = new FakeLearningJourneyRepository();
+        JourneyApplicationService service = new JourneyApplicationService(
                 new FakeLearnerRepository(learner),
                 new FakeJourneyRepository(journey, true),
                 learningJourneys,
                 Clock.fixed(CREATED_AT, ZoneOffset.UTC));
 
-        var error = assertThrows(LearningRequestException.class,
+        LearningRequestException error = assertThrows(LearningRequestException.class,
                 () -> service.confirmPlan(journey.id(), PLAN));
 
         assertEquals("LEARNING_PATH_LINK_FAILED", error.code());

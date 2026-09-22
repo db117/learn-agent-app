@@ -35,17 +35,17 @@ class PracticeRuntimeServiceTest {
 
     @Test
     void rejectsUnsupportedChecksBeforeExecutionAndEvidencePersistence() {
-        var executions = new AtomicInteger();
-        var saves = new AtomicInteger();
+        AtomicInteger executions = new AtomicInteger();
+        AtomicInteger saves = new AtomicInteger();
         ExecutionEnvironment environment = (workspace, request) -> {
             executions.incrementAndGet();
             return new ExecutionResult(true, 0, "", Duration.ZERO);
         };
-        var repository = new RecordingPracticeTaskRepository(saves);
-        var service = service(environment, repository);
-        var task = task(new VerificationPolicy(true, true, true, true));
+        PracticeRuntimeServiceTest.RecordingPracticeTaskRepository repository = new RecordingPracticeTaskRepository(saves);
+        PracticeRuntimeService service = service(environment, repository);
+        PracticeTask task = task(new VerificationPolicy(true, true, true, true));
 
-        var error = assertThrows(LearningRequestException.class, () -> service.verify(task, null));
+        LearningRequestException error = assertThrows(LearningRequestException.class, () -> service.verify(task, null));
 
         assertEquals("UNSUPPORTED_VERIFICATION_POLICY", error.code());
         assertTrue(error.publicMessage().contains("lint"));
@@ -58,13 +58,13 @@ class PracticeRuntimeServiceTest {
     void keepsCompileAndTestsOnlyPolicyOnTheExistingVerificationPath() {
         ExecutionEnvironment environment = (workspace, request) ->
                 new ExecutionResult(true, 0, "Tests  1 passed (1)", Duration.ZERO);
-        var repository = new RecordingPracticeTaskRepository(new AtomicInteger());
-        var service = service(environment, repository);
-        var task = task(new VerificationPolicy(true, true, false, false));
-        var workspace = new Workspace(
+        PracticeRuntimeServiceTest.RecordingPracticeTaskRepository repository = new RecordingPracticeTaskRepository(new AtomicInteger());
+        PracticeRuntimeService service = service(environment, repository);
+        PracticeTask task = task(new VerificationPolicy(true, true, false, false));
+        Workspace workspace = new Workspace(
                 new WorkspaceReference(WorkspaceKind.LEARNING, 1), dataDir);
 
-        var result = service.verify(task, workspace);
+        PracticeRuntimeService.PracticeVerification result = service.verify(task, workspace);
 
         assertTrue(result.evidence().isVerified(task.verificationPolicy()));
         assertSame(result.task(), repository.saved);
@@ -98,7 +98,7 @@ class PracticeRuntimeServiceTest {
                 return false;
             }
         };
-        var manager = new WorkspaceManager(config);
+        WorkspaceManager manager = new WorkspaceManager(config);
         return new PracticeRuntimeService(
                 environment,
                 new TypeScriptCompiler(environment),

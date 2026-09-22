@@ -71,11 +71,11 @@ public class TutorSessionService {
     }
 
     public TutorSessionResponse createSession(CreateTutorSessionRequest request) {
-        var ids = requireSessionRequest(request);
-        var context = contextAssembler.assemble(ids.learnerId(), ids.journeyId(), ids.mode());
-        var sessionId = sessionId(context);
-        var userId = Long.toString(context.learnerId());
-        var binding = new SessionBinding(
+        TutorSessionService.SessionIds ids = requireSessionRequest(request);
+        TutorContext context = contextAssembler.assemble(ids.learnerId(), ids.journeyId(), ids.mode());
+        String sessionId = sessionId(context);
+        String userId = Long.toString(context.learnerId());
+        TutorSessionService.SessionBinding binding = new SessionBinding(
                 sessionId,
                 userId,
                 context.learnerId(),
@@ -83,7 +83,7 @@ public class TutorSessionService {
                 context.mode(),
                 context.currentLearnUnitCode());
         sessions.put(sessionId, binding);
-        var state = runtime.loadState(userId, sessionId);
+        Optional<AgentState> state = runtime.loadState(userId, sessionId);
         return new TutorSessionResponse(
                 sessionId,
                 state.isPresent(),
@@ -93,26 +93,26 @@ public class TutorSessionService {
     }
 
     public Flux<TutorEvent> streamTurn(String sessionId, SendTutorMessageRequest request) {
-        var input = requireMessageRequest(sessionId, request);
-        var binding = sessions.get(sessionId);
+        TutorSessionService.MessageInput input = requireMessageRequest(sessionId, request);
+        TutorSessionService.SessionBinding binding = sessions.get(sessionId);
         if (binding == null) {
             throw TutorRequestException.notFound("SESSION_NOT_FOUND", "Tutor Session 不存在，请先创建或恢复");
         }
 
-        var context = contextAssembler.assemble(binding.learnerId(), binding.journeyId(), binding.mode());
+        TutorContext context = contextAssembler.assemble(binding.learnerId(), binding.journeyId(), binding.mode());
         if (binding.currentLearnUnitCode() != null
                 && !binding.currentLearnUnitCode().equals(context.currentLearnUnitCode())) {
             throw TutorRequestException.conflict("STALE_SESSION", "学习项已变化，请恢复新的 Tutor Session");
         }
 
-        var lock = sessionLocks.computeIfAbsent(sessionId, ignored -> new Semaphore(1));
+        Semaphore lock = sessionLocks.computeIfAbsent(sessionId, ignored -> new Semaphore(1));
         if (!lock.tryAcquire()) {
             throw TutorRequestException.conflict("TURN_ACTIVE", "当前 Tutor Turn 仍在处理中");
         }
 
         try {
-            var state = runtime.loadState(binding.userId(), sessionId);
-            var previous = findTurn(state, input.turnId());
+            Optional<AgentState> state = runtime.loadState(binding.userId(), sessionId);
+            Optional<TutorSessionService.TurnSnapshot> previous = findTurn(state, input.turnId());
             if (previous.isPresent()) {
                 if (RUNNING.equals(previous.get().status())) {
                     throw TutorRequestException.conflict("TURN_ACTIVE", "当前 Tutor Turn 仍在处理中");
@@ -127,12 +127,12 @@ public class TutorSessionService {
                 throw TutorRequestException.serviceUnavailable("MODEL_UNAVAILABLE", "Tutor 模型尚未配置");
             }
 
-            var userMessage = UserMessage.builder()
+            UserMessage userMessage = UserMessage.builder()
                     .name("learner")
                     .textContent(input.text())
                     .metadata(Map.of(TURN_ID, input.turnId(), TURN_STATUS, RUNNING))
                     .build();
-            var active = new ActiveTurn(
+            TutorSessionService.ActiveTurn active = new ActiveTurn(
                     binding,
                     input.turnId(),
                     userMessage,
@@ -151,7 +151,7 @@ public class TutorSessionService {
         if (!sessions.containsKey(sessionId)) {
             throw TutorRequestException.notFound("SESSION_NOT_FOUND", "Tutor Session 不存在，请先创建或恢复");
         }
-        var active = activeTurns.get(sessionId);
+        TutorSessionService.ActiveTurn active = activeTurns.get(sessionId);
         if (active == null) {
             return new TutorCancelResponse(false);
         }
@@ -162,12 +162,12 @@ public class TutorSessionService {
 
     @SuppressWarnings("deprecation")
     private Flux<TutorEvent> run(ActiveTurn active, Semaphore lock) {
-        var prefix = Flux.just(
+        Flux<TutorEvent> prefix = Flux.just(
                 active.event(TutorEventType.TURN_STARTED, null, null),
                 active.event(TutorEventType.ACTIVITY, "正在加载学习上下文", null),
                 active.event(TutorEventType.ACTIVITY, "模型正在组织回答", null));
         try {
-            var modelEvents = active.binding.mode() == TutorSessionMode.PLANNING
+            Flux<Event> modelEvents = active.binding.mode() == TutorSessionMode.PLANNING
                     ? runtime.agent().stream(
                             List.of(active.userMessage),
                             STREAM_OPTIONS,
@@ -242,7 +242,7 @@ public class TutorSessionService {
 
     private Flux<TutorEvent> project(Flux<Event> events, ActiveTurn active) {
         return events.handle((event, sink) -> {
-            for (var projection : TutorEventMapper.map(event)) {
+            for (TutorEventMapper.Projection projection : TutorEventMapper.map(event)) {
                 sink.next(active.event(projection.type(), projection.text(), projection.errorCode()));
             }
             if (event.getType() == EventType.REASONING && !event.isLast()) {
@@ -260,8 +260,8 @@ public class TutorSessionService {
         if (message == null) {
             return;
         }
-        for (var block : message.getContentBlocks(TextBlock.class)) {
-            var text = block.getText();
+        for (TextBlock block : message.getContentBlocks(TextBlock.class)) {
+            String text = block.getText();
             if (text == null || text.isBlank()) {
                 continue;
             }
@@ -313,20 +313,20 @@ public class TutorSessionService {
     }
 
     private void persistTerminal(ActiveTurn active, String status) {
-        var state = runtime.loadState(active.binding.userId(), active.binding.sessionId())
+        AgentState state = runtime.loadState(active.binding.userId(), active.binding.sessionId())
                 .orElseGet(() -> AgentState.builder()
                         .sessionId(active.binding.sessionId())
                         .userId(active.binding.userId())
                         .context(new ArrayList<>())
                         .build());
-        var messages = state.contextMutable();
-        var userIndex = findTurnIndex(messages, active.turnId);
+        List<Msg> messages = state.contextMutable();
+        int userIndex = findTurnIndex(messages, active.turnId);
         if (userIndex < 0) {
             messages.add(active.userMessage);
             userIndex = messages.size() - 1;
         }
-        var user = messages.get(userIndex);
-        var metadata = new HashMap<>(user.getMetadata());
+        Msg user = messages.get(userIndex);
+        HashMap<String, Object> metadata = new HashMap<>(user.getMetadata());
         metadata.put(TURN_STATUS, status);
         messages.set(userIndex, user.withMetadata(metadata));
 
@@ -344,12 +344,12 @@ public class TutorSessionService {
     }
 
     private List<TutorMessage> publicMessages(AgentState state) {
-        var messages = new ArrayList<TutorMessage>();
-        for (var message : state.getContext()) {
+        ArrayList<TutorMessage> messages = new ArrayList<TutorMessage>();
+        for (Msg message : state.getContext()) {
             if (message.getRole() != MsgRole.USER && message.getRole() != MsgRole.ASSISTANT) {
                 continue;
             }
-            var text = message.getTextContent();
+            String text = message.getTextContent();
             if (text == null || text.isBlank()) {
                 continue;
             }
@@ -365,8 +365,8 @@ public class TutorSessionService {
             SessionBinding binding,
             String turnId,
             TurnSnapshot previous) {
-        var active = new ReplayTurn(binding, turnId);
-        var events = new ArrayList<TutorEvent>();
+        TutorSessionService.ReplayTurn active = new ReplayTurn(binding, turnId);
+        ArrayList<TutorEvent> events = new ArrayList<TutorEvent>();
         events.add(active.event(TutorEventType.TURN_STARTED, null, null));
         events.add(active.event(TutorEventType.ACTIVITY, "正在恢复已完成的 Tutor Turn", null));
         if (COMPLETED.equals(previous.status()) && previous.answer() != null && !previous.answer().isBlank()) {
@@ -384,13 +384,13 @@ public class TutorSessionService {
         if (state.isEmpty()) {
             return Optional.empty();
         }
-        var messages = state.get().getContext();
+        List<Msg> messages = state.get().getContext();
         for (int index = messages.size() - 1; index >= 0; index--) {
-            var message = messages.get(index);
+            Msg message = messages.get(index);
             if (!turnId.equals(metadataText(message, TURN_ID))) {
                 continue;
             }
-            var status = metadataText(message, TURN_STATUS);
+            String status = metadataText(message, TURN_STATUS);
             if (status == null) {
                 return Optional.of(new TurnSnapshot(RUNNING, null));
             }
@@ -406,12 +406,12 @@ public class TutorSessionService {
 
     private Optional<String> findAssistantAfter(List<Msg> messages, int userIndex) {
         for (int index = userIndex + 1; index < messages.size(); index++) {
-            var message = messages.get(index);
+            Msg message = messages.get(index);
             if (message.getRole() == MsgRole.USER) {
                 return Optional.empty();
             }
             if (message.getRole() == MsgRole.ASSISTANT) {
-                var text = message.getTextContent();
+                String text = message.getTextContent();
                 return text == null || text.isBlank() ? Optional.empty() : Optional.of(text);
             }
         }
@@ -439,12 +439,12 @@ public class TutorSessionService {
     }
 
     private String metadataText(Msg message, String key) {
-        var value = message.getMetadata().get(key);
+        Object value = message.getMetadata().get(key);
         return value == null ? null : value.toString();
     }
 
     private boolean containsInterrupted(Throwable error) {
-        for (var current = error; current != null; current = current.getCause()) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
             if (current instanceof InterruptedException) {
                 return true;
             }
@@ -481,7 +481,7 @@ public class TutorSessionService {
     }
 
     private String sessionId(TutorContext context) {
-        var seed = context.learnerId() + "|" + context.journeyId() + "|"
+        String seed = context.learnerId() + "|" + context.journeyId() + "|"
                 + context.mode() + "|" + Objects.toString(context.currentLearnUnitCode(), "planning");
         return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
     }
@@ -563,7 +563,7 @@ public class TutorSessionService {
         }
 
         private TutorEvent event(TutorEventType type, String text, String errorCode) {
-            var next = sequence.incrementAndGet();
+            long next = sequence.incrementAndGet();
             return new TutorEvent(next, type, binding.sessionId(), turnId, next, text, errorCode);
         }
     }

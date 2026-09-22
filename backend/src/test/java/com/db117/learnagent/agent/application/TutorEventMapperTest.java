@@ -3,7 +3,12 @@ package com.db117.learnagent.agent.application;
 import com.db117.learnagent.agent.api.TutorEventType;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
-import io.agentscope.core.message.*;
+import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.ToolResultBlock;
+import io.agentscope.core.message.ToolResultMessage;
+import io.agentscope.core.message.ToolResultState;
+import io.agentscope.core.message.ToolUseBlock;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -13,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class TutorEventMapperTest {
     @Test
     void projectsToolStartWithoutLeakingArguments() {
-        var event = new Event(
+        Event event = new Event(
                 EventType.REASONING,
                 new AssistantMessage(ToolUseBlock.builder()
                         .id("call-1")
@@ -22,7 +27,7 @@ class TutorEventMapperTest {
                         .build()),
                 false);
 
-        var projections = TutorEventMapper.map(event);
+        List<TutorEventMapper.Projection> projections = TutorEventMapper.map(event);
 
         assertEquals(List.of(TutorEventType.TOOL_STARTED),
                 projections.stream().map(TutorEventMapper.Projection::type).toList());
@@ -32,17 +37,17 @@ class TutorEventMapperTest {
 
     @Test
     void projectsToolFailureAndWorkspaceChange() {
-        var failed = new ToolResultBlock(
+        ToolResultBlock failed = new ToolResultBlock(
                 "call-1", "compile", List.of(TextBlock.builder().text("Error: bad").build()), null)
                 .withState(ToolResultState.ERROR);
-        var written = new ToolResultBlock(
+        ToolResultBlock written = new ToolResultBlock(
                 "call-2", "write_file", List.of(TextBlock.builder().text("ok").build()), null);
-        var compiled = new ToolResultBlock(
+        ToolResultBlock compiled = new ToolResultBlock(
                 "call-3", "compile_project", List.of(TextBlock.builder().text("dist/index.js").build()), null);
 
-        var failedProjection = TutorEventMapper.map(
+        List<TutorEventMapper.Projection> failedProjection = TutorEventMapper.map(
                 new Event(EventType.TOOL_RESULT, new ToolResultMessage(failed), true));
-        var writeProjection = TutorEventMapper.map(
+        List<TutorEventMapper.Projection> writeProjection = TutorEventMapper.map(
                 new Event(EventType.TOOL_RESULT, new ToolResultMessage(written), true));
 
         assertEquals(TutorEventType.TOOL_FAILED, failedProjection.getFirst().type());
@@ -55,11 +60,11 @@ class TutorEventMapperTest {
 
     @Test
     void projectsSkillLoadingAsAStableUiEvent() {
-        var loaded = new ToolResultBlock(
+        ToolResultBlock loaded = new ToolResultBlock(
                 "call-3", "load_skill_through_path",
                 List.of(TextBlock.builder().text("internal skill body").build()), null);
 
-        var projection = TutorEventMapper.map(
+        List<TutorEventMapper.Projection> projection = TutorEventMapper.map(
                 new Event(EventType.TOOL_RESULT, new ToolResultMessage(loaded), true));
 
         assertEquals(List.of(TutorEventType.SKILL_LOADED),

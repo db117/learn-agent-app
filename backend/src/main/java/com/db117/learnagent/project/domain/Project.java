@@ -48,7 +48,7 @@ public final class Project {
             throw new DomainRuleViolation("project must contain at least one milestone");
         }
         this.milestones = List.copyOf(milestones);
-        var codes = new HashSet<String>();
+        HashSet<String> codes = new HashSet<String>();
         for (ProjectMilestone milestone : this.milestones) {
             if (!codes.add(milestone.code())) {
                 throw new DomainRuleViolation("milestone codes must be unique");
@@ -121,8 +121,8 @@ public final class Project {
         if (status != ProjectStatus.ACTIVE) {
             throw new DomainRuleViolation("project must be active before starting a milestone");
         }
-        var milestone = milestone(code);
-        var nextMilestone = milestone.start();
+        ProjectMilestone milestone = milestone(code);
+        ProjectMilestone nextMilestone = milestone.start();
         return replace(nextMilestone);
     }
 
@@ -131,7 +131,7 @@ public final class Project {
         if (status == ProjectStatus.PLANNED) {
             throw new DomainRuleViolation("project must be active before recording evidence");
         }
-        var nextProject = replace(milestone(code).recordEvidence(evidence));
+        Project nextProject = replace(milestone(code).recordEvidence(evidence));
         if (nextProject.milestones.stream().allMatch(item -> item.status() == ProjectMilestoneStatus.COMPLETED)) {
             return new Project(
                     id,

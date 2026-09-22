@@ -38,14 +38,14 @@ public final class TutorLearningTools {
             TutorContext context,
             @ToolParam(name = "content_json", description = "包含 concept、example、practice 三个文本字段的 JSON")
             String contentJson) {
-        var journey = currentJourney(context);
-        var unit = currentUnit(journey);
+        LearningJourney journey = currentJourney(context);
+        LearnUnit unit = currentUnit(journey);
         if (!unit.content().isBlank()) {
             return contentResult(unit);
         }
 
-        var content = parseContent(contentJson);
-        var saved = journeys.recordLearnUnitContent(context.journeyId(), unit.code(), content);
+        String content = parseContent(contentJson);
+        LearningJourney saved = journeys.recordLearnUnitContent(context.journeyId(), unit.code(), content);
         return contentResult(currentUnit(saved));
     }
 
@@ -53,7 +53,7 @@ public final class TutorLearningTools {
         if (context == null || context.mode() != TutorSessionMode.LEARNING) {
             throw new IllegalStateException("学习内容工具只在 LEARNING Session 中可用");
         }
-        var journey = journeys.learningJourneyFor(context.journeyId());
+        LearningJourney journey = journeys.learningJourneyFor(context.journeyId());
         if (journey.currentItem() == null) {
             throw LearningRequestException.conflict("LEARNING_JOURNEY_COMPLETED", "学习路径已经完成");
         }
@@ -65,11 +65,11 @@ public final class TutorLearningTools {
             throw LearningRequestException.badRequest("INVALID_LEARNING_CONTENT", "学习内容 JSON 不能为空或过长");
         }
         try {
-            var root = objectMapper.readTree(contentJson);
+            JsonNode root = objectMapper.readTree(contentJson);
             if (root == null || !root.isObject()) {
                 throw new IllegalArgumentException("content must be a JSON object");
             }
-            var content = """
+            String content = """
                     ## Concept
                     %s
 
@@ -94,7 +94,7 @@ public final class TutorLearningTools {
     }
 
     private String contentResult(LearnUnit unit) {
-        var result = new LinkedHashMap<String, Object>();
+        LinkedHashMap<String, Object> result = new LinkedHashMap<String, Object>();
         result.put("learnUnitCode", unit.code());
         result.put("title", unit.title());
         result.put("content", unit.content());

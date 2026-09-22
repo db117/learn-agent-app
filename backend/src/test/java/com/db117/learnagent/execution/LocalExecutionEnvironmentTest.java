@@ -14,7 +14,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LocalExecutionEnvironmentTest {
     @TempDir
@@ -24,7 +27,7 @@ class LocalExecutionEnvironmentTest {
     void runsProgramInsideWorkspaceAndKeepsOutputSections() throws IOException {
         write("program.mjs", "console.log('ok'); console.error('warning');");
 
-        var result = environment().execute(workspace(),
+        ExecutionResult result = environment().execute(workspace(),
                 new ExecutionRequest(ExecutionOperation.RUN_PROGRAM, List.of("program.mjs")));
 
         assertTrue(result.success());
@@ -38,7 +41,7 @@ class LocalExecutionEnvironmentTest {
     void returnsNonZeroExitCodeAndBoundedOutput() throws IOException {
         write("program.mjs", "console.log('x'.repeat(40 * 1024)); console.error('failure'); process.exit(3);");
 
-        var result = environment().execute(workspace(),
+        ExecutionResult result = environment().execute(workspace(),
                 new ExecutionRequest(ExecutionOperation.RUN_PROGRAM, List.of("program.mjs")));
 
         assertFalse(result.success());
@@ -51,7 +54,7 @@ class LocalExecutionEnvironmentTest {
     void terminatesTimedOutProgram() throws IOException {
         write("program.mjs", "setTimeout(() => {}, 60_000);");
 
-        var result = new LocalExecutionEnvironment(Duration.ofMillis(100)).execute(workspace(),
+        ExecutionResult result = new LocalExecutionEnvironment(Duration.ofMillis(100)).execute(workspace(),
                 new ExecutionRequest(ExecutionOperation.RUN_PROGRAM, List.of("program.mjs")));
 
         assertFalse(result.success());
@@ -62,7 +65,7 @@ class LocalExecutionEnvironmentTest {
     @Test
     void rejectsUnsupportedOperationsAndUnsafePaths() throws IOException {
         write("program.mjs", "console.log('ok');");
-        var environment = environment();
+        LocalExecutionEnvironment environment = environment();
 
         assertThrows(UnsupportedOperationException.class,
                 () -> environment.execute(workspace(), new ExecutionRequest(ExecutionOperation.FORMAT, List.of())));
@@ -76,7 +79,7 @@ class LocalExecutionEnvironmentTest {
 
     @Test
     void rejectsMissingWorkspaceRoot() {
-        var missing = new Workspace(new WorkspaceReference(WorkspaceKind.LEARNING, 2), root.resolve("missing"));
+        Workspace missing = new Workspace(new WorkspaceReference(WorkspaceKind.LEARNING, 2), root.resolve("missing"));
 
         assertThrows(IllegalArgumentException.class,
                 () -> environment().execute(missing,
@@ -85,7 +88,7 @@ class LocalExecutionEnvironmentTest {
 
     @Test
     void usesThePlatformPackageManagerLauncher() {
-        var windows = System.getProperty("os.name", "")
+        boolean windows = System.getProperty("os.name", "")
                 .toLowerCase(Locale.ROOT)
                 .contains("win");
 

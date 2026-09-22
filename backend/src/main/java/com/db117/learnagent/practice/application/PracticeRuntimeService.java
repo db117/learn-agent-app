@@ -1,8 +1,20 @@
 package com.db117.learnagent.practice.application;
 
-import com.db117.learnagent.execution.*;
+import com.db117.learnagent.execution.ExecutionEnvironment;
+import com.db117.learnagent.execution.ExecutionOperation;
+import com.db117.learnagent.execution.ExecutionRequest;
+import com.db117.learnagent.execution.ExecutionResult;
+import com.db117.learnagent.execution.TypeScriptCompileResult;
+import com.db117.learnagent.execution.TypeScriptCompiler;
+import com.db117.learnagent.execution.TypeScriptTestResult;
+import com.db117.learnagent.execution.TypeScriptTestRunner;
 import com.db117.learnagent.learning.application.LearningRequestException;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.Workspace;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -69,7 +81,7 @@ public final class PracticeRuntimeService {
 
     /** 通过受限 ExecutionEnvironment 运行 Workspace 内的 Node 脚本。 */
     public ExecutionResult runProgram(Workspace workspace, String scriptPath, List<String> arguments) {
-        var args = new ArrayList<String>();
+        ArrayList<String> args = new ArrayList<String>();
         args.add(Objects.requireNonNull(scriptPath, "scriptPath must not be null"));
         if (arguments != null) {
             args.addAll(arguments);
@@ -80,13 +92,13 @@ public final class PracticeRuntimeService {
 
     /** 执行编译和测试，并把固定验收策略需要的客观证据追加到 PracticeTask。 */
     public PracticeVerification verify(PracticeTask task, Workspace workspace) {
-        var currentTask = Objects.requireNonNull(task, "task must not be null");
+        PracticeTask currentTask = Objects.requireNonNull(task, "task must not be null");
         requireSupportedPolicy(currentTask.verificationPolicy());
-        var currentWorkspace = requireWorkspace(workspace);
-        var compile = compile(currentWorkspace);
-        var tests = runTests(currentWorkspace);
-        var submittedFiles = submittedFiles(currentWorkspace);
-        var candidate = new PracticeEvidence(
+        Workspace currentWorkspace = requireWorkspace(workspace);
+        TypeScriptCompileResult compile = compile(currentWorkspace);
+        TypeScriptTestResult tests = runTests(currentWorkspace);
+        List<String> submittedFiles = submittedFiles(currentWorkspace);
+        PracticeEvidence candidate = new PracticeEvidence(
                 compile.execution().success(),
                 tests.passed(),
                 tests.testCount(),
@@ -94,11 +106,11 @@ public final class PracticeRuntimeService {
                 RuntimeResult.NOT_RUN,
                 submittedFiles,
                 null);
-        var verifiedAt = currentTask.verificationPolicy().accepts(candidate)
+        Instant verifiedAt = currentTask.verificationPolicy().accepts(candidate)
                 && changedFromStarter(currentTask, currentWorkspace)
                 ? Instant.now()
                 : null;
-        var evidence = new PracticeEvidence(
+        PracticeEvidence evidence = new PracticeEvidence(
                 candidate.compilePassed(),
                 candidate.testsPassed(),
                 candidate.testCount(),
@@ -106,7 +118,7 @@ public final class PracticeRuntimeService {
                 candidate.runtimeResult(),
                 candidate.submittedFiles(),
                 verifiedAt);
-        var saved = practiceTasks.save(currentTask.recordAttempt(
+        PracticeTask saved = practiceTasks.save(currentTask.recordAttempt(
                 PracticeAttempt.submit(evidence, Instant.now())));
         return new PracticeVerification(saved, compile, tests, evidence);
     }
@@ -126,7 +138,7 @@ public final class PracticeRuntimeService {
 
     /** 当前 Step 5 只具备 compile/tests 的固定验收能力；不为未实现的检查伪造 Evidence。 */
     private static void requireSupportedPolicy(VerificationPolicy policy) {
-        var unsupported = new ArrayList<String>();
+        ArrayList<String> unsupported = new ArrayList<String>();
         if (policy.requireLint()) {
             unsupported.add("lint");
         }

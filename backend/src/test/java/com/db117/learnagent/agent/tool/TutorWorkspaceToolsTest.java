@@ -27,7 +27,7 @@ class TutorWorkspaceToolsTest {
 
     @Test
     void registersOnlyTheNarrowPracticeToolSurface() {
-        var manager = new WorkspaceManager(new RuntimeConfig() {
+        WorkspaceManager manager = new WorkspaceManager(new RuntimeConfig() {
             @Override
             public String dataDir() {
                 return dataDir.toString();
@@ -40,16 +40,16 @@ class TutorWorkspaceToolsTest {
         });
         ExecutionEnvironment environment = (workspace, request) ->
                 new ExecutionResult(true, 0, "", Duration.ZERO);
-        var runtime = new PracticeRuntimeService(
+        PracticeRuntimeService runtime = new PracticeRuntimeService(
                 environment,
                 new TypeScriptCompiler(environment),
                 new TypeScriptTestRunner(environment),
                 manager,
                 new EmptyPracticeTaskRepository());
-        var access = new WorkspaceApplicationService(
+        WorkspaceApplicationService access = new WorkspaceApplicationService(
                 null, null, null, null, null, manager);
-        var tools = new TutorWorkspaceTools(manager, access, runtime);
-        var toolkit = new Toolkit();
+        TutorWorkspaceTools tools = new TutorWorkspaceTools(manager, access, runtime);
+        Toolkit toolkit = new Toolkit();
 
         toolkit.registerTool(tools);
 

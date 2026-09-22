@@ -11,8 +11,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ExecutionContractTest {
     @Test
     void requestCopiesArgumentsAndKeepsOperationStructured() {
-        var arguments = new ArrayList<>(java.util.List.of("src/index.ts"));
-        var request = new ExecutionRequest(ExecutionOperation.COMPILE, arguments);
+        ArrayList<String> arguments = new ArrayList<>(java.util.List.of("src/index.ts"));
+        ExecutionRequest request = new ExecutionRequest(ExecutionOperation.COMPILE, arguments);
 
         arguments.add("--watch");
 

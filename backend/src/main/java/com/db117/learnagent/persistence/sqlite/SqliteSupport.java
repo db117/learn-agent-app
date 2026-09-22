@@ -1,6 +1,10 @@
 package com.db117.learnagent.persistence.sqlite;
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Instant;
 
 /** SQLite 适配器共用的边界工具；不把数据库细节泄漏到 Domain。 */
@@ -10,7 +14,7 @@ final class SqliteSupport {
 
     /** SQLite 的外键开关按连接生效，所以每次从连接池取出连接都显式打开。 */
     static void enableForeignKeys(Connection connection) throws SQLException {
-        try (var statement = connection.createStatement()) {
+        try (Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA foreign_keys = ON");
         }
     }
@@ -35,7 +39,7 @@ final class SqliteSupport {
 
     /** NULL 时间保持 NULL；数据库字段的可选性由 Domain 对应的状态规则决定。 */
     static Instant parseInstant(ResultSet result, String column) throws SQLException {
-        var value = result.getString(column);
+        String value = result.getString(column);
         return value == null ? null : Instant.parse(value);
     }
 

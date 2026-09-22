@@ -26,13 +26,14 @@
 
 - record 的注释要细到字段级别；使用类级标准 Javadoc，通过 `@param` 描述每个 record component，不在字段前单独写 Javadoc。
 - 代码注释使用中文；代码标识符、库名和协议名保留原文。
+- Java 代码优先使用显式类型；尽量不要使用 `var`，只有类型冗长且确有必要时才使用。
 - 注释解释业务约束、设计原因、公共 API/字段契约和非显然逻辑，并保持靠近被解释的代码；行为变化时同步更新注释。
 - 直观代码保持简洁，注释提供代码本身读不出的信息。
 - 很长的链式调用分行书写，并在链前说明整体意图；中间步骤语义不明显时解释关键转换；出现复杂分支、副作用或错误处理时拆成有意义的局部变量或方法。
 
 ```java
 // 生成已完成 LearnUnit 的唯一名称列表；整条链只读，不修改学习状态。
-var masteredNames = path.stream()
+List<String> masteredNames = path.stream()
                 .filter(item -> item.status() == LearningPathItemStatus.COMPLETED)
                 .map(item -> unitsByCode.get(item.learnUnitCode()))
                 .filter(Objects::nonNull)

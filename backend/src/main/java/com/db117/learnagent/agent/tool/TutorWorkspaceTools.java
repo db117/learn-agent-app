@@ -40,9 +40,9 @@ public final class TutorWorkspaceTools {
             description = "列出当前 TypeScript Learning Workspace 内的文件路径；只能读取当前学习 Workspace。",
             readOnly = true)
     public String listFiles(TutorContext context) {
-        var workspace = learningWorkspace(context);
+        LearningWorkspace workspace = learningWorkspace(context);
         try {
-            var files = workspaces.listFiles(workspace).stream()
+            List<String> files = workspaces.listFiles(workspace).stream()
                     .map(file -> file.path())
                     .toList();
             return files.isEmpty() ? "Workspace 为空。" : String.join("\n", files);
@@ -58,7 +58,7 @@ public final class TutorWorkspaceTools {
     public String readFile(
             TutorContext context,
             @ToolParam(name = "path", description = "Workspace 内 POSIX 相对路径") String path) {
-        var workspace = learningWorkspace(context);
+        LearningWorkspace workspace = learningWorkspace(context);
         try {
             return workspaces.readFile(workspace, path).content();
         } catch (IOException error) {
@@ -73,9 +73,9 @@ public final class TutorWorkspaceTools {
             TutorContext context,
             @ToolParam(name = "path", description = "Workspace 内 POSIX 相对路径") String path,
             @ToolParam(name = "content", description = "要写入的完整 UTF-8 文本") String content) {
-        var workspace = learningWorkspace(context);
+        LearningWorkspace workspace = learningWorkspace(context);
         try {
-            var file = workspaces.writeFile(workspace, path, content);
+            com.db117.learnagent.workspace.domain.WorkspaceFile file = workspaces.writeFile(workspace, path, content);
             return "已写入 " + file.path() + "（" + file.size() + " bytes）。";
         } catch (IOException error) {
             throw new IllegalStateException("无法写入 Workspace 文件", error);
@@ -88,7 +88,7 @@ public final class TutorWorkspaceTools {
     public String initializeNpmProject(
             TutorContext context,
             @ToolParam(name = "project_path", description = "Workspace 内 POSIX 项目目录") String projectPath) {
-        var result = practiceRuntime.initializeNpmProject(learningWorkspace(context), projectPath);
+        ExecutionResult result = practiceRuntime.initializeNpmProject(learningWorkspace(context), projectPath);
         return executionResult("initialize_npm_project", result);
     }
 
@@ -98,7 +98,7 @@ public final class TutorWorkspaceTools {
     public String installTypeScript(
             TutorContext context,
             @ToolParam(name = "project_path", description = "Workspace 内 POSIX 项目目录") String projectPath) {
-        var result = practiceRuntime.installTypeScript(learningWorkspace(context), projectPath);
+        ExecutionResult result = practiceRuntime.installTypeScript(learningWorkspace(context), projectPath);
         return executionResult("install_typescript", result);
     }
 
@@ -135,7 +135,7 @@ public final class TutorWorkspaceTools {
             @ToolParam(name = "script_path", description = "Workspace 内 POSIX 相对脚本路径") String scriptPath,
             @ToolParam(name = "arguments", description = "传给脚本的普通参数", required = false)
             List<String> arguments) {
-        var result = practiceRuntime.runProgram(learningWorkspace(context), scriptPath, arguments);
+        ExecutionResult result = practiceRuntime.runProgram(learningWorkspace(context), scriptPath, arguments);
         return executionResult("run_program", result);
     }
 
@@ -147,10 +147,10 @@ public final class TutorWorkspaceTools {
     }
 
     private static String compileResult(TypeScriptCompileResult result) {
-        var output = new StringBuilder(executionResult("compile", result.execution()));
+        StringBuilder output = new StringBuilder(executionResult("compile", result.execution()));
         if (!result.diagnostics().isEmpty()) {
             output.append("diagnostics:\n");
-            for (var diagnostic : result.diagnostics()) {
+            for (TypeScriptDiagnostic diagnostic : result.diagnostics()) {
                 output.append(formatDiagnostic(diagnostic)).append('\n');
             }
         }

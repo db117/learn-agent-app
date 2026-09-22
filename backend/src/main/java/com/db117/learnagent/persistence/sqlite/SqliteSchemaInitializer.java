@@ -59,7 +59,7 @@ public final class SqliteSchemaInitializer {
     private void verifySchema(Connection connection) throws SQLException {
         // 只接受本应用当前版本的标记；未知版本尽早失败，避免误读旧事实。
         int version;
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "SELECT marker, schema_version, source FROM schema_metadata WHERE id = 1");
              ResultSet result = statement.executeQuery()) {
             if (!result.next()
@@ -84,7 +84,7 @@ public final class SqliteSchemaInitializer {
     }
 
     private boolean tableExists(Connection connection, String name) throws SQLException {
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")) {
             statement.setString(1, name);
             try (ResultSet result = statement.executeQuery()) {
@@ -94,7 +94,7 @@ public final class SqliteSchemaInitializer {
     }
 
     private boolean hasBusinessTables(Connection connection) throws SQLException {
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' "
                         + "AND name NOT LIKE 'sqlite_%' AND name <> 'schema_metadata' LIMIT 1")) {
             try (ResultSet result = statement.executeQuery()) {
@@ -284,7 +284,7 @@ public final class SqliteSchemaInitializer {
                        CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END AS mastered
                 FROM learning_path_item
                 """);
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO schema_metadata(id, marker, schema_version, source) VALUES (1, ?, ?, ?)")) {
             statement.setString(1, SCHEMA_MARKER);
             statement.setInt(2, SCHEMA_VERSION);

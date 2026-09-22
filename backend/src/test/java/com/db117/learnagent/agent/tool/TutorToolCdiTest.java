@@ -27,14 +27,14 @@ class TutorToolCdiTest {
 
     @Test
     void cdiToolBeansRegisterTheirAgentScopeTools() {
-        var learningToolkit = new Toolkit();
+        Toolkit learningToolkit = new Toolkit();
         learningToolkit.registerTool(learningTools);
 
-        var workspaceToolkit = new Toolkit();
+        Toolkit workspaceToolkit = new Toolkit();
         workspaceToolkit.registerTool(workspaceTools);
 
         assertEquals(java.util.Set.of("save_learning_content"), learningToolkit.getToolNames());
-        var practiceToolkit = new Toolkit();
+        Toolkit practiceToolkit = new Toolkit();
         practiceToolkit.registerTool(practiceTools);
         assertEquals(
                 java.util.Set.of("save_practice_test", "verify_practice_test"),

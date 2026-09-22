@@ -25,9 +25,9 @@ public record ChoiceQuestion(
         if (options == null || options.size() < 2) {
             throw new DomainRuleViolation("choice question must have at least two options");
         }
-        var normalizedOptions = new ArrayList<ChoiceOption>();
-        var optionIds = new HashSet<String>();
-        for (var option : options) {
+        ArrayList<ChoiceOption> normalizedOptions = new ArrayList<ChoiceOption>();
+        HashSet<String> optionIds = new HashSet<String>();
+        for (ChoiceOption option : options) {
             if (option == null || !optionIds.add(option.id())) {
                 throw new DomainRuleViolation("choice question option ids must be unique");
             }

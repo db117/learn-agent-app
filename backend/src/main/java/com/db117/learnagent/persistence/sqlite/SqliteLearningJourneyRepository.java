@@ -36,11 +36,11 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
 
     @Override
     public LearningJourney save(LearningJourney journey) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             connection.setAutoCommit(false);
             try {
-                var saved = journey.id() == null ? insertNew(connection, journey) : updateExisting(connection, journey);
+                LearningJourney saved = journey.id() == null ? insertNew(connection, journey) : updateExisting(connection, journey);
                 connection.commit();
                 return saved;
             } catch (RuntimeException | SQLException error) {
@@ -54,8 +54,8 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
 
     @Override
     public void delete(long id) {
-        try (var connection = dataSource.getConnection();
-             var statement = connection.prepareStatement("DELETE FROM learning_journey WHERE id = ?")) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement("DELETE FROM learning_journey WHERE id = ?")) {
             statement.setLong(1, id);
             statement.executeUpdate();
         } catch (SQLException error) {
@@ -65,7 +65,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
 
     @Override
     public Optional<LearningJourney> findById(long id) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             return readJourney(connection, "WHERE id = ?", statement -> statement.setLong(1, id));
         } catch (SQLException error) {
@@ -75,7 +75,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
 
     @Override
     public Optional<LearningJourney> findActiveByLearnerAndLanguage(long learnerId, String languagePackId) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             return readJourney(connection,
                     "WHERE learner_id = ? AND language_pack_id = ? AND status = 'ACTIVE'",
@@ -91,7 +91,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
     private LearningJourney insertNew(Connection connection, LearningJourney journey) throws SQLException {
         // 先保存根，再按外键依赖顺序保存内容和路径。
         long journeyId;
-        try (var statement = connection.prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO learning_journey(learner_id, language_pack_id, title, status, created_at, completed_at) "
                         + "VALUES (?, ?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
@@ -105,13 +105,13 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
             journeyId = SqliteSupport.generatedId(connection, statement);
         }
 
-        var persistedChapters = insertChapters(connection, journeyId, journey.chapters());
-        var chapterIds = persistedChapters.stream().collect(java.util.stream.Collectors.toMap(
+        List<Chapter> persistedChapters = insertChapters(connection, journeyId, journey.chapters());
+        Map<String, Long> chapterIds = persistedChapters.stream().collect(java.util.stream.Collectors.toMap(
                 Chapter::code, Chapter::id));
-        var persistedUnits = insertLearnUnits(connection, journeyId, chapterIds, journey.learnUnits());
-        var unitIds = persistedUnits.stream().collect(java.util.stream.Collectors.toMap(
+        List<LearnUnit> persistedUnits = insertLearnUnits(connection, journeyId, chapterIds, journey.learnUnits());
+        Map<String, Long> unitIds = persistedUnits.stream().collect(java.util.stream.Collectors.toMap(
                 LearnUnit::code, LearnUnit::id));
-        var persistedItems = insertPathItems(connection, journeyId, unitIds, journey.pathItems());
+        List<LearningPathItem> persistedItems = insertPathItems(connection, journeyId, unitIds, journey.pathItems());
         return LearningJourney.reconstitute(
                 journeyId,
                 journey.learnerId(),
@@ -128,7 +128,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
     private LearningJourney updateExisting(Connection connection, LearningJourney journey) throws SQLException {
         // 已有路径结构保持不变；进入 LearnUnit 后允许补写一次教学内容快照。
         long journeyId = journey.id();
-        try (var statement = connection.prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE learning_journey SET title = ?, status = ?, completed_at = ? "
                         + "WHERE id = ? AND learner_id = ? AND language_pack_id = ?")) {
             statement.setString(1, journey.title());
@@ -141,9 +141,9 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         }
         requirePersistedContent(journey);
         updateLearnUnitContent(connection, journeyId, journey.learnUnits());
-        var unitIds = journey.learnUnits().stream().collect(java.util.stream.Collectors.toMap(
+        Map<String, Long> unitIds = journey.learnUnits().stream().collect(java.util.stream.Collectors.toMap(
                 LearnUnit::code, LearnUnit::id));
-        var persistedItems = updatePathItems(connection, journeyId, unitIds, journey.pathItems());
+        List<LearningPathItem> persistedItems = updatePathItems(connection, journeyId, unitIds, journey.pathItems());
         return LearningJourney.reconstitute(
                 journeyId,
                 journey.learnerId(),
@@ -166,9 +166,9 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
 
     private void updateLearnUnitContent(Connection connection, long journeyId, List<LearnUnit> units)
             throws SQLException {
-        try (var statement = connection.prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "UPDATE learn_unit SET content = ? WHERE id = ? AND journey_id = ?")) {
-            for (var unit : units) {
+            for (LearnUnit unit : units) {
                 statement.setString(1, unit.content());
                 statement.setLong(2, unit.id());
                 statement.setLong(3, journeyId);
@@ -179,8 +179,8 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
 
     private List<Chapter> insertChapters(Connection connection, long journeyId, List<Chapter> chapters)
             throws SQLException {
-        var persisted = new ArrayList<Chapter>();
-        try (var statement = connection.prepareStatement(
+        ArrayList<Chapter> persisted = new ArrayList<Chapter>();
+        try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO chapter(journey_id, code, title, sequence) VALUES (?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
             for (Chapter chapter : chapters) {
@@ -198,8 +198,8 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
     private List<LearnUnit> insertLearnUnits(
             Connection connection, long journeyId, Map<String, Long> chapterIds, List<LearnUnit> units)
             throws SQLException {
-        var persisted = new ArrayList<LearnUnit>();
-        try (var statement = connection.prepareStatement(
+        ArrayList<LearnUnit> persisted = new ArrayList<LearnUnit>();
+        try (PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO learn_unit(journey_id, chapter_id, code, title, objective, content, sequence, prerequisite_codes) "
                         + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
@@ -222,8 +222,8 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
     private List<LearningPathItem> insertPathItems(
             Connection connection, long journeyId, Map<String, Long> unitIds, List<LearningPathItem> items)
             throws SQLException {
-        var persisted = new ArrayList<LearningPathItem>();
-        try (var statement = connection.prepareStatement(pathItemInsertSql(), Statement.RETURN_GENERATED_KEYS)) {
+        ArrayList<LearningPathItem> persisted = new ArrayList<LearningPathItem>();
+        try (PreparedStatement statement = connection.prepareStatement(pathItemInsertSql(), Statement.RETURN_GENERATED_KEYS)) {
             for (LearningPathItem item : items) {
                 bindPathItem(statement, journeyId, unitIds.get(item.learnUnitCode()), item);
                 statement.executeUpdate();
@@ -236,9 +236,9 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
     private List<LearningPathItem> updatePathItems(
             Connection connection, long journeyId, Map<String, Long> unitIds, List<LearningPathItem> items)
             throws SQLException {
-        var persisted = new ArrayList<LearningPathItem>();
-        try (var update = connection.prepareStatement(pathItemUpdateSql());
-             var insert = connection.prepareStatement(pathItemInsertSql(), Statement.RETURN_GENERATED_KEYS)) {
+        ArrayList<LearningPathItem> persisted = new ArrayList<LearningPathItem>();
+        try (PreparedStatement update = connection.prepareStatement(pathItemUpdateSql());
+             PreparedStatement insert = connection.prepareStatement(pathItemInsertSql(), Statement.RETURN_GENERATED_KEYS)) {
             for (LearningPathItem item : items) {
                 if (item.id() == null) {
                     bindPathItem(insert, journeyId, unitIds.get(item.learnUnitCode()), item);
@@ -256,7 +256,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
 
     private Optional<LearningJourney> readJourney(
             Connection connection, String predicate, SqlBinder binder) throws SQLException {
-        try (var statement = connection.prepareStatement(
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT id, learner_id, language_pack_id, title, status, created_at, completed_at "
                         + "FROM learning_journey " + predicate)) {
             binder.bind(statement);
@@ -271,9 +271,9 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
 
     private LearningJourney readJourney(Connection connection, ResultSet result) throws SQLException {
         long journeyId = result.getLong("id");
-        var chapters = readChapters(connection, journeyId);
-        var units = readLearnUnits(connection, journeyId);
-        var items = readPathItems(connection, journeyId);
+        List<Chapter> chapters = readChapters(connection, journeyId);
+        List<LearnUnit> units = readLearnUnits(connection, journeyId);
+        List<LearningPathItem> items = readPathItems(connection, journeyId);
         return LearningJourney.reconstitute(
                 journeyId,
                 result.getLong("learner_id"),
@@ -288,11 +288,11 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
     }
 
     private List<Chapter> readChapters(Connection connection, long journeyId) throws SQLException {
-        var chapters = new ArrayList<Chapter>();
-        try (var statement = connection.prepareStatement(
+        ArrayList<Chapter> chapters = new ArrayList<Chapter>();
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT id, code, title, sequence FROM chapter WHERE journey_id = ? ORDER BY sequence, code")) {
             statement.setLong(1, journeyId);
-            try (var result = statement.executeQuery()) {
+            try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
                     chapters.add(new Chapter(
                             result.getLong("id"),
@@ -306,13 +306,13 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
     }
 
     private List<LearnUnit> readLearnUnits(Connection connection, long journeyId) throws SQLException {
-        var units = new ArrayList<LearnUnit>();
-        try (var statement = connection.prepareStatement(
+        ArrayList<LearnUnit> units = new ArrayList<LearnUnit>();
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT id, code, title, objective, content, sequence, "
                         + "(SELECT code FROM chapter WHERE chapter.id = learn_unit.chapter_id) AS chapter_code, "
                         + "prerequisite_codes FROM learn_unit WHERE journey_id = ? ORDER BY id")) {
             statement.setLong(1, journeyId);
-            try (var result = statement.executeQuery()) {
+            try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
                     units.add(new LearnUnit(
                             result.getLong("id"),
@@ -330,13 +330,13 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
     }
 
     private List<LearningPathItem> readPathItems(Connection connection, long journeyId) throws SQLException {
-        var items = new ArrayList<LearningPathItem>();
-        try (var statement = connection.prepareStatement(
+        ArrayList<LearningPathItem> items = new ArrayList<LearningPathItem>();
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT id, learn_unit_code, sequence, status, practice_verified, pass_reason, started_at, "
                         + "completed_at, updated_at "
                         + "FROM learning_path_item WHERE journey_id = ? ORDER BY id")) {
             statement.setLong(1, journeyId);
-            try (var result = statement.executeQuery()) {
+            try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
                     items.add(new LearningPathItem(
                             result.getLong("id"),

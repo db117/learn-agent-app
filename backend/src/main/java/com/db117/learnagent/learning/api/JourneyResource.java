@@ -32,7 +32,7 @@ public class JourneyResource {
     @Path("/bootstrap")
     public OnboardingResponse bootstrap() {
         try {
-            var workspace = workspaces.ensureCurrentLearningWorkspace()
+            WorkspaceDescriptor workspace = workspaces.ensureCurrentLearningWorkspace()
                     .map(WorkspaceDescriptor::from)
                     .orElse(null);
             return OnboardingResponse.from(journeys.snapshot(), workspace);

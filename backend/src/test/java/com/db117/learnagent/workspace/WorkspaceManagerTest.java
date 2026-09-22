@@ -1,7 +1,11 @@
 package com.db117.learnagent.workspace;
 
 import com.db117.learnagent.config.RuntimeConfig;
-import com.db117.learnagent.language.*;
+import com.db117.learnagent.language.LanguageMetadata;
+import com.db117.learnagent.language.LanguagePack;
+import com.db117.learnagent.language.Toolchain;
+import com.db117.learnagent.language.WorkspaceTemplate;
+import com.db117.learnagent.language.WorkspaceTemplateProvider;
 import com.db117.learnagent.language.typescript.TypeScriptLanguagePack;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.WorkspaceFileEntry;
@@ -15,7 +19,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorkspaceManagerTest {
     @TempDir
@@ -23,10 +30,10 @@ class WorkspaceManagerTest {
 
     @Test
     void createsBothKindsOfRoot() throws IOException {
-        var manager = manager();
+        WorkspaceManager manager = manager();
 
-        var learning = manager.ensureLearningWorkspace(7, new TypeScriptLanguagePack());
-        var project = manager.ensureProjectWorkspace(8);
+        com.db117.learnagent.workspace.domain.LearningWorkspace learning = manager.ensureLearningWorkspace(7, new TypeScriptLanguagePack());
+        com.db117.learnagent.workspace.domain.ProjectWorkspace project = manager.ensureProjectWorkspace(8);
 
         assertEquals(dataDir.resolve("journeys/7/workspace"), learning.root());
         assertEquals(dataDir.resolve("projects/8/workspace"), project.root());
@@ -36,7 +43,7 @@ class WorkspaceManagerTest {
 
     @Test
     void canReferenceRootsWithoutCreatingThem() {
-        var manager = manager();
+        WorkspaceManager manager = manager();
 
         assertEquals(dataDir.resolve("journeys/9/workspace"), manager.learningWorkspace(9).root());
         assertEquals(dataDir.resolve("projects/10/workspace"), manager.projectWorkspace(10).root());
@@ -46,9 +53,9 @@ class WorkspaceManagerTest {
 
     @Test
     void learningTemplatesAreIdempotentAndPreserveExistingContent() throws IOException {
-        var manager = manager();
-        var workspace = manager.ensureLearningWorkspace(1, new TypeScriptLanguagePack());
-        var template = workspace.root().resolve("src/index.ts");
+        WorkspaceManager manager = manager();
+        com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(1, new TypeScriptLanguagePack());
+        Path template = workspace.root().resolve("src/index.ts");
         Files.writeString(template, "changed", StandardCharsets.UTF_8);
 
         manager.ensureLearningWorkspace(1, new TypeScriptLanguagePack());
@@ -58,29 +65,29 @@ class WorkspaceManagerTest {
 
     @Test
     void listReadWriteRoundTripIncludesHiddenFilesAndSortsPosixPaths() throws IOException {
-        var manager = manager();
-        var workspace = manager.ensureProjectWorkspace(2);
+        WorkspaceManager manager = manager();
+        com.db117.learnagent.workspace.domain.ProjectWorkspace workspace = manager.ensureProjectWorkspace(2);
         manager.writeFile(workspace, "z.txt", "z");
         manager.writeFile(workspace, ".env", "secret");
         manager.writeFile(workspace, "a/b.txt", "中文");
 
-        var files = manager.listFiles(workspace);
+        List<WorkspaceFileEntry> files = manager.listFiles(workspace);
 
         assertEquals(List.of(".env", "a/b.txt", "z.txt"), files.stream()
                 .map(WorkspaceFileEntry::path).toList());
-        var read = manager.readFile(workspace, "a/b.txt");
+        com.db117.learnagent.workspace.domain.WorkspaceFile read = manager.readFile(workspace, "a/b.txt");
         assertEquals("中文", read.content());
         assertEquals("中文".getBytes(StandardCharsets.UTF_8).length, read.size());
         assertEquals("a/b.txt", read.path());
-        var written = manager.writeFile(workspace, "a/b.txt", "updated");
+        com.db117.learnagent.workspace.domain.WorkspaceFile written = manager.writeFile(workspace, "a/b.txt", "updated");
         assertEquals("updated", written.content());
         assertEquals("updated", Files.readString(workspace.root().resolve("a/b.txt")));
     }
 
     @Test
     void hidesPackageManagerFilesFromTheWorkspaceFileList() throws IOException {
-        var manager = manager();
-        var workspace = manager.ensureLearningWorkspace(12, new TypeScriptLanguagePack());
+        WorkspaceManager manager = manager();
+        com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(12, new TypeScriptLanguagePack());
         Files.createDirectories(workspace.root().resolve("node_modules/.bin"));
         Files.writeString(workspace.root().resolve("node_modules/.bin/tool"), "tool");
         Files.writeString(workspace.root().resolve("pnpm-lock.yaml"), "lockfileVersion: '9.0'");
@@ -94,8 +101,8 @@ class WorkspaceManagerTest {
 
     @Test
     void hidesNestedNodeModulesFromTheWorkspaceFileList() throws IOException {
-        var manager = manager();
-        var workspace = manager.ensureProjectWorkspace(13);
+        WorkspaceManager manager = manager();
+        com.db117.learnagent.workspace.domain.ProjectWorkspace workspace = manager.ensureProjectWorkspace(13);
         Files.createDirectories(workspace.root().resolve("ts-runtime-practice/node_modules/.bin"));
         Files.writeString(workspace.root().resolve("ts-runtime-practice/node_modules/.bin/tsc"), "binary");
         manager.writeFile(workspace, "ts-runtime-practice/src/index.ts", "export {};");
@@ -107,10 +114,10 @@ class WorkspaceManagerTest {
 
     @Test
     void rejectsUnsafePathsAndMissingFiles() throws IOException {
-        var manager = manager();
-        var workspace = manager.ensureProjectWorkspace(3);
+        WorkspaceManager manager = manager();
+        com.db117.learnagent.workspace.domain.ProjectWorkspace workspace = manager.ensureProjectWorkspace(3);
 
-        for (var path : List.of("", "/tmp/file", "../file", "a/../file", "a\\b")) {
+        for (String path : List.of("", "/tmp/file", "../file", "a/../file", "a\\b")) {
             assertThrows(IllegalArgumentException.class, () -> manager.readFile(workspace, path));
         }
         assertThrows(java.nio.file.NoSuchFileException.class,
@@ -119,9 +126,9 @@ class WorkspaceManagerTest {
 
     @Test
     void rejectsFilesOverTwoMiB() throws IOException {
-        var manager = manager();
-        var workspace = manager.ensureProjectWorkspace(4);
-        var content = "x".repeat(2 * 1024 * 1024 + 1);
+        WorkspaceManager manager = manager();
+        com.db117.learnagent.workspace.domain.ProjectWorkspace workspace = manager.ensureProjectWorkspace(4);
+        String content = "x".repeat(2 * 1024 * 1024 + 1);
 
         assertThrows(IllegalArgumentException.class,
                 () -> manager.writeFile(workspace, "large.txt", content));
@@ -129,11 +136,11 @@ class WorkspaceManagerTest {
 
     @Test
     void rejectsSymlinkEscapeWhenSupported() throws IOException {
-        var manager = manager();
-        var workspace = manager.ensureProjectWorkspace(5);
-        var outside = dataDir.resolve("outside");
+        WorkspaceManager manager = manager();
+        com.db117.learnagent.workspace.domain.ProjectWorkspace workspace = manager.ensureProjectWorkspace(5);
+        Path outside = dataDir.resolve("outside");
         Files.writeString(outside, "outside");
-        var link = workspace.root().resolve("link.txt");
+        Path link = workspace.root().resolve("link.txt");
         try {
             Files.createSymbolicLink(link, outside);
         } catch (UnsupportedOperationException | FileSystemException ignored) {
@@ -147,10 +154,10 @@ class WorkspaceManagerTest {
 
     @Test
     void rejectsManagedAncestorSymlinkWhenSupported() throws IOException {
-        var manager = manager();
-        var outside = dataDir.resolve("outside-projects");
+        WorkspaceManager manager = manager();
+        Path outside = dataDir.resolve("outside-projects");
         Files.createDirectories(outside);
-        var projects = dataDir.resolve("projects");
+        Path projects = dataDir.resolve("projects");
         try {
             Files.createSymbolicLink(projects, outside);
         } catch (UnsupportedOperationException | FileSystemException ignored) {
@@ -163,9 +170,9 @@ class WorkspaceManagerTest {
 
     @Test
     void rejectsDuplicateTemplatePaths() {
-        var manager = manager();
-        var template = new WorkspaceTemplate("src/index.ts", "export {};");
-        var pack = new LanguagePack() {
+        WorkspaceManager manager = manager();
+        WorkspaceTemplate template = new WorkspaceTemplate("src/index.ts", "export {};");
+        LanguagePack pack = new LanguagePack() {
             @Override
             public String id() {
                 return "duplicate";

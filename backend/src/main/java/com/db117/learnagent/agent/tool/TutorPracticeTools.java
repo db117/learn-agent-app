@@ -6,7 +6,15 @@ import com.db117.learnagent.learning.application.JourneyApplicationService;
 import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.practice.domain.ChoiceOption;
+import com.db117.learnagent.practice.domain.ChoiceQuestion;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.practice.domain.PracticeTaskStatus;
+import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,10 +56,10 @@ public final class TutorPracticeTools {
             TutorContext context,
             @ToolParam(name = "question_json", description = "符合 Skill JSON 契约的题目；包含 prompt、四个 options 和 correctOptionId")
             String questionJson) {
-        var journey = currentJourney(context);
-        var unit = currentUnit(journey);
-        var question = parseQuestion(questionJson);
-        var task = practiceTasks.findByLearnUnit(journey.id(), requireLearnUnitId(unit)).stream()
+        LearningJourney journey = currentJourney(context);
+        LearnUnit unit = currentUnit(journey);
+        ChoiceQuestion question = parseQuestion(questionJson);
+        PracticeTask task = practiceTasks.findByLearnUnit(journey.id(), requireLearnUnitId(unit)).stream()
                 .filter(value -> value.status() == PracticeTaskStatus.OPEN)
                 .filter(value -> CHOICE_TASK_TYPE.equals(value.type()))
                 .findFirst()
@@ -77,12 +85,12 @@ public final class TutorPracticeTools {
             TutorContext context,
             @ToolParam(name = "task_id", description = "save_practice_test 返回的 PracticeTask ID") long taskId,
             @ToolParam(name = "option_id", description = "学习者选择的选项 ID") String optionId) {
-        var journey = currentJourney(context);
-        var unit = currentUnit(journey);
+        LearningJourney journey = currentJourney(context);
+        LearnUnit unit = currentUnit(journey);
         if (optionId == null || optionId.isBlank()) {
             throw LearningRequestException.badRequest("INVALID_PRACTICE_ANSWER", "optionId 不能为空");
         }
-        var task = practiceTasks.findById(taskId)
+        PracticeTask task = practiceTasks.findById(taskId)
                 .filter(value -> value.journeyId() == journey.id())
                 .orElseThrow(() -> LearningRequestException.notFound(
                         "PRACTICE_TASK_NOT_FOUND", "PracticeTask 不存在"));
@@ -98,13 +106,13 @@ public final class TutorPracticeTools {
             throw LearningRequestException.conflict(
                     "CODE_PRACTICE_REQUIRED", "请先完成代码练习，再回答选择题");
         }
-        var question = Objects.requireNonNull(task.choiceQuestion(), "choice task question must not be null");
+        ChoiceQuestion question = Objects.requireNonNull(task.choiceQuestion(), "choice task question must not be null");
         if (!question.hasOption(optionId)) {
             throw LearningRequestException.badRequest("INVALID_PRACTICE_ANSWER", "optionId 不属于当前选择题");
         }
 
-        var correct = question.isCorrect(optionId);
-        var evidence = new PracticeEvidence(
+        boolean correct = question.isCorrect(optionId);
+        PracticeEvidence evidence = new PracticeEvidence(
                 false,
                 false,
                 0,
@@ -113,9 +121,9 @@ public final class TutorPracticeTools {
                 List.of(),
                 correct ? Instant.now() : null,
                 correct);
-        var saved = practiceTasks.save(task.recordAttempt(
+        PracticeTask saved = practiceTasks.save(task.recordAttempt(
                 PracticeAttempt.submit(evidence, Instant.now())));
-        var updated = evidence.isVerified(task.verificationPolicy())
+        LearningJourney updated = evidence.isVerified(task.verificationPolicy())
                 ? journeys.recordPracticeVerified(context.journeyId(), unit.code())
                 : journey;
         return verificationResult(saved, evidence, journey, updated);
@@ -125,8 +133,8 @@ public final class TutorPracticeTools {
         if (context == null || context.mode() != TutorSessionMode.LEARNING) {
             throw new IllegalStateException("Practice 工具只在 LEARNING Session 中可用");
         }
-        var journey = journeys.learningJourneyFor(context.journeyId());
-        var current = journey.currentItem();
+        LearningJourney journey = journeys.learningJourneyFor(context.journeyId());
+        com.db117.learnagent.learning.domain.LearningPathItem current = journey.currentItem();
         if (current == null) {
             throw LearningRequestException.conflict("LEARNING_JOURNEY_COMPLETED", "学习路径已经完成");
         }
@@ -145,18 +153,18 @@ public final class TutorPracticeTools {
             throw LearningRequestException.badRequest("INVALID_PRACTICE_TEST", "题目 JSON 不能为空或过长");
         }
         try {
-            var root = objectMapper.readTree(questionJson);
+            JsonNode root = objectMapper.readTree(questionJson);
             if (root == null || !root.isObject()) {
                 throw new IllegalArgumentException("question must be a JSON object");
             }
-            var optionsNode = root.get("options");
+            JsonNode optionsNode = root.get("options");
             if (!(optionsNode instanceof ArrayNode) || optionsNode.size() != OPTION_IDS.size()) {
                 throw new IllegalArgumentException("question must contain four options");
             }
-            var options = new java.util.ArrayList<ChoiceOption>();
+            java.util.ArrayList<ChoiceOption> options = new java.util.ArrayList<ChoiceOption>();
             for (int index = 0; index < OPTION_IDS.size(); index++) {
-                var option = optionsNode.get(index);
-                var id = requiredText(option, "id");
+                JsonNode option = optionsNode.get(index);
+                String id = requiredText(option, "id");
                 if (!OPTION_IDS.get(index).equals(id)) {
                     throw new IllegalArgumentException("option ids must be a, b, c, d in order");
                 }
@@ -173,8 +181,8 @@ public final class TutorPracticeTools {
     }
 
     private String safeQuestion(PracticeTask task) {
-        var question = Objects.requireNonNull(task.choiceQuestion(), "choice task question must not be null");
-        var result = new LinkedHashMap<String, Object>();
+        ChoiceQuestion question = Objects.requireNonNull(task.choiceQuestion(), "choice task question must not be null");
+        LinkedHashMap<String, Object> result = new LinkedHashMap<String, Object>();
         result.put("taskId", Objects.requireNonNull(task.id(), "saved practice task id must not be null"));
         result.put("title", task.title());
         result.put("prompt", question.prompt());
@@ -187,7 +195,7 @@ public final class TutorPracticeTools {
             PracticeEvidence evidence,
             LearningJourney before,
             LearningJourney after) {
-        var result = new LinkedHashMap<String, Object>();
+        LinkedHashMap<String, Object> result = new LinkedHashMap<String, Object>();
         result.put("taskId", Objects.requireNonNull(task.id(), "saved practice task id must not be null"));
         result.put("status", task.status().name());
         result.put("verified", evidence.isVerified(task.verificationPolicy()));

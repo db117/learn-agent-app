@@ -37,19 +37,19 @@ class WorkspaceApplicationServiceTest {
 
     @Test
     void bootstrapInitializesCurrentConfirmedLearningWorkspace() throws Exception {
-        var learner = new Learner(1L, "Alice", "TypeScript developer", CREATED_AT);
-        var journey = new Journey(
+        Learner learner = new Learner(1L, "Alice", "TypeScript developer", CREATED_AT);
+        Journey journey = new Journey(
                 2L, learner.id(), "Build a TypeScript app", JourneyStatus.ACTIVE,
                 CREATED_AT, null, 3L, true);
-        var service = service(learner, journey, learningJourney(learner.id()));
+        WorkspaceApplicationService service = service(learner, journey, learningJourney(learner.id()));
 
-        var workspace = service.ensureCurrentLearningWorkspace().orElseThrow();
+        com.db117.learnagent.workspace.domain.LearningWorkspace workspace = service.ensureCurrentLearningWorkspace().orElseThrow();
 
         assertEquals(dataDir.resolve("journeys/2/workspace"), workspace.root());
         assertEquals("export {};", Files.readString(workspace.root().resolve("src/index.ts")));
         assertEquals("learning:2", WorkspaceDescriptor.from(workspace).reference());
 
-        var resource = new WorkspaceResource(service, new WorkspaceManager(runtimeConfig()));
+        WorkspaceResource resource = new WorkspaceResource(service, new WorkspaceManager(runtimeConfig()));
         resource.writeLearningFile(2, "src/main.ts", new WorkspaceContentRequest("export const answer = 42;"));
         assertEquals("export const answer = 42;",
                 resource.readLearningFile(2, "src/main.ts").content());
@@ -57,13 +57,13 @@ class WorkspaceApplicationServiceTest {
 
     @Test
     void rejectsLearningWorkspaceFromAnotherLearner() {
-        var learner = new Learner(1L, "Alice", "TypeScript developer", CREATED_AT);
-        var otherJourney = new Journey(
+        Learner learner = new Learner(1L, "Alice", "TypeScript developer", CREATED_AT);
+        Journey otherJourney = new Journey(
                 9L, 2L, "Private goal", JourneyStatus.ACTIVE,
                 CREATED_AT, null, 3L, true);
-        var service = service(learner, otherJourney, learningJourney(2L));
+        WorkspaceApplicationService service = service(learner, otherJourney, learningJourney(2L));
 
-        var error = assertThrows(LearningRequestException.class,
+        LearningRequestException error = assertThrows(LearningRequestException.class,
                 () -> service.learningWorkspace(otherJourney.id()));
 
         assertEquals(404, error.status());
@@ -71,7 +71,7 @@ class WorkspaceApplicationServiceTest {
 
     private WorkspaceApplicationService service(
             Learner learner, Journey journey, LearningJourney learningJourney) {
-        var learnerRepository = new LearnerRepository() {
+        LearnerRepository learnerRepository = new LearnerRepository() {
             @Override
             public Learner save(Learner value) {
                 return value;
@@ -87,7 +87,7 @@ class WorkspaceApplicationServiceTest {
                 return Optional.of(learner);
             }
         };
-        var journeyRepository = new JourneyRepository() {
+        JourneyRepository journeyRepository = new JourneyRepository() {
             @Override
             public Journey save(Journey value) {
                 return value;
@@ -119,7 +119,7 @@ class WorkspaceApplicationServiceTest {
                 return journey;
             }
         };
-        var learningJourneyRepository = new LearningJourneyRepository() {
+        LearningJourneyRepository learningJourneyRepository = new LearningJourneyRepository() {
             @Override
             public LearningJourney save(LearningJourney value) {
                 return value;
@@ -166,8 +166,8 @@ class WorkspaceApplicationServiceTest {
     }
 
     private LearningJourney learningJourney(long learnerId) {
-        var chapter = com.db117.learnagent.learning.domain.Chapter.create("basics", "Basics", 0);
-        var unit = com.db117.learnagent.learning.domain.LearnUnit.create(
+        com.db117.learnagent.learning.domain.Chapter chapter = com.db117.learnagent.learning.domain.Chapter.create("basics", "Basics", 0);
+        com.db117.learnagent.learning.domain.LearnUnit unit = com.db117.learnagent.learning.domain.LearnUnit.create(
                 "variables", "Variables", "Use values", "Variables content", 0, "basics", java.util.Set.of());
         return LearningJourney.create(
                 learnerId, "typescript", "TypeScript Journey",

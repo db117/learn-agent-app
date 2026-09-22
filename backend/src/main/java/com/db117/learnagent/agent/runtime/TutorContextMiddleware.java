@@ -10,7 +10,7 @@ import reactor.core.publisher.Mono;
 public final class TutorContextMiddleware implements MiddlewareBase {
     @Override
     public Mono<String> onSystemPrompt(Agent agent, RuntimeContext runtimeContext, String systemPrompt) {
-        var context = runtimeContext.get(TutorContext.class);
+        TutorContext context = runtimeContext.get(TutorContext.class);
         if (context == null) {
             return Mono.just(systemPrompt);
         }

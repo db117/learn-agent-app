@@ -71,7 +71,7 @@ public record TutorContext(
 
     /** 返回只读系统上下文；不包含 Session ID、路径、凭据或模型私有状态。 */
     public String asSystemContext() {
-        var context = """
+        String context = """
                 <tutor-context>
                 learner: %s
                 learner-background: %s

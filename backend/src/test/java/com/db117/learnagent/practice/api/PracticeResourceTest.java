@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PracticeResourceTest {
     @Test
     void choiceProjectionExposesOnlyThePersistedQuestionAndOptions() throws Exception {
-        var task = PracticeTask.create(
+        PracticeTask task = PracticeTask.create(
                         7L,
                         8L,
                         "typescript",
@@ -35,7 +35,7 @@ class PracticeResourceTest {
                         Instant.parse("2026-01-01T00:00:00Z"))
                 .withPersistedIds(11L, List.of());
 
-        var body = new ObjectMapper().writeValueAsString(PracticeResource.ChoiceResponse.from(task, false));
+        String body = new ObjectMapper().writeValueAsString(PracticeResource.ChoiceResponse.from(task, false));
 
         assertTrue(body.contains("选择题：类型检查"));
         assertTrue(body.contains("编译期"));

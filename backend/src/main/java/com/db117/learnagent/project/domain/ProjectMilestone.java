@@ -34,7 +34,7 @@ public final class ProjectMilestone {
         }
         this.sequence = sequence;
         this.status = status == null ? throwRule("status must not be null") : status;
-        var evidenceList = evidence == null ? List.<ProjectEvidence>of() : evidence;
+        List<ProjectEvidence> evidenceList = evidence == null ? List.<ProjectEvidence>of() : evidence;
         if (evidenceList.stream().anyMatch(Objects::isNull)) {
             throw new DomainRuleViolation("evidence must not contain null");
         }
@@ -104,9 +104,9 @@ public final class ProjectMilestone {
         if (nextEvidence == null) {
             throw new DomainRuleViolation("evidence must not be null");
         }
-        var nextEvidenceList = new ArrayList<>(evidence);
+        ArrayList<ProjectEvidence> nextEvidenceList = new ArrayList<>(evidence);
         nextEvidenceList.add(nextEvidence);
-        var nextStatus = nextEvidence.passed()
+        ProjectMilestoneStatus nextStatus = nextEvidence.passed()
                 ? ProjectMilestoneStatus.COMPLETED
                 : ProjectMilestoneStatus.IN_PROGRESS;
         return new ProjectMilestone(id, code, title, sequence, nextStatus, nextEvidenceList);

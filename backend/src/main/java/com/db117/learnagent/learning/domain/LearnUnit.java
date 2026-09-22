@@ -43,7 +43,7 @@ public record LearnUnit(
         if (sequence < 0) {
             throw new DomainRuleViolation("sequence must not be negative");
         }
-        var prerequisites = new LinkedHashSet<String>();
+        LinkedHashSet<String> prerequisites = new LinkedHashSet<String>();
         if (prerequisiteCodes != null) {
             for (String prerequisiteCode : prerequisiteCodes) {
                 prerequisites.add(DomainChecks.text(prerequisiteCode, "prerequisiteCode"));
@@ -57,12 +57,12 @@ public record LearnUnit(
 
     /** 从 Step 6 的内容快照提取 Practice 说明；旧快照没有该段时回退到学习目标。 */
     public String practiceInstruction() {
-        var heading = "## Practice";
-        var headingIndex = content.indexOf(heading);
+        String heading = "## Practice";
+        int headingIndex = content.indexOf(heading);
         if (headingIndex < 0) {
             return objective;
         }
-        var instruction = content.substring(headingIndex + heading.length()).strip();
+        String instruction = content.substring(headingIndex + heading.length()).strip();
         return instruction.isBlank() ? objective : instruction;
     }
 

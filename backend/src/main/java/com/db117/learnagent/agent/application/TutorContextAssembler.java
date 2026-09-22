@@ -33,8 +33,8 @@ public class TutorContextAssembler {
     }
 
     public TutorContext assemble(long learnerId, long journeyId, TutorSessionMode mode) {
-        var sessionMode = mode == null ? TutorSessionMode.LEARNING : mode;
-        var journey = journeyRepository.findById(journeyId)
+        TutorSessionMode sessionMode = mode == null ? TutorSessionMode.LEARNING : mode;
+        Journey journey = journeyRepository.findById(journeyId)
                 .orElseThrow(() -> TutorRequestException.notFound(
                         "JOURNEY_NOT_FOUND", "学习 Journey 不存在"));
         requireJourneyBelongsToLearner(journey, learnerId);
@@ -51,7 +51,7 @@ public class TutorContextAssembler {
     }
 
     private TutorContext planningContext(long learnerId, Journey journey) {
-        var learner = learnerRepository.findById(learnerId)
+        com.db117.learnagent.learning.domain.Learner learner = learnerRepository.findById(learnerId)
                 .orElseThrow(() -> TutorRequestException.notFound("LEARNER_NOT_FOUND", "学习者不存在"));
         return new TutorContext(
                 learner.id(),
@@ -74,7 +74,7 @@ public class TutorContextAssembler {
     }
 
     private TutorContext learningContext(long learnerId, Journey parent, long learningJourneyId) {
-        var journey = learningJourneyRepository.findById(learningJourneyId)
+        LearningJourney journey = learningJourneyRepository.findById(learningJourneyId)
                 .orElseThrow(() -> TutorRequestException.notFound("JOURNEY_NOT_FOUND", "学习路径不存在"));
         if (journey.learnerId() != learnerId) {
             throw TutorRequestException.notFound("JOURNEY_NOT_FOUND", "学习路径不存在");
@@ -83,7 +83,7 @@ public class TutorContextAssembler {
     }
 
     private TutorContext buildLearningContext(long learnerId, Journey parent, LearningJourney journey) {
-        var learner = learnerRepository.findById(learnerId)
+        com.db117.learnagent.learning.domain.Learner learner = learnerRepository.findById(learnerId)
                 .orElseThrow(() -> TutorRequestException.notFound(
                         "LEARNER_NOT_FOUND", "学习者不存在"));
         if (journey.learnerId() != learnerId) {
@@ -94,9 +94,9 @@ public class TutorContextAssembler {
             throw TutorRequestException.conflict("JOURNEY_NOT_ACTIVE", "学习 Journey 当前不可用");
         }
 
-        var currentItem = journey.currentItem();
-        var currentUnit = journey.learnUnit(currentItem.learnUnitCode());
-        var completedCount = (int) journey.pathItems().stream()
+        com.db117.learnagent.learning.domain.LearningPathItem currentItem = journey.currentItem();
+        com.db117.learnagent.learning.domain.LearnUnit currentUnit = journey.learnUnit(currentItem.learnUnitCode());
+        int completedCount = (int) journey.pathItems().stream()
                 .filter(item -> item.status() == LearningPathItemStatus.COMPLETED
                         || item.status() == LearningPathItemStatus.SKIPPED)
                 .count();

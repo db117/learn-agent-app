@@ -134,7 +134,7 @@ public record LearningPathItem(
     public LearningPathItem recordPracticeVerified(Instant at) {
         requireCurrent();
         DomainChecks.time(at, "at");
-        var next = new LearningPathItem(
+        LearningPathItem next = new LearningPathItem(
                 id,
                 learnUnitCode,
                 sequence,

@@ -40,6 +40,7 @@ import io.agentscope.core.tool.ToolCallParam;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
+import java.lang.reflect.Constructor;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -59,17 +60,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AgentScopeRuntimeTest {
     @Test
     void memoryToolsPersistLearnerContextAcrossRuntimeSessions() throws Exception {
-        var root = Files.createTempDirectory("tutor-memory");
-        var runtime = new TutorAgentRuntime(
+        Path root = Files.createTempDirectory("tutor-memory");
+        TutorAgentRuntime runtime = new TutorAgentRuntime(
                 testConfig(root, true),
                 new TutorModel(new FakeModel()),
                 root.resolve("agent"));
         try {
-            var tutorContext = contextAssembler(
+            com.db117.learnagent.agent.application.TutorContext tutorContext = contextAssembler(
                     new FakeLearnerRepository(),
                     new FakeParentJourneyRepository(),
                     new FakeJourneyRepository()).assemble(1L, 1L);
-            var saved = callTool(
+            ToolResultBlock saved = callTool(
                     runtime,
                     runtime.context("memory-session-1", "1", tutorContext),
                     "memory_save",
@@ -81,7 +82,7 @@ class AgentScopeRuntimeTest {
                     testConfig(root, true),
                     new TutorModel(new FakeModel()),
                     root.resolve("agent"));
-            var found = callTool(
+            ToolResultBlock found = callTool(
                     runtime,
                     runtime.context("memory-session-2", "1", tutorContext),
                     "memory_search",
@@ -94,18 +95,18 @@ class AgentScopeRuntimeTest {
 
     @Test
     void tutorProjectsVisibleTextAndRestoresSafeHistory() throws Exception {
-        var root = Files.createTempDirectory("tutor-runtime");
-        var model = new FakeModel();
-        var runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(model), root.resolve("agent"));
-        var service = new TutorSessionService(
+        Path root = Files.createTempDirectory("tutor-runtime");
+        AgentScopeRuntimeTest.FakeModel model = new FakeModel();
+        TutorAgentRuntime runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(model), root.resolve("agent"));
+        TutorSessionService service = new TutorSessionService(
                 contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(),
                         new FakeJourneyRepository()),
                 runtime);
         try {
-            var session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
-            var events = service.streamTurn(
+            com.db117.learnagent.agent.api.TutorSessionResponse session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            List<com.db117.learnagent.agent.api.TutorEvent> events = service.streamTurn(
                             session.sessionId(),
                             new SendTutorMessageRequest("turn-1", "Explain this unit"))
                     .collectList()
@@ -121,14 +122,14 @@ class AgentScopeRuntimeTest {
             assertEquals("visible answer", events.get(3).text());
             assertFalse(events.stream().anyMatch(event -> "private thought".equals(event.text())));
 
-            var restored = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            com.db117.learnagent.agent.api.TutorSessionResponse restored = service.createSession(new CreateTutorSessionRequest(1L, 1L));
             assertTrue(restored.restored());
             assertEquals(List.of("user", "assistant"),
                     restored.messages().stream().map(message -> message.role()).toList());
             assertEquals("visible answer", restored.messages().get(1).text());
             assertEquals(Set.of("load_skill_through_path"), runtime.agent().getToolkit().getToolNames());
 
-            var replay = service.streamTurn(
+            List<com.db117.learnagent.agent.api.TutorEvent> replay = service.streamTurn(
                             session.sessionId(),
                             new SendTutorMessageRequest("turn-1", "the text is intentionally ignored"))
                     .collectList()
@@ -145,17 +146,17 @@ class AgentScopeRuntimeTest {
 
     @Test
     void missingModelIsReportedWhenSendingRatherThanAtStartup() throws Exception {
-        var root = Files.createTempDirectory("tutor-no-model");
-        var runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(null), root.resolve("agent"));
-        var service = new TutorSessionService(
+        Path root = Files.createTempDirectory("tutor-no-model");
+        TutorAgentRuntime runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(null), root.resolve("agent"));
+        TutorSessionService service = new TutorSessionService(
                 contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(),
                         new FakeJourneyRepository()),
                 runtime);
         try {
-            var session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
-            var error = assertThrows(TutorRequestException.class, () -> service.streamTurn(
+            com.db117.learnagent.agent.api.TutorSessionResponse session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            TutorRequestException error = assertThrows(TutorRequestException.class, () -> service.streamTurn(
                     session.sessionId(), new SendTutorMessageRequest("turn-1", "hello")));
             assertEquals("MODEL_UNAVAILABLE", error.code());
             assertEquals(503, error.status());
@@ -166,27 +167,27 @@ class AgentScopeRuntimeTest {
 
     @Test
     void modelFailurePersistsInputAndDoesNotRetryTheSameTurn() throws Exception {
-        var root = Files.createTempDirectory("tutor-failure");
-        var model = new FailingModel();
-        var runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(model), root.resolve("agent"));
-        var service = new TutorSessionService(
+        Path root = Files.createTempDirectory("tutor-failure");
+        AgentScopeRuntimeTest.FailingModel model = new FailingModel();
+        TutorAgentRuntime runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(model), root.resolve("agent"));
+        TutorSessionService service = new TutorSessionService(
                 contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(),
                         new FakeJourneyRepository()),
                 runtime);
         try {
-            var session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
-            var events = service.streamTurn(
+            com.db117.learnagent.agent.api.TutorSessionResponse session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            List<com.db117.learnagent.agent.api.TutorEvent> events = service.streamTurn(
                             session.sessionId(), new SendTutorMessageRequest("turn-fail", "please explain"))
                     .collectList()
                     .block();
 
             assertEquals(TutorEventType.TURN_FAILED, events.get(events.size() - 1).type());
-            var restored = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            com.db117.learnagent.agent.api.TutorSessionResponse restored = service.createSession(new CreateTutorSessionRequest(1L, 1L));
             assertEquals(List.of("user"), restored.messages().stream().map(message -> message.role()).toList());
 
-            var replay = service.streamTurn(
+            List<com.db117.learnagent.agent.api.TutorEvent> replay = service.streamTurn(
                             session.sessionId(), new SendTutorMessageRequest("turn-fail", "retry is forbidden"))
                     .collectList()
                     .block();
@@ -199,16 +200,16 @@ class AgentScopeRuntimeTest {
 
     @Test
     void planningSessionStartsBeforeLearningJourneyExists() throws Exception {
-        var root = Files.createTempDirectory("tutor-planning");
-        var runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(null), root.resolve("agent"));
-        var service = new TutorSessionService(
+        Path root = Files.createTempDirectory("tutor-planning");
+        TutorAgentRuntime runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(null), root.resolve("agent"));
+        TutorSessionService service = new TutorSessionService(
                 contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(2L),
                         new FakeJourneyRepository()),
                 runtime);
         try {
-            var session = service.createSession(new CreateTutorSessionRequest(
+            com.db117.learnagent.agent.api.TutorSessionResponse session = service.createSession(new CreateTutorSessionRequest(
                     1L, 2L, com.db117.learnagent.agent.api.TutorSessionMode.PLANNING));
 
             assertEquals(com.db117.learnagent.agent.api.TutorSessionMode.PLANNING, session.mode());
@@ -221,29 +222,29 @@ class AgentScopeRuntimeTest {
 
     @Test
     void advancingTheCurrentLearnUnitCreatesANewSessionAndStalesTheOldOne() throws Exception {
-        var root = Files.createTempDirectory("tutor-session-rollover");
-        var learningJourneys = new MutableLearningJourneyRepository(twoUnitJourney());
-        var runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(null), root.resolve("agent"));
-        var service = new TutorSessionService(
+        Path root = Files.createTempDirectory("tutor-session-rollover");
+        AgentScopeRuntimeTest.MutableLearningJourneyRepository learningJourneys = new MutableLearningJourneyRepository(twoUnitJourney());
+        TutorAgentRuntime runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(null), root.resolve("agent"));
+        TutorSessionService service = new TutorSessionService(
                 contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(),
                         learningJourneys),
                 runtime);
         try {
-            var first = service.createSession(new CreateTutorSessionRequest(1L, 1L));
-            var restoredFirst = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            com.db117.learnagent.agent.api.TutorSessionResponse first = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            com.db117.learnagent.agent.api.TutorSessionResponse restoredFirst = service.createSession(new CreateTutorSessionRequest(1L, 1L));
             assertEquals(first.sessionId(), restoredFirst.sessionId());
             assertEquals("first", first.currentLearnUnitCode());
 
             learningJourneys.journey = learningJourneys.journey
                     .recordPracticeVerified("first", Instant.parse("2026-01-01T00:00:01Z"));
 
-            var second = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            com.db117.learnagent.agent.api.TutorSessionResponse second = service.createSession(new CreateTutorSessionRequest(1L, 1L));
             assertNotEquals(first.sessionId(), second.sessionId());
             assertEquals("second", second.currentLearnUnitCode());
 
-            var stale = assertThrows(TutorRequestException.class,
+            TutorRequestException stale = assertThrows(TutorRequestException.class,
                     () -> service.streamTurn(first.sessionId(), new SendTutorMessageRequest("stale", "继续")));
             assertEquals("STALE_SESSION", stale.code());
         } finally {
@@ -253,7 +254,7 @@ class AgentScopeRuntimeTest {
 
     @Test
     void tutorDrivesRealLearningWorkspaceToolAndProjectsSafeEvents() throws Exception {
-        var dataDir = Files.createTempDirectory("tutor-workspace-runtime");
+        Path dataDir = Files.createTempDirectory("tutor-workspace-runtime");
         RuntimeConfig config = new RuntimeConfig() {
             @Override
             public String dataDir() {
@@ -265,38 +266,38 @@ class AgentScopeRuntimeTest {
                 return false;
             }
         };
-        var workspaces = new WorkspaceManager(config);
-        var learningJourneys = new FakeJourneyRepository("typescript");
-        var workspaceAccess = new WorkspaceApplicationService(
+        WorkspaceManager workspaces = new WorkspaceManager(config);
+        AgentScopeRuntimeTest.FakeJourneyRepository learningJourneys = new FakeJourneyRepository("typescript");
+        WorkspaceApplicationService workspaceAccess = new WorkspaceApplicationService(
                 new FakeLearnerRepository(),
                 new FakeParentJourneyRepository(),
                 learningJourneys,
                 null,
                 typeScriptCatalog(),
                 workspaces);
-        var environment = new LocalExecutionEnvironment();
-        var practiceRuntime = new PracticeRuntimeService(
+        LocalExecutionEnvironment environment = new LocalExecutionEnvironment();
+        PracticeRuntimeService practiceRuntime = new PracticeRuntimeService(
                 environment,
                 new TypeScriptCompiler(environment),
                 new TypeScriptTestRunner(environment),
                 workspaces,
                 new EmptyPracticeTaskRepository());
-        var workspaceTools = new TutorWorkspaceTools(workspaces, workspaceAccess, practiceRuntime);
-        var model = new ToolCallingModel();
-        var runtime = new TutorAgentRuntime(
+        TutorWorkspaceTools workspaceTools = new TutorWorkspaceTools(workspaces, workspaceAccess, practiceRuntime);
+        AgentScopeRuntimeTest.ToolCallingModel model = new ToolCallingModel();
+        TutorAgentRuntime runtime = new TutorAgentRuntime(
                 config,
                 new TutorModel(model),
                 dataDir.resolve("agent"),
                 workspaceTools);
-        var service = new TutorSessionService(
+        TutorSessionService service = new TutorSessionService(
                 contextAssembler(
                         new FakeLearnerRepository(),
                         new FakeParentJourneyRepository(),
                         learningJourneys),
                 runtime);
         try {
-            var session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
-            var events = service.streamTurn(
+            com.db117.learnagent.agent.api.TutorSessionResponse session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            List<com.db117.learnagent.agent.api.TutorEvent> events = service.streamTurn(
                             session.sessionId(),
                             new SendTutorMessageRequest("tool-turn", "请先查看当前 Workspace"))
                     .collectList()
@@ -338,7 +339,7 @@ class AgentScopeRuntimeTest {
     }
 
     private static LanguagePackCatalog typeScriptCatalog() throws Exception {
-        var constructor = LanguagePackCatalog.class.getDeclaredConstructor(Iterable.class);
+        Constructor<LanguagePackCatalog> constructor = LanguagePackCatalog.class.getDeclaredConstructor(Iterable.class);
         constructor.setAccessible(true);
         return constructor.newInstance(List.of(new TypeScriptLanguagePack()));
     }
@@ -386,7 +387,7 @@ class AgentScopeRuntimeTest {
                         .flatMap(message -> message.getContentBlocks(TextBlock.class).stream())
                         .anyMatch(block -> block.getText().contains("workspace-kind: LEARNING")
                                 && block.getText().contains("workspace-id: 1"));
-                var readFileSchema = tools.stream()
+                Optional<ToolSchema> readFileSchema = tools.stream()
                         .filter(tool -> "read_file".equals(tool.getName()))
                         .findFirst();
                 sawWorkspaceToolSchema = readFileSchema.isPresent();
@@ -507,8 +508,8 @@ class AgentScopeRuntimeTest {
         }
 
         private static LearningJourney journey(String languagePackId) {
-            var at = Instant.parse("2026-01-01T00:00:00Z");
-            var unit = LearnUnit.create("java-basics", "Java Basics", "Understand Java", "content", 0, "chapter-1", Set.of());
+            Instant at = Instant.parse("2026-01-01T00:00:00Z");
+            LearnUnit unit = LearnUnit.create("java-basics", "Java Basics", "Understand Java", "content", 0, "chapter-1", Set.of());
             return LearningJourney.reconstitute(
                     1L,
                     1L,
@@ -553,11 +554,11 @@ class AgentScopeRuntimeTest {
     }
 
     private static LearningJourney twoUnitJourney() {
-        var at = Instant.parse("2026-01-01T00:00:00Z");
-        var first = LearnUnit.create(
+        Instant at = Instant.parse("2026-01-01T00:00:00Z");
+        LearnUnit first = LearnUnit.create(
                 "first", "First", "Understand the first unit", "## Concept\nfirst\n\n## Example\none\n\n## Practice\nfirst practice",
                 0, "chapter-1", Set.of());
-        var second = LearnUnit.create(
+        LearnUnit second = LearnUnit.create(
                 "second", "Second", "Understand the second unit", "## Concept\nsecond\n\n## Example\ntwo\n\n## Practice\nsecond practice",
                 1, "chapter-1", Set.of("first"));
         return LearningJourney.create(
@@ -648,7 +649,7 @@ class AgentScopeRuntimeTest {
         }
 
         private FakeParentJourneyRepository(long journeyId) {
-            var created = Journey.create(
+            Journey created = Journey.create(
                     1L, "Build a Java service", Instant.parse("2026-01-01T00:00:00Z")).withId(journeyId);
             journey = journeyId == 1L ? created.attachLearningJourney(1L) : created;
         }

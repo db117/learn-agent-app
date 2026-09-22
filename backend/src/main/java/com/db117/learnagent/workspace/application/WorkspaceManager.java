@@ -3,7 +3,13 @@ package com.db117.learnagent.workspace.application;
 import com.db117.learnagent.config.RuntimeConfig;
 import com.db117.learnagent.language.LanguagePack;
 import com.db117.learnagent.language.WorkspaceTemplate;
-import com.db117.learnagent.workspace.domain.*;
+import com.db117.learnagent.language.WorkspaceTemplateProvider;
+import com.db117.learnagent.workspace.domain.LearningWorkspace;
+import com.db117.learnagent.workspace.domain.ProjectWorkspace;
+import com.db117.learnagent.workspace.domain.Workspace;
+import com.db117.learnagent.workspace.domain.WorkspaceFile;
+import com.db117.learnagent.workspace.domain.WorkspaceFileEntry;
+import com.db117.learnagent.workspace.domain.WorkspaceKind;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.io.IOException;
@@ -35,25 +41,25 @@ public final class WorkspaceManager {
         if (languagePack == null) {
             throw new IllegalArgumentException("languagePack must not be null");
         }
-        var workspace = learningWorkspace(journeyId);
-        var templateProvider = languagePack.templates();
+        LearningWorkspace workspace = learningWorkspace(journeyId);
+        WorkspaceTemplateProvider templateProvider = languagePack.templates();
         if (templateProvider == null || templateProvider.templates() == null) {
             throw new IllegalArgumentException("languagePack templates must not be null");
         }
-        var templatesByPath = new LinkedHashMap<Path, String>();
+        LinkedHashMap<Path, String> templatesByPath = new LinkedHashMap<Path, String>();
         for (WorkspaceTemplate template : templateProvider.templates()) {
             if (template == null) {
                 throw new IllegalArgumentException("languagePack template must not be null");
             }
-            var path = resolve(workspace, template.path());
-            var normalizedPath = relativePath(workspace, path);
+            Path path = resolve(workspace, template.path());
+            String normalizedPath = relativePath(workspace, path);
             if (templatesByPath.putIfAbsent(path, template.content()) != null) {
                 throw new IllegalArgumentException("duplicate Workspace template path: " + normalizedPath);
             }
         }
         ensureRoot(workspace.root());
-        for (var template : templatesByPath.entrySet()) {
-            var path = template.getKey();
+        for (java.util.Map.Entry<Path, String> template : templatesByPath.entrySet()) {
+            Path path = template.getKey();
             if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)
                     && !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
                 throw new IllegalArgumentException("Workspace template path must be a regular file: "
@@ -67,7 +73,7 @@ public final class WorkspaceManager {
     }
 
     public ProjectWorkspace ensureProjectWorkspace(long projectId) throws IOException {
-        var workspace = projectWorkspace(projectId);
+        ProjectWorkspace workspace = projectWorkspace(projectId);
         ensureRoot(workspace.root());
         return workspace;
     }
@@ -94,7 +100,7 @@ public final class WorkspaceManager {
     }
 
     public WorkspaceFile readFile(Workspace workspace, String relativePath) throws IOException {
-        var path = resolveFile(workspace, relativePath);
+        Path path = resolveFile(workspace, relativePath);
         ensureSize(path);
         return file(workspace, path, Files.readString(path, StandardCharsets.UTF_8));
     }
@@ -104,7 +110,7 @@ public final class WorkspaceManager {
         if (content == null) {
             throw new IllegalArgumentException("content must not be null");
         }
-        var path = resolve(workspace, relativePath);
+        Path path = resolve(workspace, relativePath);
         try {
             ensureRoot(workspace.root());
         } catch (IOException error) {
@@ -134,7 +140,7 @@ public final class WorkspaceManager {
     }
 
     private static Path resolveFile(Workspace workspace, String relativePath) throws IOException {
-        var path = resolve(workspace, relativePath);
+        Path path = resolve(workspace, relativePath);
         if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
             throw new java.nio.file.NoSuchFileException(relativePath);
         }
@@ -153,7 +159,7 @@ public final class WorkspaceManager {
         } catch (java.nio.file.InvalidPathException error) {
             throw new IllegalArgumentException("path must be a valid POSIX relative path", error);
         }
-        var containsParent = false;
+        boolean containsParent = false;
         for (Path part : relative) {
             if (part.toString().equals("..")) {
                 containsParent = true;
@@ -163,7 +169,7 @@ public final class WorkspaceManager {
         if (relative.isAbsolute() || relative.getNameCount() == 0 || containsParent) {
             throw new IllegalArgumentException("path must stay inside Workspace: " + relativePath);
         }
-        var path = workspace.root().resolve(relative).normalize();
+        Path path = workspace.root().resolve(relative).normalize();
         if (!path.startsWith(workspace.root().normalize())) {
             throw new IllegalArgumentException("path must stay inside Workspace: " + relativePath);
         }
@@ -185,7 +191,7 @@ public final class WorkspaceManager {
     }
 
     private static void ensureManagedRootHasNoSymlink(Path root) throws IOException {
-        var category = root.getParent() == null ? null : root.getParent().getParent();
+        Path category = root.getParent() == null ? null : root.getParent().getParent();
         if (category == null) {
             throw new IllegalArgumentException("Workspace root must have a managed parent");
         }
@@ -199,7 +205,7 @@ public final class WorkspaceManager {
     }
 
     private static void ensureNoSymlinkPath(Path root, Path path) throws IOException {
-        var current = root;
+        Path current = root;
         if (Files.isSymbolicLink(current)) {
             throw new IllegalArgumentException("Workspace root must not be a symlink");
         }
@@ -221,16 +227,16 @@ public final class WorkspaceManager {
     }
 
     private static boolean isDependencyPath(Workspace workspace, Path path) {
-        var relative = workspace.root().relativize(path);
+        Path relative = workspace.root().relativize(path);
         if (relative.getNameCount() == 0) {
             return false;
         }
-        for (var part : relative) {
+        for (Path part : relative) {
             if (part.toString().equals("node_modules")) {
                 return true;
             }
         }
-        var first = relative.getName(0).toString();
+        String first = relative.getName(0).toString();
         return workspace.reference().kind() == WorkspaceKind.LEARNING
                 && relative.getNameCount() == 1
                 && first.equals("pnpm-lock.yaml");
@@ -257,7 +263,7 @@ public final class WorkspaceManager {
     }
 
     private static void writeAtomically(Path path, String content) throws IOException {
-        var temporary = Files.createTempFile(path.getParent(), ".workspace-", ".tmp");
+        Path temporary = Files.createTempFile(path.getParent(), ".workspace-", ".tmp");
         try {
             Files.writeString(temporary, content, StandardCharsets.UTF_8);
             try {

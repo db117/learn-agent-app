@@ -21,10 +21,10 @@ public class SqliteLearnerRepository implements LearnerRepository {
 
     @Override
     public Learner save(Learner learner) {
-        try (var connection = dataSource.getConnection()) {
+        try (java.sql.Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             if (learner.id() == null) {
-                try (var statement = connection.prepareStatement(
+                try (java.sql.PreparedStatement statement = connection.prepareStatement(
                         "INSERT INTO learner(display_name, background_summary, created_at) VALUES (?, ?, ?)",
                         java.sql.Statement.RETURN_GENERATED_KEYS)) {
                     statement.setString(1, learner.displayName());
@@ -35,7 +35,7 @@ public class SqliteLearnerRepository implements LearnerRepository {
                 }
             }
             // ID 由 SQLite 生成；Domain 对象在保存前可以保持未持久化状态。
-            try (var statement = connection.prepareStatement(
+            try (java.sql.PreparedStatement statement = connection.prepareStatement(
                     "UPDATE learner SET display_name = ?, background_summary = ?, created_at = ? WHERE id = ?")) {
                 statement.setString(1, learner.displayName());
                 statement.setString(2, learner.backgroundSummary());
@@ -51,8 +51,8 @@ public class SqliteLearnerRepository implements LearnerRepository {
 
     @Override
     public Optional<Learner> findById(long id) {
-        try (var connection = dataSource.getConnection();
-             var statement = connection.prepareStatement(
+        try (java.sql.Connection connection = dataSource.getConnection();
+             java.sql.PreparedStatement statement = connection.prepareStatement(
                      "SELECT id, display_name, background_summary, created_at FROM learner WHERE id = ?")) {
             statement.setLong(1, id);
             try (ResultSet result = statement.executeQuery()) {
@@ -65,8 +65,8 @@ public class SqliteLearnerRepository implements LearnerRepository {
 
     @Override
     public Optional<Learner> findCurrent() {
-        try (var connection = dataSource.getConnection();
-             var statement = connection.prepareStatement(
+        try (java.sql.Connection connection = dataSource.getConnection();
+             java.sql.PreparedStatement statement = connection.prepareStatement(
                      "SELECT id, display_name, background_summary, created_at "
                              + "FROM learner ORDER BY id LIMIT 1");
              ResultSet result = statement.executeQuery()) {

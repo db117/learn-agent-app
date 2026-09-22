@@ -122,14 +122,14 @@ class RuntimeSkeletonTest {
 
     @Test
     void confirmingPlanningDraftCreatesPathAndAttachesItToJourney() throws Exception {
-        var learner = learnerRepository.findCurrent().orElseGet(() -> learnerRepository.save(
+        Learner learner = learnerRepository.findCurrent().orElseGet(() -> learnerRepository.save(
                 Learner.create("Planning tester", "TypeScript developer", CREATED_AT)));
-        var selected = journeyRepository.selectCurrent(
+        Journey selected = journeyRepository.selectCurrent(
                 journeyRepository.save(Journey.create(learner.id(), "Confirm a TypeScript plan", CREATED_AT)).id(),
                 learner.id());
-        var confirmUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/confirm-plan");
+        URL confirmUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/confirm-plan");
 
-        var response = HTTP.send(
+        HttpResponse<String> response = HTTP.send(
                 HttpRequest.newBuilder(confirmUrl.toURI())
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(
@@ -138,16 +138,16 @@ class RuntimeSkeletonTest {
                 HttpResponse.BodyHandlers.ofString());
 
         assertEquals(HttpURLConnection.HTTP_OK, response.statusCode());
-        var linked = journeyRepository.findById(selected.id()).orElseThrow();
+        Journey linked = journeyRepository.findById(selected.id()).orElseThrow();
         assertNotNull(linked.learningJourneyId());
         assertTrue(response.body().contains("\"learningJourneyId\":" + linked.learningJourneyId()));
-        var learningJourney = learningJourneyRepository.findById(linked.learningJourneyId()).orElseThrow();
+        LearningJourney learningJourney = learningJourneyRepository.findById(linked.learningJourneyId()).orElseThrow();
         assertEquals("", learningJourney.learnUnits().getFirst().content());
         assertEquals(2, learningJourney.learnUnits().size());
         assertEquals("variables", learningJourney.currentItem().learnUnitCode());
 
-        var learningUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/learning");
-        var learning = HTTP.send(
+        URL learningUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/learning");
+        HttpResponse<String> learning = HTTP.send(
                 HttpRequest.newBuilder(learningUrl.toURI()).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(HttpURLConnection.HTTP_OK, learning.statusCode());
@@ -158,12 +158,12 @@ class RuntimeSkeletonTest {
 
     @Test
     void confirmedPathCompletesAndAdvancesAfterPracticeEvidence() throws Exception {
-        var learner = learnerRepository.findCurrent().orElseGet(() -> learnerRepository.save(
+        Learner learner = learnerRepository.findCurrent().orElseGet(() -> learnerRepository.save(
                 Learner.create("Progress tester", "TypeScript developer", CREATED_AT)));
-        var selected = journeyRepository.selectCurrent(
+        Journey selected = journeyRepository.selectCurrent(
                 journeyRepository.save(Journey.create(learner.id(), "Expose learning progress", CREATED_AT)).id(),
                 learner.id());
-        var confirmUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/confirm-plan");
+        URL confirmUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/confirm-plan");
         HTTP.send(
                 HttpRequest.newBuilder(confirmUrl.toURI())
                         .header("Content-Type", "application/json")
@@ -172,14 +172,14 @@ class RuntimeSkeletonTest {
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
 
-        var confirmed = journeyRepository.findById(selected.id()).orElseThrow();
-        var learningBeforePractice = learningJourneyRepository
+        Journey confirmed = journeyRepository.findById(selected.id()).orElseThrow();
+        LearningJourney learningBeforePractice = learningJourneyRepository
                 .findById(confirmed.learningJourneyId()).orElseThrow();
         learningJourneyRepository.save(
                 learningBeforePractice.recordPracticeVerified("variables", Instant.now().plusSeconds(1)));
 
-        var learningUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/learning");
-        var progress = HTTP.send(
+        URL learningUrl = new URL(bootstrapUrl, "/api/journeys/" + selected.id() + "/learning");
+        HttpResponse<String> progress = HTTP.send(
                 HttpRequest.newBuilder(learningUrl.toURI()).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(HttpURLConnection.HTTP_OK, progress.statusCode());
@@ -189,32 +189,32 @@ class RuntimeSkeletonTest {
 
     @Test
     void bootstrapInitializesLearningWorkspaceAndFileApiRoundTrip() throws Exception {
-        var learner = learnerRepository.findCurrent()
+        Learner learner = learnerRepository.findCurrent()
                 .orElseGet(() -> learnerRepository.save(
                         Learner.create("Workspace tester", "TypeScript developer", CREATED_AT)));
-        var journey = journeyRepository.selectCurrent(
+        Journey journey = journeyRepository.selectCurrent(
                 journeyRepository.save(Journey.create(learner.id(), "Build a TypeScript app", CREATED_AT)).id(),
                 learner.id());
-        var learningJourney = learningJourneyRepository.save(learningJourney(learner.id()));
+        LearningJourney learningJourney = learningJourneyRepository.save(learningJourney(learner.id()));
         journeyRepository.attachLearningJourney(journey.id(), learningJourney.id(), learner.id());
 
-        var bootstrap = HTTP.send(
+        HttpResponse<String> bootstrap = HTTP.send(
                 HttpRequest.newBuilder(bootstrapUrl.toURI()).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(HttpURLConnection.HTTP_OK, bootstrap.statusCode());
         assertTrue(bootstrap.body().contains("\"reference\":\"learning:" + journey.id() + "\""));
 
-        var listUrl = new URL(bootstrapUrl,
+        URL listUrl = new URL(bootstrapUrl,
                 "/api/journeys/" + journey.id() + "/workspace/files");
-        var files = HTTP.send(
+        HttpResponse<String> files = HTTP.send(
                 HttpRequest.newBuilder(listUrl.toURI()).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(HttpURLConnection.HTTP_OK, files.statusCode());
         assertTrue(files.body().contains("src/index.ts"));
 
-        var fileUrl = new URL(bootstrapUrl,
+        URL fileUrl = new URL(bootstrapUrl,
                 "/api/journeys/" + journey.id() + "/workspace/files/src/index.ts");
-        var write = HTTP.send(
+        HttpResponse<String> write = HTTP.send(
                 HttpRequest.newBuilder(fileUrl.toURI())
                         .header("Content-Type", "application/json")
                         .PUT(HttpRequest.BodyPublishers.ofString(
@@ -223,7 +223,7 @@ class RuntimeSkeletonTest {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(HttpURLConnection.HTTP_OK, write.statusCode());
 
-        var read = HTTP.send(
+        HttpResponse<String> read = HTTP.send(
                 HttpRequest.newBuilder(fileUrl.toURI()).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(HttpURLConnection.HTTP_OK, read.statusCode());
@@ -231,8 +231,8 @@ class RuntimeSkeletonTest {
     }
 
     private LearningJourney learningJourney(long learnerId) {
-        var chapter = Chapter.create("basics", "Basics", 0);
-        var unit = LearnUnit.create(
+        Chapter chapter = Chapter.create("basics", "Basics", 0);
+        LearnUnit unit = LearnUnit.create(
                 "variables", "Variables", "Use values", "Variables content", 0, "basics", Set.of());
         return LearningJourney.create(
                 learnerId, "typescript", "TypeScript Journey",

@@ -29,11 +29,11 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
 
     @Override
     public PracticeTask save(PracticeTask task) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             connection.setAutoCommit(false);
             try {
-                var saved = task.id() == null ? insertNew(connection, task) : updateExisting(connection, task);
+                PracticeTask saved = task.id() == null ? insertNew(connection, task) : updateExisting(connection, task);
                 connection.commit();
                 return saved;
             } catch (RuntimeException | SQLException error) {
@@ -47,13 +47,13 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
 
     @Override
     public Optional<PracticeTask> findById(long id) {
-        try (var connection = dataSource.getConnection();
-             var statement = connection.prepareStatement(
+        try (Connection connection = dataSource.getConnection();
+             java.sql.PreparedStatement statement = connection.prepareStatement(
                      "SELECT id, journey_id, learn_unit_id, language_pack_id, type, title, description, difficulty, "
                              + "starter_template, choice_question, verification_policy, status, created_at "
                              + "FROM practice_task WHERE id = ?")) {
             statement.setLong(1, id);
-            try (var result = statement.executeQuery()) {
+            try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? Optional.of(readTask(connection, result)) : Optional.empty();
             }
         } catch (SQLException error) {
@@ -63,16 +63,16 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
 
     @Override
     public List<PracticeTask> findByLearnUnit(long journeyId, long learnUnitId) {
-        try (var connection = dataSource.getConnection();
-             var statement = connection.prepareStatement(
+        try (Connection connection = dataSource.getConnection();
+             java.sql.PreparedStatement statement = connection.prepareStatement(
                      "SELECT id, journey_id, learn_unit_id, language_pack_id, type, title, description, difficulty, "
                              + "starter_template, choice_question, verification_policy, status, created_at "
                              + "FROM practice_task "
                              + "WHERE journey_id = ? AND learn_unit_id = ? ORDER BY id")) {
             statement.setLong(1, journeyId);
             statement.setLong(2, learnUnitId);
-            try (var result = statement.executeQuery()) {
-                var tasks = new ArrayList<PracticeTask>();
+            try (ResultSet result = statement.executeQuery()) {
+                ArrayList<PracticeTask> tasks = new ArrayList<PracticeTask>();
                 while (result.next()) {
                     tasks.add(readTask(connection, result));
                 }
@@ -86,7 +86,7 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
     private PracticeTask insertNew(Connection connection, PracticeTask task) throws SQLException {
         // 先保存任务根，再按提交顺序追加客观证据。
         long taskId;
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO practice_task(journey_id, learn_unit_id, language_pack_id, type, title, description, "
                         + "difficulty, starter_template, choice_question, verification_policy, status, created_at) "
                         + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -95,7 +95,7 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
             statement.executeUpdate();
             taskId = SqliteSupport.generatedId(connection, statement);
         }
-        var attempts = insertAttempts(connection, taskId, task.attempts());
+        List<PracticeAttempt> attempts = insertAttempts(connection, taskId, task.attempts());
         return PracticeTask.reconstitute(
                 taskId,
                 task.journeyId(),
@@ -114,7 +114,7 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
     }
 
     private PracticeTask updateExisting(Connection connection, PracticeTask task) throws SQLException {
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "UPDATE practice_task SET type = ?, title = ?, description = ?, difficulty = ?, starter_template = ?, "
                         + "choice_question = ?, verification_policy = ?, status = ? WHERE id = ? AND journey_id = ? "
                         + "AND learn_unit_id = ? AND language_pack_id = ?")) {
@@ -132,7 +132,7 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
             statement.setString(12, task.languagePackId());
             SqliteSupport.requireUpdated(statement.executeUpdate(), "practice task", task.id());
         }
-        var persistedAttempts = insertAttempts(connection, task.id(), task.attempts());
+        List<PracticeAttempt> persistedAttempts = insertAttempts(connection, task.id(), task.attempts());
         return PracticeTask.reconstitute(
                 task.id(),
                 task.journeyId(),
@@ -167,11 +167,11 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
 
     private List<PracticeAttempt> insertAttempts(
             Connection connection, long taskId, List<PracticeAttempt> attempts) throws SQLException {
-        var persisted = new ArrayList<PracticeAttempt>();
-        try (var attemptStatement = connection.prepareStatement(
+        ArrayList<PracticeAttempt> persisted = new ArrayList<PracticeAttempt>();
+        try (java.sql.PreparedStatement attemptStatement = connection.prepareStatement(
                 "INSERT INTO practice_attempt(practice_task_id, submitted_at) VALUES (?, ?)",
                 Statement.RETURN_GENERATED_KEYS);
-             var evidenceStatement = connection.prepareStatement(
+             java.sql.PreparedStatement evidenceStatement = connection.prepareStatement(
                      "INSERT INTO practice_evidence(attempt_id, compile_passed, tests_passed, test_count, lint_passed, "
                              + "runtime_result, submitted_files, verified_at, choice_correct) "
                              + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
@@ -185,7 +185,7 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
                 attemptStatement.setString(2, attempt.submittedAt().toString());
                 attemptStatement.executeUpdate();
                 long attemptId = SqliteSupport.generatedId(connection, attemptStatement);
-                var evidence = attempt.evidence();
+                PracticeEvidence evidence = attempt.evidence();
                 evidenceStatement.setLong(1, attemptId);
                 evidenceStatement.setInt(2, SqliteSupport.bool(evidence.compilePassed()));
                 evidenceStatement.setInt(3, SqliteSupport.bool(evidence.testsPassed()));
@@ -204,16 +204,16 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
 
     private PracticeTask readTask(Connection connection, ResultSet result) throws SQLException {
         long taskId = result.getLong("id");
-        var attempts = new ArrayList<PracticeAttempt>();
-        try (var statement = connection.prepareStatement(
+        ArrayList<PracticeAttempt> attempts = new ArrayList<PracticeAttempt>();
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "SELECT pa.id, pa.submitted_at, pe.compile_passed, pe.tests_passed, pe.test_count, pe.lint_passed, "
                         + "pe.runtime_result, pe.submitted_files, pe.verified_at, pe.choice_correct "
                         + "FROM practice_attempt pa JOIN practice_evidence pe ON pe.attempt_id = pa.id "
                         + "WHERE pa.practice_task_id = ? ORDER BY pa.id")) {
             statement.setLong(1, taskId);
-            try (var evidenceResult = statement.executeQuery()) {
+            try (ResultSet evidenceResult = statement.executeQuery()) {
                 while (evidenceResult.next()) {
-                    var evidence = new PracticeEvidence(
+                    PracticeEvidence evidence = new PracticeEvidence(
                             SqliteSupport.bool(evidenceResult, "compile_passed"),
                             SqliteSupport.bool(evidenceResult, "tests_passed"),
                             evidenceResult.getInt("test_count"),

@@ -18,7 +18,7 @@ class JourneyBootstrapDomainTest {
 
     @Test
     void newJourneyStoresGoalAndCanAttachOneGeneratedPath() {
-        var journey = Journey.create(1, "掌握 Java 并完成一个后端项目", T0);
+        Journey journey = Journey.create(1, "掌握 Java 并完成一个后端项目", T0);
 
         assertNull(journey.id());
         assertEquals(JourneyStatus.ACTIVE, journey.status());
@@ -26,18 +26,18 @@ class JourneyBootstrapDomainTest {
         assertFalse(journey.current());
         assertNull(journey.learningJourneyId());
 
-        var selected = journey.withId(10).select().attachLearningJourney(20);
+        Journey selected = journey.withId(10).select().attachLearningJourney(20);
         assertTrue(selected.current());
         assertEquals(20L, selected.learningJourneyId());
     }
 
     @Test
     void archivedJourneyCannotBeSelectedOrRemainCurrent() {
-        var selected = Journey.create(1, "Learn Java", T0).withId(10).select();
+        Journey selected = Journey.create(1, "Learn Java", T0).withId(10).select();
 
         assertThrows(DomainRuleViolation.class,
                 () -> selected.archive(T0.plusSeconds(1)));
-        var archived = selected.deselect().archive(T0.plusSeconds(1));
+        Journey archived = selected.deselect().archive(T0.plusSeconds(1));
         assertEquals(JourneyStatus.ARCHIVED, archived.status());
         assertFalse(archived.current());
         assertThrows(DomainRuleViolation.class, archived::select);

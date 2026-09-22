@@ -93,10 +93,10 @@ public final class LearningJourney {
             List<Chapter> chapters,
             List<LearnUnit> learnUnits,
             Instant createdAt) {
-        var orderedUnits = orderUnits(learnUnits);
-        var items = new ArrayList<LearningPathItem>();
+        List<LearnUnit> orderedUnits = orderUnits(learnUnits);
+        ArrayList<LearningPathItem> items = new ArrayList<LearningPathItem>();
         for (int index = 0; index < orderedUnits.size(); index++) {
-            var unit = orderedUnits.get(index);
+            LearnUnit unit = orderedUnits.get(index);
             items.add(index == 0
                     ? LearningPathItem.current(unit.code(), unit.sequence(), createdAt)
                     : LearningPathItem.pending(unit.code(), unit.sequence(), createdAt));
@@ -221,7 +221,7 @@ public final class LearningJourney {
     public LearningJourney activate(String learnUnitCode, Instant at) {
         DomainChecks.time(at, "at");
         int targetIndex = indexOfItem(learnUnitCode);
-        var target = pathItems.get(targetIndex);
+        LearningPathItem target = pathItems.get(targetIndex);
         if (target.status() == LearningPathItemStatus.COMPLETED) {
             throw new DomainRuleViolation("completed item cannot be activated: " + learnUnitCode);
         }
@@ -230,7 +230,7 @@ public final class LearningJourney {
                     + learnUnitCode);
         }
 
-        var nextItems = new ArrayList<>(pathItems);
+        ArrayList<LearningPathItem> nextItems = new ArrayList<>(pathItems);
         for (int index = 0; index < nextItems.size(); index++) {
             if (index != targetIndex && nextItems.get(index).status() == LearningPathItemStatus.CURRENT) {
                 nextItems.set(index, nextItems.get(index).skip(at));
@@ -249,19 +249,19 @@ public final class LearningJourney {
     /** 跳过当前项后推进第一个 PENDING；没有 PENDING 时 Journey 完成。 */
     public LearningJourney skipCurrent(Instant at) {
         DomainChecks.time(at, "at");
-        var current = currentItem();
+        LearningPathItem current = currentItem();
         if (current == null) {
             throw new DomainRuleViolation("journey has no current item");
         }
-        var nextItems = replaceItem(current.learnUnitCode(), current.skip(at));
+        List<LearningPathItem> nextItems = replaceItem(current.learnUnitCode(), current.skip(at));
         return advanceAfterClose(nextItems, at);
     }
 
     /** 将已验证的 Practice 证据纳入当前项，完成当前课并推进。 */
     public LearningJourney recordPracticeVerified(String learnUnitCode, Instant at) {
-        var item = item(learnUnitCode);
-        var nextItem = item.recordPracticeVerified(at);
-        var nextItems = replaceItem(learnUnitCode, nextItem);
+        LearningPathItem item = item(learnUnitCode);
+        LearningPathItem nextItem = item.recordPracticeVerified(at);
+        List<LearningPathItem> nextItems = replaceItem(learnUnitCode, nextItem);
         return nextItem.status() == LearningPathItemStatus.COMPLETED
                 ? advanceAfterClose(nextItems, at)
                 : copy(id, chapters, learnUnits, nextItems, status, completedAt);
@@ -269,14 +269,14 @@ public final class LearningJourney {
 
     /** 只允许为当前学习项写入进入阶段后生成的教学内容。 */
     public LearningJourney materializeLearnUnitContent(String learnUnitCode, String content) {
-        var current = currentItem();
+        LearningPathItem current = currentItem();
         if (current == null || !current.learnUnitCode().equals(learnUnitCode)) {
             throw new DomainRuleViolation("content must belong to the current LearnUnit");
         }
-        var generatedContent = DomainChecks.text(content, "content");
-        var nextUnits = new ArrayList<LearnUnit>();
+        String generatedContent = DomainChecks.text(content, "content");
+        ArrayList<LearnUnit> nextUnits = new ArrayList<LearnUnit>();
         boolean found = false;
-        for (var unit : learnUnits) {
+        for (LearnUnit unit : learnUnits) {
             if (unit.code().equals(learnUnitCode)) {
                 nextUnits.add(unit.withContent(generatedContent));
                 found = true;
@@ -292,8 +292,8 @@ public final class LearningJourney {
 
     /** 关闭当前项后只自动推进 PENDING，不擅自重新打开 SKIPPED。 */
     private LearningJourney advanceAfterClose(List<LearningPathItem> closedItems, Instant at) {
-        var nextItems = new ArrayList<>(closedItems);
-        var nextPending = nextItems.stream()
+        ArrayList<LearningPathItem> nextItems = new ArrayList<>(closedItems);
+        java.util.Optional<LearningPathItem> nextPending = nextItems.stream()
                 .filter(item -> item.status() == LearningPathItemStatus.PENDING)
                 .findFirst();
         if (nextPending.isPresent()) {
@@ -323,7 +323,7 @@ public final class LearningJourney {
     }
 
     private List<LearningPathItem> replaceItem(String code, LearningPathItem replacement) {
-        var next = new ArrayList<>(pathItems);
+        ArrayList<LearningPathItem> next = new ArrayList<>(pathItems);
         next.set(indexOfItem(code), replacement);
         return next;
     }
@@ -356,8 +356,8 @@ public final class LearningJourney {
         if (chapters.isEmpty() || learnUnits.isEmpty()) {
             throw new DomainRuleViolation("journey content must contain chapters and LearnUnits");
         }
-        var chapterCodes = uniqueCodes(chapters.stream().map(Chapter::code).toList(), "chapter code");
-        var unitCodes = uniqueCodes(learnUnits.stream().map(LearnUnit::code).toList(), "LearnUnit code");
+        Set<String> chapterCodes = uniqueCodes(chapters.stream().map(Chapter::code).toList(), "chapter code");
+        Set<String> unitCodes = uniqueCodes(learnUnits.stream().map(LearnUnit::code).toList(), "LearnUnit code");
         for (LearnUnit unit : learnUnits) {
             if (!chapterCodes.contains(unit.chapterCode())) {
                 throw new DomainRuleViolation("LearnUnit references an unknown Chapter: " + unit.chapterCode());
@@ -373,7 +373,7 @@ public final class LearningJourney {
     }
 
     private static Set<String> uniqueCodes(List<String> codes, String label) {
-        var unique = new HashSet<>(codes);
+        HashSet<String> unique = new HashSet<>(codes);
         if (unique.size() != codes.size()) {
             throw new DomainRuleViolation(label + " must be unique");
         }
@@ -385,7 +385,7 @@ public final class LearningJourney {
         if (units == null || units.isEmpty()) {
             throw new DomainRuleViolation("learnUnits must not be empty");
         }
-        var byCode = new HashMap<String, LearnUnit>();
+        HashMap<String, LearnUnit> byCode = new HashMap<String, LearnUnit>();
         for (LearnUnit unit : units) {
             if (byCode.put(unit.code(), unit) != null) {
                 throw new DomainRuleViolation("LearnUnit code must be unique: " + unit.code());
@@ -396,14 +396,14 @@ public final class LearningJourney {
                 throw new DomainRuleViolation("unknown prerequisite for LearnUnit: " + unit.code());
             }
         }
-        var ordered = new ArrayList<LearnUnit>();
-        var remaining = new HashSet<>(byCode.keySet());
-        var comparator = Comparator.comparingInt(LearnUnit::sequence).thenComparing(LearnUnit::code);
+        ArrayList<LearnUnit> ordered = new ArrayList<LearnUnit>();
+        HashSet<String> remaining = new HashSet<>(byCode.keySet());
+        Comparator<LearnUnit> comparator = Comparator.comparingInt(LearnUnit::sequence).thenComparing(LearnUnit::code);
         while (!remaining.isEmpty()) {
             // 每轮只从已满足全部前置条件的候选中取最稳定的一项；无候选即代表存在环。
-            var completedCodes = ordered.stream().map(LearnUnit::code)
+            Set<String> completedCodes = ordered.stream().map(LearnUnit::code)
                     .collect(java.util.stream.Collectors.toSet());
-            var candidates = remaining.stream()
+            List<LearnUnit> candidates = remaining.stream()
                     .map(byCode::get)
                     .filter(unit -> completedCodes.containsAll(unit.prerequisiteCodes()))
                     .sorted(comparator)
@@ -411,7 +411,7 @@ public final class LearningJourney {
             if (candidates.isEmpty()) {
                 throw new DomainRuleViolation("LearnUnit prerequisites contain a cycle");
             }
-            var next = candidates.get(0);
+            LearnUnit next = candidates.get(0);
             ordered.add(next);
             remaining.remove(next.code());
         }

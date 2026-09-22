@@ -27,19 +27,19 @@ public class TutorModel {
     }
 
     private Model buildFromEnvironment() {
-        var apiKey = environment("OPENAI_API_KEY");
-        var modelName = environment("OPENAI_MODEL");
+        String apiKey = environment("OPENAI_API_KEY");
+        String modelName = environment("OPENAI_MODEL");
         if (apiKey.isBlank() || modelName.isBlank()) {
             return null;
         }
 
         try {
-            var builder = OpenAIChatModel.builder()
+            OpenAIChatModel.Builder builder = OpenAIChatModel.builder()
                     .apiKey(apiKey)
                     .modelName(modelName)
                     .stream(true)
                     .httpTransport(new ProviderEnvelopeHttpTransport(HttpTransportFactory.getDefault()));
-            var baseUrl = environment("OPENAI_BASE_URL");
+            String baseUrl = environment("OPENAI_BASE_URL");
             if (!baseUrl.isBlank()) {
                 builder.baseUrl(baseUrl);
             }
@@ -51,7 +51,7 @@ public class TutorModel {
     }
 
     private String environment(String name) {
-        var value = System.getenv(name);
+        String value = System.getenv(name);
         return value == null ? "" : value.trim();
     }
 }

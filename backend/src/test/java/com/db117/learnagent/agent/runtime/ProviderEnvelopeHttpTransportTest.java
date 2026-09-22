@@ -24,13 +24,13 @@ class ProviderEnvelopeHttpTransportTest {
 
     @Test
     void convertsNonStreamingErrorEnvelopeToRetryableGatewayStatus() {
-        var delegate = new StubTransport(HttpResponse.builder()
+        ProviderEnvelopeHttpTransportTest.StubTransport delegate = new StubTransport(HttpResponse.builder()
                 .statusCode(200)
                 .headers(Map.of("content-type", "application/json"))
                 .body(ERROR_ENVELOPE)
                 .build());
 
-        var response = new ProviderEnvelopeHttpTransport(delegate).execute(REQUEST);
+        HttpResponse response = new ProviderEnvelopeHttpTransport(delegate).execute(REQUEST);
 
         assertEquals(502, response.getStatusCode());
         assertEquals(ERROR_ENVELOPE, response.getBody());
@@ -38,9 +38,9 @@ class ProviderEnvelopeHttpTransportTest {
 
     @Test
     void convertsStreamingErrorEnvelopeToTransportException() {
-        var delegate = new StubTransport(Flux.just("data: " + ERROR_ENVELOPE));
+        ProviderEnvelopeHttpTransportTest.StubTransport delegate = new StubTransport(Flux.just("data: " + ERROR_ENVELOPE));
 
-        var error = assertThrows(
+        HttpTransportException error = assertThrows(
                 HttpTransportException.class,
                 () -> new ProviderEnvelopeHttpTransport(delegate).stream(REQUEST).blockLast());
 

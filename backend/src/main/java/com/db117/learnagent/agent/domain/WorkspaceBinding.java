@@ -30,7 +30,7 @@ public record WorkspaceBinding(
 
     private static String requireText(String value, String field) {
         Objects.requireNonNull(value, field + " must not be null");
-        var normalized = value.trim();
+        String normalized = value.trim();
         if (normalized.isEmpty()) {
             throw new IllegalArgumentException(field + " must not be blank");
         }

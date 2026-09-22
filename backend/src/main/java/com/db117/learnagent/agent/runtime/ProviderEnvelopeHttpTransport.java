@@ -25,7 +25,7 @@ final class ProviderEnvelopeHttpTransport implements HttpTransport {
 
     @Override
     public HttpResponse execute(HttpRequest request) {
-        var response = delegate.execute(normalizeToolSchemas(request));
+        HttpResponse response = delegate.execute(normalizeToolSchemas(request));
         if (!response.isSuccessful() || !isProviderError(response.getBody())) {
             return response;
         }
@@ -53,7 +53,7 @@ final class ProviderEnvelopeHttpTransport implements HttpTransport {
         if (body == null || body.isBlank()) {
             return false;
         }
-        var payload = body.trim();
+        String payload = body.trim();
         if (payload.startsWith("data:")) {
             payload = payload.substring("data:".length()).trim();
         }
@@ -78,12 +78,12 @@ final class ProviderEnvelopeHttpTransport implements HttpTransport {
             return request;
         }
         try {
-            var root = JSON.readTree(request.getBody());
-            var tools = root == null ? null : root.get("tools");
-            var changed = false;
+            JsonNode root = JSON.readTree(request.getBody());
+            JsonNode tools = root == null ? null : root.get("tools");
+            boolean changed = false;
             if (tools != null && tools.isArray()) {
-                for (var tool : tools) {
-                    var parameters = tool.path("function").get("parameters");
+                for (JsonNode tool : tools) {
+                    JsonNode parameters = tool.path("function").get("parameters");
                     if (parameters != null) {
                         changed |= stripUnsupportedKeywords(parameters);
                     }
@@ -104,17 +104,17 @@ final class ProviderEnvelopeHttpTransport implements HttpTransport {
     }
 
     private static boolean stripUnsupportedKeywords(JsonNode node) {
-        var changed = false;
+        boolean changed = false;
         if (node instanceof ObjectNode object) {
             changed = object.remove("required") != null;
             changed |= object.remove("enum") != null;
             changed |= object.remove("description") != null;
-            var fields = object.fields();
+            java.util.Iterator<java.util.Map.Entry<String, JsonNode>> fields = object.fields();
             while (fields.hasNext()) {
                 changed |= stripUnsupportedKeywords(fields.next().getValue());
             }
         } else if (node != null && node.isArray()) {
-            for (var child : node) {
+            for (JsonNode child : node) {
                 changed |= stripUnsupportedKeywords(child);
             }
         }

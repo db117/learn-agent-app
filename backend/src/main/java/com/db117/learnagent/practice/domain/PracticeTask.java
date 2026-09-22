@@ -265,9 +265,9 @@ public final class PracticeTask {
         if (attempt == null) {
             throw new DomainRuleViolation("attempt must not be null");
         }
-        var nextAttempts = new ArrayList<>(attempts);
+        ArrayList<PracticeAttempt> nextAttempts = new ArrayList<>(attempts);
         nextAttempts.add(attempt);
-        var nextStatus = attempt.evidence().isVerified(verificationPolicy)
+        PracticeTaskStatus nextStatus = attempt.evidence().isVerified(verificationPolicy)
                 ? PracticeTaskStatus.VERIFIED
                 : PracticeTaskStatus.OPEN;
         return new PracticeTask(

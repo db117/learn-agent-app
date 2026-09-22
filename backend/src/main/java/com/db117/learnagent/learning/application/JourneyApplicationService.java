@@ -59,10 +59,10 @@ public class JourneyApplicationService {
     }
 
     public OnboardingSnapshot snapshot() {
-        var learner = learnerRepository.findCurrent();
-        var journeys = learner.map(value -> journeyRepository.findByLearnerId(value.id())).orElseGet(List::of);
-        var learningJourneySummaries = new HashMap<Long, LearningJourneySummary>();
-        for (var journey : journeys) {
+        java.util.Optional<Learner> learner = learnerRepository.findCurrent();
+        List<Journey> journeys = learner.map(value -> journeyRepository.findByLearnerId(value.id())).orElseGet(List::of);
+        HashMap<Long, JourneyApplicationService.LearningJourneySummary> learningJourneySummaries = new HashMap<Long, LearningJourneySummary>();
+        for (Journey journey : journeys) {
             if (journey.learningJourneyId() == null) {
                 continue;
             }
@@ -80,8 +80,8 @@ public class JourneyApplicationService {
 
     public Learner saveLearner(String backgroundSummary) {
         try {
-            var current = learnerRepository.findCurrent();
-            var next = current
+            java.util.Optional<Learner> current = learnerRepository.findCurrent();
+            Learner next = current
                     .map(value -> value.withBackgroundSummary(backgroundSummary))
                     .orElseGet(() -> Learner.create("学习者", backgroundSummary, Instant.now(clock)));
             return learnerRepository.save(next);
@@ -91,9 +91,9 @@ public class JourneyApplicationService {
     }
 
     public Journey createJourney(String goalDescription) {
-        var learner = requireLearner();
+        Learner learner = requireLearner();
         try {
-            var created = journeyRepository.save(Journey.create(
+            Journey created = journeyRepository.save(Journey.create(
                     learner.id(), goalDescription, Instant.now(clock)));
             if (journeyRepository.findCurrentByLearnerId(learner.id()).isEmpty()) {
                 return journeyRepository.selectCurrent(created.id(), learner.id());
@@ -105,7 +105,7 @@ public class JourneyApplicationService {
     }
 
     public Journey selectJourney(long journeyId) {
-        var learner = requireLearner();
+        Learner learner = requireLearner();
         try {
             return journeyRepository.selectCurrent(journeyId, learner.id());
         } catch (IllegalStateException error) {
@@ -114,8 +114,8 @@ public class JourneyApplicationService {
     }
 
     public Journey confirmPlan(long journeyId, String plan) {
-        var learner = requireLearner();
-        var journey = ownedJourney(journeyId, learner.id());
+        Learner learner = requireLearner();
+        Journey journey = ownedJourney(journeyId, learner.id());
         if (journey.status() != JourneyStatus.ACTIVE || !journey.current()) {
             throw LearningRequestException.conflict(
                     "JOURNEY_NOT_CURRENT", "只能确认当前 ACTIVE Journey 的规划");
@@ -124,8 +124,8 @@ public class JourneyApplicationService {
             return journey;
         }
 
-        var normalizedPlan = normalizePlan(plan);
-        var chapters = parsePlan(normalizedPlan);
+        String normalizedPlan = normalizePlan(plan);
+        List<JourneyApplicationService.PlanChapter> chapters = parsePlan(normalizedPlan);
         LearningJourney saved = null;
         try {
             saved = learningJourneyRepository.save(
@@ -146,8 +146,8 @@ public class JourneyApplicationService {
 
     /** 返回当前用户 Journey 已确认的 LearningJourney；应用层统一校验所有权。 */
     public LearningJourney learningJourneyFor(long journeyId) {
-        var learner = requireLearner();
-        var journey = ownedJourney(journeyId, learner.id());
+        Learner learner = requireLearner();
+        Journey journey = ownedJourney(journeyId, learner.id());
         if (journey.learningJourneyId() == null) {
             throw LearningRequestException.conflict(
                     "JOURNEY_PATH_NOT_READY", "LearningJourney 尚未生成");
@@ -166,13 +166,13 @@ public class JourneyApplicationService {
         if (content == null || content.isBlank() || content.length() > MAX_CONTENT_LENGTH) {
             throw LearningRequestException.badRequest("INVALID_LEARNING_CONTENT", "学习内容不能为空或过长");
         }
-        var learningJourney = learningJourneyFor(journeyId);
+        LearningJourney learningJourney = learningJourneyFor(journeyId);
         try {
-            var current = learningJourney.currentItem();
+            com.db117.learnagent.learning.domain.LearningPathItem current = learningJourney.currentItem();
             if (current == null || !current.learnUnitCode().equals(learnUnitCode)) {
                 throw new DomainRuleViolation("content must belong to the current LearnUnit");
             }
-            var unit = learningJourney.learnUnit(learnUnitCode);
+            LearnUnit unit = learningJourney.learnUnit(learnUnitCode);
             if (!unit.content().isBlank()) {
                 return learningJourney;
             }
@@ -185,9 +185,9 @@ public class JourneyApplicationService {
 
     /** 将通过的 Practice 证据写回 Learning Domain，并按领域规则推进当前单元。 */
     public LearningJourney recordPracticeVerified(long journeyId, String learnUnitCode) {
-        var learningJourney = learningJourneyFor(journeyId);
+        LearningJourney learningJourney = learningJourneyFor(journeyId);
         try {
-            var current = learningJourney.currentItem();
+            com.db117.learnagent.learning.domain.LearningPathItem current = learningJourney.currentItem();
             if (current == null || !current.learnUnitCode().equals(learnUnitCode)) {
                 throw new DomainRuleViolation("practice evidence must belong to the current LearnUnit");
             }
@@ -208,7 +208,7 @@ public class JourneyApplicationService {
         if (plan == null || plan.isBlank()) {
             throw LearningRequestException.badRequest("INVALID_PLAN", "请先生成规划草稿");
         }
-        var normalized = plan.strip();
+        String normalized = plan.strip();
         if (normalized.length() > MAX_PLAN_LENGTH) {
             throw LearningRequestException.badRequest("INVALID_PLAN", "规划草稿过长");
         }
@@ -217,16 +217,16 @@ public class JourneyApplicationService {
 
     private LearningJourney createLearningJourney(
             Journey journey, long learnerId, List<PlanChapter> planChapters) {
-        var chapters = new ArrayList<Chapter>();
-        var units = new ArrayList<LearnUnit>();
+        ArrayList<Chapter> chapters = new ArrayList<Chapter>();
+        ArrayList<LearnUnit> units = new ArrayList<LearnUnit>();
         String previousUnitCode = null;
         int unitSequence = 0;
         for (int chapterIndex = 0; chapterIndex < planChapters.size(); chapterIndex++) {
-            var planChapter = planChapters.get(chapterIndex);
-            var chapter = Chapter.create(planChapter.code(), planChapter.title(), chapterIndex);
+            JourneyApplicationService.PlanChapter planChapter = planChapters.get(chapterIndex);
+            Chapter chapter = Chapter.create(planChapter.code(), planChapter.title(), chapterIndex);
             chapters.add(chapter);
-            for (var planUnit : planChapter.units()) {
-                var prerequisites = previousUnitCode == null ? Set.<String>of() : Set.of(previousUnitCode);
+            for (JourneyApplicationService.PlanUnit planUnit : planChapter.units()) {
+                Set<String> prerequisites = previousUnitCode == null ? Set.<String>of() : Set.of(previousUnitCode);
                 units.add(LearnUnit.create(
                         planUnit.code(),
                         planUnit.title(),
@@ -258,32 +258,32 @@ public class JourneyApplicationService {
         if (root == null || !root.isObject() || !root.has("chapters") || !root.get("chapters").isArray()) {
             throw invalidPlan("规划必须包含 chapters 数组");
         }
-        var chapterNodes = root.get("chapters");
+        JsonNode chapterNodes = root.get("chapters");
         if (chapterNodes.isEmpty() || chapterNodes.size() > 50) {
             throw invalidPlan("chapters 数量必须在 1 到 50 之间");
         }
-        var chapterCodes = new HashSet<String>();
-        var unitCodes = new HashSet<String>();
-        var chapters = new ArrayList<PlanChapter>();
+        HashSet<String> chapterCodes = new HashSet<String>();
+        HashSet<String> unitCodes = new HashSet<String>();
+        ArrayList<JourneyApplicationService.PlanChapter> chapters = new ArrayList<PlanChapter>();
         int totalUnits = 0;
-        for (var chapterNode : chapterNodes) {
+        for (JsonNode chapterNode : chapterNodes) {
             if (!chapterNode.isObject()) {
                 throw invalidPlan("每个 chapter 必须是对象");
             }
-            var chapterCode = requiredText(chapterNode, "code");
+            String chapterCode = requiredText(chapterNode, "code");
             if (!chapterCode.matches("[a-z0-9]+(?:-[a-z0-9]+)*") || !chapterCodes.add(chapterCode)) {
                 throw invalidPlan("chapter code 必须是唯一的小写短横线编码");
             }
-            var unitNodes = chapterNode.get("units");
+            JsonNode unitNodes = chapterNode.get("units");
             if (unitNodes == null || !unitNodes.isArray() || unitNodes.isEmpty() || unitNodes.size() > 50) {
                 throw invalidPlan("每个 chapter 必须包含 1 到 50 个 units");
             }
-            var units = new ArrayList<PlanUnit>();
-            for (var unitNode : unitNodes) {
+            ArrayList<JourneyApplicationService.PlanUnit> units = new ArrayList<PlanUnit>();
+            for (JsonNode unitNode : unitNodes) {
                 if (!unitNode.isObject()) {
                     throw invalidPlan("每个 unit 必须是对象");
                 }
-                var unitCode = requiredText(unitNode, "code");
+                String unitCode = requiredText(unitNode, "code");
                 if (!unitCode.matches("[a-z0-9]+(?:-[a-z0-9]+)*") || !unitCodes.add(unitCode)) {
                     throw invalidPlan("unit code 必须是全局唯一的小写短横线编码");
                 }
@@ -305,8 +305,8 @@ public class JourneyApplicationService {
         try {
             return JSON.readTree(plan);
         } catch (JsonProcessingException error) {
-            var start = plan.indexOf('{');
-            var end = plan.lastIndexOf('}');
+            int start = plan.indexOf('{');
+            int end = plan.lastIndexOf('}');
             if (start < 0 || end <= start) {
                 throw error;
             }
@@ -315,7 +315,7 @@ public class JourneyApplicationService {
     }
 
     private String requiredText(JsonNode parent, String field) {
-        var value = parent.get(field);
+        JsonNode value = parent.get(field);
         if (value == null || !value.isTextual() || value.asText().isBlank()) {
             throw invalidPlan("字段 " + field + " 必须是非空文本");
         }

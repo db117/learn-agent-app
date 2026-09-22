@@ -23,14 +23,14 @@ class TutorLearningToolsTest {
 
     @Test
     void validatesAndPersistsCurrentUnitContentOnlyOnce() throws Exception {
-        var journey = learningJourney("");
-        var savedJourney = journey.materializeLearnUnitContent(
+        LearningJourney journey = learningJourney("");
+        LearningJourney savedJourney = journey.materializeLearnUnitContent(
                 "variables",
                 "## Concept\n变量保存值。\n\n## Example\nconst answer = 42;\n\n## Practice\n声明一个变量。");
-        var journeys = new StubJourneys(journey, savedJourney);
-        var tools = new TutorLearningTools(journeys);
+        TutorLearningToolsTest.StubJourneys journeys = new StubJourneys(journey, savedJourney);
+        TutorLearningTools tools = new TutorLearningTools(journeys);
 
-        var result = JSON.readTree(tools.saveLearningContent(context(journey), """
+        com.fasterxml.jackson.databind.JsonNode result = JSON.readTree(tools.saveLearningContent(context(journey), """
                 {"concept":"变量保存值。","example":"const answer = 42;","practice":"声明一个变量。"}
                 """));
 
@@ -38,24 +38,24 @@ class TutorLearningToolsTest {
         assertEquals(savedJourney.learnUnit("variables").content(), result.get("content").asText());
         assertEquals(savedJourney, journeys.current());
 
-        var reused = JSON.readTree(tools.saveLearningContent(
+        com.fasterxml.jackson.databind.JsonNode reused = JSON.readTree(tools.saveLearningContent(
                 context(savedJourney), "{\"concept\":\"ignored\",\"example\":\"ignored\",\"practice\":\"ignored\"}"));
         assertEquals(result.get("content").asText(), reused.get("content").asText());
     }
 
     @Test
     void rejectsIncompleteContent() {
-        var journey = learningJourney("");
-        var tools = new TutorLearningTools(new StubJourneys(journey, journey));
+        LearningJourney journey = learningJourney("");
+        TutorLearningTools tools = new TutorLearningTools(new StubJourneys(journey, journey));
 
-        var error = assertThrows(LearningRequestException.class,
+        LearningRequestException error = assertThrows(LearningRequestException.class,
                 () -> tools.saveLearningContent(context(journey), "{\"concept\":\"only\"}"));
 
         assertEquals("INVALID_LEARNING_CONTENT", error.code());
     }
 
     private static TutorContext context(LearningJourney journey) {
-        var unit = journey.learnUnit("variables");
+        LearnUnit unit = journey.learnUnit("variables");
         return new TutorContext(
                 1L,
                 "学习者",
@@ -77,11 +77,11 @@ class TutorLearningToolsTest {
     }
 
     private static LearningJourney learningJourney(String content) {
-        var chapter = Chapter.create("basics", "基础", 0);
-        var unit = LearnUnit.create(
+        Chapter chapter = Chapter.create("basics", "基础", 0);
+        LearnUnit unit = LearnUnit.create(
                 "variables", "变量与类型", "能够声明变量并理解基本类型", content, 0, chapter.code(), Set.of())
                 .withId(1L);
-        var created = LearningJourney.create(
+        LearningJourney created = LearningJourney.create(
                 1L,
                 "typescript",
                 "TypeScript 基础",

@@ -19,10 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TypeScriptWorkspaceToolchainTest {
     @Test
     void initializesAnIndependentWorkspaceThatCompilesAndRunsVitest() throws Exception {
-        var dataDir = Files.createTempDirectory("learn-agent-independent-workspace-");
+        Path dataDir = Files.createTempDirectory("learn-agent-independent-workspace-");
         try {
             assertNoAncestorNodeModules(dataDir);
-            var manager = new WorkspaceManager(new RuntimeConfig() {
+            WorkspaceManager manager = new WorkspaceManager(new RuntimeConfig() {
                 @Override
                 public String dataDir() {
                     return dataDir.toString();
@@ -35,15 +35,15 @@ class TypeScriptWorkspaceToolchainTest {
             });
             LearningWorkspace workspace = manager.ensureLearningWorkspace(1, new TypeScriptLanguagePack());
             assertFalse(Files.exists(workspace.root().resolve("node_modules")));
-            var environment = new LocalExecutionEnvironment(Duration.ofSeconds(60));
+            LocalExecutionEnvironment environment = new LocalExecutionEnvironment(Duration.ofSeconds(60));
 
-            var compile = environment.execute(workspace,
+            ExecutionResult compile = environment.execute(workspace,
                     new ExecutionRequest(ExecutionOperation.COMPILE, List.of()));
             assertTrue(compile.success(), compile.summary());
             assertTrue(Files.isDirectory(workspace.root().resolve("node_modules")),
                     "TypeScript dependencies must be installed inside the independent Workspace");
 
-            var tests = environment.execute(workspace,
+            ExecutionResult tests = environment.execute(workspace,
                     new ExecutionRequest(ExecutionOperation.RUN_TESTS, List.of()));
             assertTrue(tests.success(), tests.summary());
         } finally {
@@ -53,9 +53,9 @@ class TypeScriptWorkspaceToolchainTest {
 
     @Test
     void completesTheNestedNpmTypeScriptRuntimeExercise() throws Exception {
-        var dataDir = Files.createTempDirectory("learn-agent-ts-runtime-");
+        Path dataDir = Files.createTempDirectory("learn-agent-ts-runtime-");
         try {
-            var manager = new WorkspaceManager(new RuntimeConfig() {
+            WorkspaceManager manager = new WorkspaceManager(new RuntimeConfig() {
                 @Override
                 public String dataDir() {
                     return dataDir.toString();
@@ -66,11 +66,11 @@ class TypeScriptWorkspaceToolchainTest {
                     return false;
                 }
             });
-            var workspace = manager.learningWorkspace(1);
+            LearningWorkspace workspace = manager.learningWorkspace(1);
             Files.createDirectories(workspace.root());
-            var environment = new LocalExecutionEnvironment(Duration.ofMinutes(3));
+            LocalExecutionEnvironment environment = new LocalExecutionEnvironment(Duration.ofMinutes(3));
 
-            var initialized = environment.execute(workspace,
+            ExecutionResult initialized = environment.execute(workspace,
                     new ExecutionRequest(ExecutionOperation.INITIALIZE_NPM_PROJECT,
                             List.of("ts-runtime-practice")));
             assertTrue(initialized.success(), initialized.summary());
@@ -81,7 +81,7 @@ class TypeScriptWorkspaceToolchainTest {
                       "type": "module"
                     }
                     """);
-            var installed = environment.execute(workspace,
+            ExecutionResult installed = environment.execute(workspace,
                     new ExecutionRequest(ExecutionOperation.INSTALL_TYPESCRIPT,
                             List.of("ts-runtime-practice")));
             assertTrue(installed.success(), installed.summary());
@@ -105,12 +105,12 @@ class TypeScriptWorkspaceToolchainTest {
                     console.log(`${studentName}: score=${score}, passed=${passed}`);
                     """);
 
-            var compiled = environment.execute(workspace,
+            ExecutionResult compiled = environment.execute(workspace,
                     new ExecutionRequest(ExecutionOperation.COMPILE_PROJECT,
                             List.of("ts-runtime-practice")));
             assertTrue(compiled.success(), compiled.summary());
             assertTrue(Files.isRegularFile(workspace.root().resolve("ts-runtime-practice/dist/index.js")));
-            var ran = environment.execute(workspace,
+            ExecutionResult ran = environment.execute(workspace,
                     new ExecutionRequest(ExecutionOperation.RUN_PROGRAM,
                             List.of("ts-runtime-practice/dist/index.js")));
             assertTrue(ran.success(), ran.summary());
@@ -122,7 +122,7 @@ class TypeScriptWorkspaceToolchainTest {
                     const passed: boolean = score >= 60;
                     console.log(`${studentName}: score=${score}, passed=${passed}`);
                     """);
-            var broken = environment.execute(workspace,
+            ExecutionResult broken = environment.execute(workspace,
                     new ExecutionRequest(ExecutionOperation.COMPILE_PROJECT,
                             List.of("ts-runtime-practice")));
             assertFalse(broken.success(), broken.summary());
@@ -134,11 +134,11 @@ class TypeScriptWorkspaceToolchainTest {
                     const passed: boolean = score >= 60;
                     console.log(`${studentName}: score=${score}, passed=${passed}`);
                     """);
-            var repaired = environment.execute(workspace,
+            ExecutionResult repaired = environment.execute(workspace,
                     new ExecutionRequest(ExecutionOperation.COMPILE_PROJECT,
                             List.of("ts-runtime-practice")));
             assertTrue(repaired.success(), repaired.summary());
-            var reran = environment.execute(workspace,
+            ExecutionResult reran = environment.execute(workspace,
                     new ExecutionRequest(ExecutionOperation.RUN_PROGRAM,
                             List.of("ts-runtime-practice/dist/index.js")));
             assertTrue(reran.success(), reran.summary());
@@ -149,7 +149,7 @@ class TypeScriptWorkspaceToolchainTest {
     }
 
     private static void assertNoAncestorNodeModules(Path root) {
-        for (var current = root; current != null; current = current.getParent()) {
+        for (Path current = root; current != null; current = current.getParent()) {
             assertFalse(Files.isDirectory(current.resolve("node_modules")),
                     "isolated Workspace must not have an ancestor node_modules: " + current);
         }
@@ -157,7 +157,7 @@ class TypeScriptWorkspaceToolchainTest {
 
     private static void deleteTree(Path root) throws Exception {
         try (Stream<Path> paths = Files.walk(root)) {
-            for (var path : paths.sorted(Comparator.reverseOrder()).toList()) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
                 Files.deleteIfExists(path);
             }
         }

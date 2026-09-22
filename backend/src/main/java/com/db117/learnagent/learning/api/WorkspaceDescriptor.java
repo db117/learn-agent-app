@@ -1,6 +1,7 @@
 package com.db117.learnagent.learning.api;
 
 import com.db117.learnagent.workspace.domain.Workspace;
+import com.db117.learnagent.workspace.domain.WorkspaceReference;
 
 /**
  * Bootstrap 返回的稳定 Workspace 身份；不包含本地绝对路径。
@@ -14,7 +15,7 @@ public record WorkspaceDescriptor(
         long id,
         String reference) {
     public static WorkspaceDescriptor from(Workspace workspace) {
-        var reference = workspace.reference();
+        WorkspaceReference reference = workspace.reference();
         return new WorkspaceDescriptor(
                 reference.kind().name(),
                 reference.ownerId(),

@@ -41,31 +41,31 @@ class SqliteRepositoryTest {
 
     @Test
     void repositoriesRoundTripAggregatesAndEnforceJourneyBoundaries() throws Exception {
-        var dataSource = dataSource();
-        try (var anchor = dataSource.getConnection()) {
+        SQLiteDataSource dataSource = dataSource();
+        try (java.sql.Connection anchor = dataSource.getConnection()) {
             new SqliteSchemaInitializer(dataSource).initialize();
-            var learnerRepository = new SqliteLearnerRepository(dataSource);
-            var journeyRepository = new SqliteLearningJourneyRepository(dataSource);
-            var practiceRepository = new SqlitePracticeTaskRepository(dataSource);
-            var projectRepository = new SqliteProjectRepository(dataSource);
+            SqliteLearnerRepository learnerRepository = new SqliteLearnerRepository(dataSource);
+            SqliteLearningJourneyRepository journeyRepository = new SqliteLearningJourneyRepository(dataSource);
+            SqlitePracticeTaskRepository practiceRepository = new SqlitePracticeTaskRepository(dataSource);
+            SqliteProjectRepository projectRepository = new SqliteProjectRepository(dataSource);
 
-            var learner = learnerRepository.save(Learner.create("Alice", "Java engineer with ten years of experience", T0));
+            Learner learner = learnerRepository.save(Learner.create("Alice", "Java engineer with ten years of experience", T0));
             assertNotNull(learner.id());
-            var savedJourney = journeyRepository.save(journey(learner.id()));
+            LearningJourney savedJourney = journeyRepository.save(journey(learner.id()));
             assertNotNull(savedJourney.id());
 
-            var loadedJourney = journeyRepository.findById(savedJourney.id()).orElseThrow();
+            LearningJourney loadedJourney = journeyRepository.findById(savedJourney.id()).orElseThrow();
             assertEquals(List.of("variables", "loops"), loadedJourney.pathItems().stream()
                     .map(item -> item.learnUnitCode()).toList());
-            var movedJourney = journeyRepository.save(
+            LearningJourney movedJourney = journeyRepository.save(
                     loadedJourney.recordPracticeVerified("variables", T0.plusSeconds(3)));
-            var movedRoundTrip = journeyRepository.findActiveByLearnerAndLanguage(
+            LearningJourney movedRoundTrip = journeyRepository.findActiveByLearnerAndLanguage(
                     learner.id(), "java").orElseThrow();
             assertEquals(movedJourney.id(), movedRoundTrip.id());
             assertEquals(LearningPathItemStatus.COMPLETED, movedRoundTrip.pathItems().get(0).status());
 
-            var learnUnitId = savedJourney.learnUnit("variables").id();
-            var task = PracticeTask.create(
+            Long learnUnitId = savedJourney.learnUnit("variables").id();
+            PracticeTask task = PracticeTask.create(
                     savedJourney.id(),
                     learnUnitId,
                     "java",
@@ -76,29 +76,29 @@ class SqliteRepositoryTest {
                     "class Main {}",
                     new VerificationPolicy(true, false, false, false),
                     T0);
-            var failedTask = task.recordAttempt(PracticeAttempt.submit(
+            PracticeTask failedTask = task.recordAttempt(PracticeAttempt.submit(
                     new PracticeEvidence(false, false, 0, false, RuntimeResult.FAILED,
                             List.of("src/Main.java"), T0.plusSeconds(2)),
                     T0.plusSeconds(2)));
-            var savedTask = practiceRepository.save(failedTask);
-            var taskRoundTrip = practiceRepository.findById(savedTask.id()).orElseThrow();
+            PracticeTask savedTask = practiceRepository.save(failedTask);
+            PracticeTask taskRoundTrip = practiceRepository.findById(savedTask.id()).orElseThrow();
             assertEquals(1, taskRoundTrip.attempts().size());
 
-            var project = Project.create(
+            Project project = Project.create(
                     savedJourney.id(),
                     "Todo app",
                     List.of(ProjectMilestone.create("m1", "First milestone", 0)),
                     T0);
-            var savedProject = projectRepository.save(project);
-            var activeProject = projectRepository.save(savedProject.activate().startMilestone("m1"));
-            var completedProject = projectRepository.save(activeProject.recordEvidence(
+            Project savedProject = projectRepository.save(project);
+            Project activeProject = projectRepository.save(savedProject.activate().startMilestone("m1"));
+            Project completedProject = projectRepository.save(activeProject.recordEvidence(
                     "m1",
                     new ProjectEvidence("workspace://todo", "verified", true, T0.plusSeconds(3))));
-            var projectRoundTrip = projectRepository.findByJourneyId(savedJourney.id()).orElseThrow();
+            Project projectRoundTrip = projectRepository.findByJourneyId(savedJourney.id()).orElseThrow();
             assertEquals(completedProject.id(), projectRoundTrip.id());
             assertEquals(1, projectRoundTrip.milestones().get(0).evidence().size());
 
-            var sameLanguageJourney = journeyRepository.save(journey(learner.id()));
+            LearningJourney sameLanguageJourney = journeyRepository.save(journey(learner.id()));
             assertNotEquals(savedJourney.id(), sameLanguageJourney.id());
             assertThrows(IllegalStateException.class,
                     () -> projectRepository.save(Project.create(
@@ -112,24 +112,24 @@ class SqliteRepositoryTest {
 
     @Test
     void journeyRepositoryPersistsCurrentSelectionAndOneToOnePathLink() {
-        var dataSource = dataSource();
-        try (var anchor = dataSource.getConnection()) {
+        SQLiteDataSource dataSource = dataSource();
+        try (java.sql.Connection anchor = dataSource.getConnection()) {
             new SqliteSchemaInitializer(dataSource).initialize();
-            var learnerRepository = new SqliteLearnerRepository(dataSource);
-            var journeyRepository = new SqliteJourneyRepository(dataSource);
-            var learningJourneyRepository = new SqliteLearningJourneyRepository(dataSource);
+            SqliteLearnerRepository learnerRepository = new SqliteLearnerRepository(dataSource);
+            SqliteJourneyRepository journeyRepository = new SqliteJourneyRepository(dataSource);
+            SqliteLearningJourneyRepository learningJourneyRepository = new SqliteLearningJourneyRepository(dataSource);
 
-            var learner = learnerRepository.save(Learner.create("Alice", "Java engineer", T0));
-            var first = journeyRepository.selectCurrent(
+            Learner learner = learnerRepository.save(Learner.create("Alice", "Java engineer", T0));
+            Journey first = journeyRepository.selectCurrent(
                     journeyRepository.save(Journey.create(learner.id(), "Learn Java", T0)).id(), learner.id());
-            var second = journeyRepository.save(Journey.create(learner.id(), "Build a service", T0.plusSeconds(1)));
+            Journey second = journeyRepository.save(Journey.create(learner.id(), "Build a service", T0.plusSeconds(1)));
 
             assertEquals(first.id(), journeyRepository.findCurrentByLearnerId(learner.id()).orElseThrow().id());
-            var path = learningJourneyRepository.save(journey(learner.id()));
-            var linked = journeyRepository.attachLearningJourney(first.id(), path.id(), learner.id());
+            LearningJourney path = learningJourneyRepository.save(journey(learner.id()));
+            Journey linked = journeyRepository.attachLearningJourney(first.id(), path.id(), learner.id());
             assertEquals(path.id(), linked.learningJourneyId());
 
-            var selectedSecond = journeyRepository.selectCurrent(second.id(), learner.id());
+            Journey selectedSecond = journeyRepository.selectCurrent(second.id(), learner.id());
             assertTrue(selectedSecond.current());
             assertFalse(journeyRepository.findById(first.id()).orElseThrow().current());
             assertEquals(2, journeyRepository.findByLearnerId(learner.id()).size());
@@ -140,18 +140,18 @@ class SqliteRepositoryTest {
 
     @Test
     void journeyRepositoryPersistsContentGeneratedAfterPathConfirmation() {
-        var dataSource = dataSource();
-        try (var anchor = dataSource.getConnection()) {
+        SQLiteDataSource dataSource = dataSource();
+        try (java.sql.Connection anchor = dataSource.getConnection()) {
             new SqliteSchemaInitializer(dataSource).initialize();
-            var learnerRepository = new SqliteLearnerRepository(dataSource);
-            var journeyRepository = new SqliteLearningJourneyRepository(dataSource);
-            var learner = learnerRepository.save(Learner.create("Alice", "Java engineer", T0));
-            var saved = journeyRepository.save(outlineJourney(learner.id()));
+            SqliteLearnerRepository learnerRepository = new SqliteLearnerRepository(dataSource);
+            SqliteLearningJourneyRepository journeyRepository = new SqliteLearningJourneyRepository(dataSource);
+            Learner learner = learnerRepository.save(Learner.create("Alice", "Java engineer", T0));
+            LearningJourney saved = journeyRepository.save(outlineJourney(learner.id()));
 
             journeyRepository.save(saved.materializeLearnUnitContent(
                     "variables", "## Concept\nVariables\n## Practice\nFix variables"));
 
-            var loaded = journeyRepository.findById(saved.id()).orElseThrow();
+            LearningJourney loaded = journeyRepository.findById(saved.id()).orElseThrow();
             assertEquals("## Concept\nVariables\n## Practice\nFix variables",
                     loaded.learnUnit("variables").content());
         } catch (SQLException error) {
@@ -161,8 +161,8 @@ class SqliteRepositoryTest {
 
     @Test
     void initializerRejectsUnknownExistingBusinessTables() throws SQLException {
-        var dataSource = dataSource();
-        try (var connection = dataSource.getConnection()) {
+        SQLiteDataSource dataSource = dataSource();
+        try (java.sql.Connection connection = dataSource.getConnection()) {
             connection.createStatement().execute("CREATE TABLE legacy_business(id INTEGER)");
             assertThrows(IllegalStateException.class,
                     () -> new SqliteSchemaInitializer(dataSource).initialize());
@@ -170,17 +170,17 @@ class SqliteRepositoryTest {
     }
 
     private SQLiteDataSource dataSource() {
-        var dataSource = new SQLiteDataSource();
+        SQLiteDataSource dataSource = new SQLiteDataSource();
         dataSource.setUrl("jdbc:sqlite:file:step2-" + UUID.randomUUID()
                 + "?mode=memory&cache=shared");
         return dataSource;
     }
 
     private LearningJourney journey(long learnerId) {
-        var chapter = Chapter.create("basics", "Basics", 0);
-        var variables = LearnUnit.create(
+        Chapter chapter = Chapter.create("basics", "Basics", 0);
+        LearnUnit variables = LearnUnit.create(
                 "variables", "Variables", "Use values", "Variables content", 0, "basics", Set.of());
-        var loops = LearnUnit.create(
+        LearnUnit loops = LearnUnit.create(
                 "loops", "Loops", "Repeat work", "Loops content", 1, "basics", Set.of("variables"));
         return LearningJourney.create(
                 learnerId,
@@ -192,8 +192,8 @@ class SqliteRepositoryTest {
     }
 
     private LearningJourney outlineJourney(long learnerId) {
-        var chapter = Chapter.create("basics", "Basics", 0);
-        var variables = LearnUnit.create(
+        Chapter chapter = Chapter.create("basics", "Basics", 0);
+        LearnUnit variables = LearnUnit.create(
                 "variables", "Variables", "Use values", "", 0, "basics", Set.of());
         return LearningJourney.create(
                 learnerId,

@@ -7,7 +7,12 @@ import com.db117.learnagent.learning.application.JourneyApplicationService;
 import com.db117.learnagent.learning.domain.Chapter;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -17,21 +22,23 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TutorPracticeToolsTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @Test
     void savesRedactedQuestionAndRecordsChoiceEvidence() throws Exception {
-        var journey = learningJourney();
-        var updated = journey.recordPracticeVerified("variables", Instant.parse("2026-01-01T00:01:00Z"));
-        var journeys = new StubJourneys(journey, updated);
-        var tasks = new InMemoryPracticeTasks(verifiedCodeTask());
-        var tools = new TutorPracticeTools(journeys, tasks);
-        var context = context(journey);
+        LearningJourney journey = learningJourney();
+        LearningJourney updated = journey.recordPracticeVerified("variables", Instant.parse("2026-01-01T00:01:00Z"));
+        TutorPracticeToolsTest.StubJourneys journeys = new StubJourneys(journey, updated);
+        TutorPracticeToolsTest.InMemoryPracticeTasks tasks = new InMemoryPracticeTasks(verifiedCodeTask());
+        TutorPracticeTools tools = new TutorPracticeTools(journeys, tasks);
+        TutorContext context = context(journey);
 
-        var saved = JSON.readTree(tools.savePracticeTest(context, """
+        com.fasterxml.jackson.databind.JsonNode saved = JSON.readTree(tools.savePracticeTest(context, """
                 {"prompt":"哪一项声明了变量类型？","options":[
                   {"id":"a","label":"const answer: number = 1"},
                   {"id":"b","label":"const answer = 1"},
@@ -45,12 +52,12 @@ class TutorPracticeToolsTest {
         assertFalse(saved.has("correctOptionId"));
         assertEquals(4, saved.get("options").size());
 
-        var wrong = JSON.readTree(tools.verifyPracticeTest(context, saved.get("taskId").asLong(), "b"));
+        com.fasterxml.jackson.databind.JsonNode wrong = JSON.readTree(tools.verifyPracticeTest(context, saved.get("taskId").asLong(), "b"));
         assertFalse(wrong.get("verified").asBoolean());
         assertFalse(wrong.get("choiceCorrect").asBoolean());
         assertEquals(1, tasks.task().attempts().size());
 
-        var correct = JSON.readTree(tools.verifyPracticeTest(context, saved.get("taskId").asLong(), "a"));
+        com.fasterxml.jackson.databind.JsonNode correct = JSON.readTree(tools.verifyPracticeTest(context, saved.get("taskId").asLong(), "a"));
         assertTrue(correct.get("verified").asBoolean());
         assertTrue(correct.get("choiceCorrect").asBoolean());
         assertEquals("VERIFIED", tasks.task().status().name());
@@ -58,7 +65,7 @@ class TutorPracticeToolsTest {
     }
 
     private static TutorContext context(LearningJourney journey) {
-        var unit = journey.learnUnit("variables");
+        LearnUnit unit = journey.learnUnit("variables");
         return new TutorContext(
                 1L,
                 "学习者",
@@ -80,8 +87,8 @@ class TutorPracticeToolsTest {
     }
 
     private static LearningJourney learningJourney() {
-        var chapter = Chapter.create("basics", "基础", 0);
-        var unit = LearnUnit.create(
+        Chapter chapter = Chapter.create("basics", "基础", 0);
+        LearnUnit unit = LearnUnit.create(
                 "variables",
                 "变量与类型",
                 "能够声明变量并理解基本类型",
@@ -89,7 +96,7 @@ class TutorPracticeToolsTest {
                 0,
                 chapter.code(),
                 Set.of()).withId(1L);
-        var created = LearningJourney.create(
+        LearningJourney created = LearningJourney.create(
                 1L,
                 "typescript",
                 "TypeScript 基础",
@@ -100,7 +107,7 @@ class TutorPracticeToolsTest {
     }
 
     private static PracticeTask verifiedCodeTask() {
-        var task = PracticeTask.create(
+        PracticeTask task = PracticeTask.create(
                 1L,
                 1L,
                 "typescript",
@@ -111,7 +118,7 @@ class TutorPracticeToolsTest {
                 "",
                 new VerificationPolicy(true, true, false, false),
                 Instant.parse("2026-01-01T00:00:00Z"));
-        var evidence = new PracticeEvidence(
+        PracticeEvidence evidence = new PracticeEvidence(
                 true,
                 true,
                 1,
@@ -119,7 +126,7 @@ class TutorPracticeToolsTest {
                 RuntimeResult.NOT_RUN,
                 List.of("src/index.ts"),
                 Instant.parse("2026-01-01T00:00:30Z"));
-        var verified = task.recordAttempt(PracticeAttempt.submit(
+        PracticeTask verified = task.recordAttempt(PracticeAttempt.submit(
                 evidence, Instant.parse("2026-01-01T00:00:30Z")));
         return verified.withPersistedIds(99L, verified.attempts());
     }
@@ -159,7 +166,7 @@ class TutorPracticeToolsTest {
 
         @Override
         public PracticeTask save(PracticeTask candidate) {
-            var persisted = candidate.id() == null
+            PracticeTask persisted = candidate.id() == null
                     ? candidate.withPersistedIds(tasks.size() + 1L, candidate.attempts())
                     : candidate;
             tasks.removeIf(value -> value.id().equals(persisted.id()));

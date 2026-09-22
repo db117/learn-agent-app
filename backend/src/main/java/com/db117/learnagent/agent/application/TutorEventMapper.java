@@ -31,17 +31,17 @@ final class TutorEventMapper {
             return List.of();
         }
 
-        var projections = new ArrayList<Projection>();
-        for (var block : event.getMessage().getContentBlocks(ToolResultBlock.class)) {
-            var toolName = block.getName() == null || block.getName().isBlank()
+        ArrayList<TutorEventMapper.Projection> projections = new ArrayList<Projection>();
+        for (ToolResultBlock block : event.getMessage().getContentBlocks(ToolResultBlock.class)) {
+            String toolName = block.getName() == null || block.getName().isBlank()
                     ? "工具" : block.getName();
-            var failed = block.getState() != null && "ERROR".equals(block.getState().name());
-            var type = failed
+            boolean failed = block.getState() != null && "ERROR".equals(block.getState().name());
+            TutorEventType type = failed
                     ? TutorEventType.TOOL_FAILED
                     : "load_skill_through_path".equals(toolName)
                     ? TutorEventType.SKILL_LOADED
                     : TutorEventType.TOOL_COMPLETED;
-            var errorCode = failed ? "TOOL_FAILED" : null;
+            String errorCode = failed ? "TOOL_FAILED" : null;
             projections.add(new Projection(
                     type,
                     failed

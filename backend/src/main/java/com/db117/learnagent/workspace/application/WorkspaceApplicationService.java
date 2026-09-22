@@ -45,11 +45,11 @@ public final class WorkspaceApplicationService {
 
     /** Bootstrap 时只初始化当前 Journey 已关联的 LearningJourney。 */
     public Optional<LearningWorkspace> ensureCurrentLearningWorkspace() {
-        var learner = learnerRepository.findCurrent();
+        Optional<com.db117.learnagent.learning.domain.Learner> learner = learnerRepository.findCurrent();
         if (learner.isEmpty()) {
             return Optional.empty();
         }
-        var journey = journeyRepository.findCurrentByLearnerId(learner.get().id());
+        Optional<Journey> journey = journeyRepository.findCurrentByLearnerId(learner.get().id());
         if (journey.isEmpty() || journey.get().learningJourneyId() == null) {
             return Optional.empty();
         }
@@ -58,8 +58,8 @@ public final class WorkspaceApplicationService {
 
     /** 返回指定用户 Journey 的已初始化 Workspace；规划阶段不允许写文件。 */
     public LearningWorkspace learningWorkspace(long journeyId) {
-        var learnerId = currentLearnerId();
-        var journey = ownedJourney(journeyId, learnerId);
+        long learnerId = currentLearnerId();
+        Journey journey = ownedJourney(journeyId, learnerId);
         if (journey.learningJourneyId() == null) {
             throw LearningRequestException.conflict(
                     "WORKSPACE_NOT_READY", "该 Journey 尚未生成 LearningJourney");
@@ -69,8 +69,8 @@ public final class WorkspaceApplicationService {
 
     /** 返回指定用户 Project 的已初始化 Workspace。 */
     public ProjectWorkspace projectWorkspace(long projectId) {
-        var learnerId = currentLearnerId();
-        var project = projectRepository.findById(projectId)
+        long learnerId = currentLearnerId();
+        com.db117.learnagent.project.domain.Project project = projectRepository.findById(projectId)
                 .filter(value -> ownsJourney(value.journeyId(), learnerId))
                 .orElseThrow(() -> LearningRequestException.notFound(
                         "PROJECT_NOT_FOUND", "Project 不存在"));
@@ -82,11 +82,11 @@ public final class WorkspaceApplicationService {
     }
 
     private LearningWorkspace ensureLearningWorkspace(Journey journey, long learnerId) {
-        var learningJourney = learningJourneyRepository.findById(journey.learningJourneyId())
+        LearningJourney learningJourney = learningJourneyRepository.findById(journey.learningJourneyId())
                 .filter(value -> value.learnerId() == learnerId)
                 .orElseThrow(() -> new WorkspaceInitializationException(
                         new IllegalStateException("LearningJourney is missing or owned by another learner")));
-        var languagePack = languagePack(learningJourney);
+        LanguagePack languagePack = languagePack(learningJourney);
         try {
             return workspaceManager.ensureLearningWorkspace(journey.id(), languagePack);
         } catch (IOException error) {

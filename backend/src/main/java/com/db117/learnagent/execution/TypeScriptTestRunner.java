@@ -22,7 +22,7 @@ public final class TypeScriptTestRunner {
 
     /** 执行一次受限 Vitest 测试，并从汇总行解析实际测试数量。 */
     public TypeScriptTestResult run(Workspace workspace, List<String> testPaths) {
-        var execution = executionEnvironment.execute(
+        ExecutionResult execution = executionEnvironment.execute(
                 workspace, new ExecutionRequest(ExecutionOperation.RUN_TESTS, testPaths));
         return new TypeScriptTestResult(execution, parseTestCount(execution.summary()));
     }
@@ -31,10 +31,10 @@ public final class TypeScriptTestRunner {
         if (summary == null || summary.isBlank()) {
             return 0;
         }
-        var testCount = 0;
-        for (var line : summary.lines().toList()) {
+        int testCount = 0;
+        for (String line : summary.lines().toList()) {
             // Vitest 在 Windows 的进程输出中保留颜色控制码，先清理再解析稳定的汇总行。
-            var matcher = TEST_SUMMARY.matcher(ANSI_SGR.matcher(line).replaceAll(""));
+            java.util.regex.Matcher matcher = TEST_SUMMARY.matcher(ANSI_SGR.matcher(line).replaceAll(""));
             if (!matcher.matches()) {
                 continue;
             }

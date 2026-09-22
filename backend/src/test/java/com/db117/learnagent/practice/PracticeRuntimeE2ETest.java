@@ -67,23 +67,23 @@ class PracticeRuntimeE2ETest {
 
     @Test
     void completesARealPracticeFailureFixAndAdvancesFlow() throws Exception {
-        var learner = put("/api/learner", "{\"backgroundSummary\":\"TypeScript learner\"}", 200);
+        HttpResponse<String> learner = put("/api/learner", "{\"backgroundSummary\":\"TypeScript learner\"}", 200);
         assertTrue(learner.body().contains("\"id\":"));
 
-        var journey = post("/api/journeys", "{\"goalDescription\":\"Practice TypeScript\"}", 200);
+        HttpResponse<String> journey = post("/api/journeys", "{\"goalDescription\":\"Practice TypeScript\"}", 200);
         long journeyId = jsonLong(journey.body(), "id");
         post("/api/journeys/" + journeyId + "/confirm-plan",
                 "{\"plan\":" + jsonString(PLAN) + "}", 200);
         long learningJourneyId = jsonLong(
                 get("/api/bootstrap", 200).body(), "learningJourneyId");
-        var learning = get("/api/journeys/" + journeyId + "/learning", 200);
+        HttpResponse<String> learning = get("/api/journeys/" + journeyId + "/learning", 200);
         assertTrue(learning.body().contains("\"currentLearnUnitContent\":"));
         assertTrue(learning.body().contains("\"currentLearnUnitContent\":\"\""));
 
-        var files = get("/api/journeys/" + journeyId + "/workspace/files", 200);
+        HttpResponse<String> files = get("/api/journeys/" + journeyId + "/workspace/files", 200);
         assertTrue(files.body().contains("src/index.ts"));
 
-        var initialVerification = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
+        HttpResponse<String> initialVerification = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
         assertTrue(initialVerification.body().contains("\"verified\":false"));
         long taskId = jsonLong(initialVerification.body(), "taskId");
         assertEquals("能够声明变量并理解基本类型",
@@ -96,18 +96,18 @@ class PracticeRuntimeE2ETest {
                         + "import { answer } from \"./index.ts\";\n"
                         + "it(\"returns the answer\", () => assert.equal(answer, 42));\n", 200);
 
-        var failedCompile = post("/api/journeys/" + journeyId + "/practice/compile", null, 200);
+        HttpResponse<String> failedCompile = post("/api/journeys/" + journeyId + "/practice/compile", null, 200);
         assertTrue(failedCompile.body().contains("\"success\":false"));
         assertTrue(failedCompile.body().contains("TS2322"));
 
-        var failedTests = post("/api/journeys/" + journeyId + "/practice/tests", null, 200);
+        HttpResponse<String> failedTests = post("/api/journeys/" + journeyId + "/practice/tests", null, 200);
         assertTrue(failedTests.body().contains("\"success\":false"));
         assertTrue(failedTests.body().contains("\"passed\":false"));
 
-        var failedVerification = post(
+        HttpResponse<String> failedVerification = post(
                 "/api/journeys/" + journeyId + "/practice/verify", null, 200);
         assertTrue(failedVerification.body().contains("\"verified\":false"));
-        var taskAfterFailure = practiceTasks.findById(taskId).orElseThrow();
+        com.db117.learnagent.practice.domain.PracticeTask taskAfterFailure = practiceTasks.findById(taskId).orElseThrow();
         assertEquals(2, taskAfterFailure.attempts().size());
         assertEquals("OPEN", taskAfterFailure.status().name());
         assertFalse(taskAfterFailure.attempts().getLast().evidence().compilePassed());
@@ -117,35 +117,35 @@ class PracticeRuntimeE2ETest {
         putFile("/api/journeys/" + journeyId + "/workspace/files/src/index.ts",
                 "export const answer: number = 42;", 200);
 
-        var passedCompile = post("/api/journeys/" + journeyId + "/practice/compile", null, 200);
+        HttpResponse<String> passedCompile = post("/api/journeys/" + journeyId + "/practice/compile", null, 200);
         assertTrue(passedCompile.body().contains("\"success\":true"));
-        var passedTests = post("/api/journeys/" + journeyId + "/practice/tests", null, 200);
+        HttpResponse<String> passedTests = post("/api/journeys/" + journeyId + "/practice/tests", null, 200);
         assertTrue(passedTests.body().contains("\"success\":true"));
         assertTrue(passedTests.body().contains("\"passed\":true"));
         assertTrue(passedTests.body().contains("\"testCount\":1"));
 
-        var verified = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
+        HttpResponse<String> verified = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
         assertTrue(verified.body().contains("\"verified\":true"));
         assertTrue(verified.body().contains("\"status\":\"VERIFIED\""));
         assertSafeVerifyResponse(verified.body());
-        var taskAfterVerification = practiceTasks.findById(taskId).orElseThrow();
+        com.db117.learnagent.practice.domain.PracticeTask taskAfterVerification = practiceTasks.findById(taskId).orElseThrow();
         assertEquals(3, taskAfterVerification.attempts().size());
-        var evidence = taskAfterVerification.attempts().getLast().evidence();
+        com.db117.learnagent.practice.domain.PracticeEvidence evidence = taskAfterVerification.attempts().getLast().evidence();
         assertTrue(evidence.compilePassed());
         assertTrue(evidence.testsPassed());
         assertEquals(1, evidence.testCount());
         assertNotNull(evidence.verifiedAt());
 
-        var secondVerification = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
+        HttpResponse<String> secondVerification = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
         assertTrue(secondVerification.body().contains("\"verified\":true"));
         assertSafeVerifyResponse(secondVerification.body());
         long secondTaskId = jsonLong(secondVerification.body(), "taskId");
-        var secondTask = practiceTasks.findById(secondTaskId).orElseThrow();
+        com.db117.learnagent.practice.domain.PracticeTask secondTask = practiceTasks.findById(secondTaskId).orElseThrow();
         assertEquals("CODE", secondTask.type());
         assertEquals("VERIFIED", secondTask.status().name());
         assertEquals(1, secondTask.attempts().size());
 
-        var persisted = learningJourneys.findById(learningJourneyId).orElseThrow();
+        com.db117.learnagent.learning.domain.LearningJourney persisted = learningJourneys.findById(learningJourneyId).orElseThrow();
         assertEquals("COMPLETED", persisted.status().name());
         assertEquals(LearningPathItemStatus.COMPLETED, persisted.pathItems().getFirst().status());
         assertEquals(LearningPathItemStatus.COMPLETED, persisted.pathItems().getLast().status());
@@ -159,7 +159,7 @@ class PracticeRuntimeE2ETest {
     }
 
     private HttpResponse<String> post(String path, String body, int expectedStatus) throws Exception {
-        var request = HttpRequest.newBuilder(url(path).toURI())
+        HttpRequest request = HttpRequest.newBuilder(url(path).toURI())
                 .header("Content-Type", "application/json")
                 .POST(body == null
                         ? HttpRequest.BodyPublishers.noBody()
@@ -169,7 +169,7 @@ class PracticeRuntimeE2ETest {
     }
 
     private HttpResponse<String> put(String path, String body, int expectedStatus) throws Exception {
-        var request = HttpRequest.newBuilder(url(path).toURI())
+        HttpRequest request = HttpRequest.newBuilder(url(path).toURI())
                 .header("Content-Type", "application/json")
                 .PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
@@ -181,7 +181,7 @@ class PracticeRuntimeE2ETest {
     }
 
     private HttpResponse<String> send(HttpRequest request, int expectedStatus) throws Exception {
-        var response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(expectedStatus, response.statusCode(), response.uri() + "\n" + response.body());
         return response;
     }
@@ -205,13 +205,13 @@ class PracticeRuntimeE2ETest {
 
     /** 锁定 Practice REST 对 UI 的安全摘要契约；不把运行时内部数据带出边界。 */
     private static void assertSafeVerifyResponse(String body) {
-        var fields = Set.of(
+        Set<String> fields = Set.of(
                 "taskId", "status", "verified", "compilePassed", "testsPassed", "testCount",
                 "submittedFiles", "verifiedAt", "learningJourneyStatus", "currentLearnUnitCode", "advanced");
-        for (var field : fields) {
+        for (String field : fields) {
             assertTrue(body.contains("\"" + field + "\":"), () -> "Missing VerifyResponse field: " + field);
         }
-        for (var forbidden : List.of(
+        for (String forbidden : List.of(
                 "hostPath", "stdout", "stderr", "prompt", "answer", "secret", "reasoning", "practice.verified")) {
             assertFalse(body.contains("\"" + forbidden + "\":"),
                     () -> "Unsafe or out-of-band field leaked: " + forbidden);

@@ -19,7 +19,7 @@ class TypeScriptCompilerTest {
 
     @Test
     void convertsCommonTscDiagnosticsAndPreservesExecutionResult() {
-        var execution = new ExecutionResult(false, 2, """
+        ExecutionResult execution = new ExecutionResult(false, 2, """
                 stdout:
                 
                 stderr:
@@ -27,33 +27,33 @@ class TypeScriptCompilerTest {
                 src/other.ts:4:2 - warning TS6133: 'unused' is declared but its value is never read.
                 Found 2 errors.
                 """, Duration.ofMillis(12));
-        var expectedWorkspace = workspace();
-        var compiler = new TypeScriptCompiler((actualWorkspace, request) -> {
+        Workspace expectedWorkspace = workspace();
+        TypeScriptCompiler compiler = new TypeScriptCompiler((actualWorkspace, request) -> {
             assertEquals(expectedWorkspace, actualWorkspace);
             assertEquals(ExecutionOperation.COMPILE, request.operation());
             assertEquals(List.of("src/index.ts"), request.arguments());
             return execution;
         });
 
-        var result = compiler.compile(expectedWorkspace, List.of("src/index.ts"));
+        TypeScriptCompileResult result = compiler.compile(expectedWorkspace, List.of("src/index.ts"));
 
         assertEquals(execution, result.execution());
         assertEquals(2, result.diagnostics().size());
-        var error = result.diagnostics().getFirst();
+        TypeScriptDiagnostic error = result.diagnostics().getFirst();
         assertEquals("src/index.ts", error.file());
         assertEquals(1, error.line());
         assertEquals(7, error.column());
         assertEquals("TS2322", error.code());
         assertEquals(TypeScriptDiagnostic.Severity.ERROR, error.severity());
         assertTrue(error.message().contains("not assignable"));
-        var warning = result.diagnostics().get(1);
+        TypeScriptDiagnostic warning = result.diagnostics().get(1);
         assertEquals(TypeScriptDiagnostic.Severity.WARNING, warning.severity());
     }
 
     @Test
     void returnsNoDiagnosticsForSuccessfulCompilation() {
-        var execution = new ExecutionResult(true, 0, "stdout:\n\nstderr:\n", Duration.ZERO);
-        var result = new TypeScriptCompiler((workspace, request) -> execution)
+        ExecutionResult execution = new ExecutionResult(true, 0, "stdout:\n\nstderr:\n", Duration.ZERO);
+        TypeScriptCompileResult result = new TypeScriptCompiler((workspace, request) -> execution)
                 .compile(workspace(), List.of());
 
         assertTrue(result.execution().success());

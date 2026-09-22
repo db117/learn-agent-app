@@ -170,7 +170,7 @@ public class TutorAgentRuntime {
     }
 
     private HarnessAgent buildAgent() {
-        var toolkit = new Toolkit();
+        Toolkit toolkit = new Toolkit();
         if (workspaceTools != null) {
             toolkit.registerTool(workspaceTools);
         }
@@ -182,7 +182,7 @@ public class TutorAgentRuntime {
             toolkit.registerTool(practiceTools);
             registerPracticeToolGroup(toolkit);
         }
-        var applicationTools = Set.copyOf(toolkit.getToolNames());
+        Set<String> applicationTools = Set.copyOf(toolkit.getToolNames());
         try {
             skillRepository = new ApplicationClasspathSkillRepository(
                     "skills", "learn-agent-built-in", TutorAgentRuntime.class.getClassLoader());
@@ -190,7 +190,7 @@ public class TutorAgentRuntime {
             throw new IllegalStateException("Unable to load built-in Agent Skills", error);
         }
 
-        var builder = HarnessAgent.builder()
+        HarnessAgent.Builder builder = HarnessAgent.builder()
                 .name("TutorAgent")
                 .agentId(AGENT_ID)
                 .sysPrompt(SYSTEM_PROMPT)
@@ -226,15 +226,15 @@ public class TutorAgentRuntime {
                     .disableWorkspaceContext();
         }
 
-        var built = builder.build();
+        HarnessAgent built = builder.build();
 
         // Harness 可能自动注册默认工具；只保留本应用明确注册的工具，避免 shell/文件系统默认能力回流。
-        var expectedTools = new HashSet<>(applicationTools);
+        HashSet<String> expectedTools = new HashSet<>(applicationTools);
         expectedTools.add(SKILL_LOAD_TOOL);
         if (memoryEnabled) {
             expectedTools.addAll(MEMORY_TOOLS);
         }
-        for (var toolName : new HashSet<>(built.getToolkit().getToolNames())) {
+        for (String toolName : new HashSet<>(built.getToolkit().getToolNames())) {
             if (!expectedTools.contains(toolName)) {
                 built.getToolkit().removeTool(toolName);
             }

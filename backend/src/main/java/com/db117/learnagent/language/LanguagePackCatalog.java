@@ -22,12 +22,12 @@ public class LanguagePackCatalog {
         if (languagePacks == null) {
             throw new IllegalArgumentException("languagePacks must not be null");
         }
-        var packs = new LinkedHashMap<String, LanguagePack>();
+        LinkedHashMap<String, LanguagePack> packs = new LinkedHashMap<String, LanguagePack>();
         for (LanguagePack languagePack : languagePacks) {
             if (languagePack == null) {
                 throw new IllegalArgumentException("languagePack must not be null");
             }
-            var id = languagePack.id();
+            String id = languagePack.id();
             if (id == null || id.isBlank()) {
                 throw new IllegalStateException("Language pack id must not be blank");
             }
@@ -43,7 +43,7 @@ public class LanguagePackCatalog {
         if (id == null || id.isBlank()) {
             throw new IllegalArgumentException("languagePackId must not be blank");
         }
-        var languagePack = packsById.get(id);
+        LanguagePack languagePack = packsById.get(id);
         if (languagePack == null) {
             throw new IllegalArgumentException("Unknown language pack id: " + id);
         }

@@ -29,7 +29,7 @@ public class RuntimeInitializer {
         try {
             Files.createDirectories(Path.of(config.dataDir()).resolve("db"));
             try (Connection connection = dataSource.getConnection()) {
-                try (var statement = connection.createStatement()) {
+                try (java.sql.Statement statement = connection.createStatement()) {
                     statement.execute("PRAGMA foreign_keys = ON");
                 }
             }

@@ -36,12 +36,12 @@ public record LearningProgressResponse(
 
     public static LearningProgressResponse from(long journeyId, LearningJourney journey) {
         Objects.requireNonNull(journey, "journey must not be null");
-        var currentItem = journey.currentItem();
-        var currentUnit = currentItem == null ? null : journey.learnUnit(currentItem.learnUnitCode());
-        var completedCount = (int) journey.pathItems().stream()
+        com.db117.learnagent.learning.domain.LearningPathItem currentItem = journey.currentItem();
+        com.db117.learnagent.learning.domain.LearnUnit currentUnit = currentItem == null ? null : journey.learnUnit(currentItem.learnUnitCode());
+        int completedCount = (int) journey.pathItems().stream()
                 .filter(item -> item.status() == LearningPathItemStatus.COMPLETED)
                 .count();
-        var chapters = journey.chapters().stream()
+        List<LearningProgressResponse.ChapterProgress> chapters = journey.chapters().stream()
                 .map(chapter -> new ChapterProgress(
                         chapter.code(),
                         chapter.title(),

@@ -26,14 +26,14 @@ public final class TypeScriptCompiler {
 
     /** 执行一次受限 TypeScript 编译，并解析 tsc 摘要中的诊断首行。 */
     public TypeScriptCompileResult compile(Workspace workspace, List<String> sourcePaths) {
-        var execution = executionEnvironment.execute(
+        ExecutionResult execution = executionEnvironment.execute(
                 workspace, new ExecutionRequest(ExecutionOperation.COMPILE, sourcePaths));
         return new TypeScriptCompileResult(execution, parseDiagnostics(execution.summary()));
     }
 
     /** 在指定 Workspace 子项目中执行会生成 JavaScript 的固定 npx tsc。 */
     public TypeScriptCompileResult compileProject(Workspace workspace, String projectPath) {
-        var execution = executionEnvironment.execute(
+        ExecutionResult execution = executionEnvironment.execute(
                 workspace, new ExecutionRequest(ExecutionOperation.COMPILE_PROJECT, List.of(projectPath)));
         return new TypeScriptCompileResult(execution, parseDiagnostics(execution.summary()));
     }
@@ -42,9 +42,9 @@ public final class TypeScriptCompiler {
         if (summary == null || summary.isBlank()) {
             return List.of();
         }
-        var diagnostics = new ArrayList<TypeScriptDiagnostic>();
+        ArrayList<TypeScriptDiagnostic> diagnostics = new ArrayList<TypeScriptDiagnostic>();
         summary.lines().forEach(line -> {
-            var diagnostic = parseDiagnostic(line);
+            TypeScriptDiagnostic diagnostic = parseDiagnostic(line);
             if (diagnostic != null) {
                 diagnostics.add(diagnostic);
             }
@@ -53,14 +53,14 @@ public final class TypeScriptCompiler {
     }
 
     private static TypeScriptDiagnostic parseDiagnostic(String line) {
-        var matcher = PARENTHESIZED_DIAGNOSTIC.matcher(line);
+        java.util.regex.Matcher matcher = PARENTHESIZED_DIAGNOSTIC.matcher(line);
         if (!matcher.matches()) {
             matcher = COLON_DIAGNOSTIC.matcher(line);
             if (!matcher.matches()) {
                 return null;
             }
         }
-        var message = matcher.group(6).trim();
+        String message = matcher.group(6).trim();
         if (message.isBlank()) {
             return null;
         }

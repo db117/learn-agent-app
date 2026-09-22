@@ -1,9 +1,13 @@
 package com.db117.learnagent.persistence.sqlite;
 
-import com.db117.learnagent.project.domain.*;
+import com.db117.learnagent.project.domain.Project;
+import com.db117.learnagent.project.domain.ProjectEvidence;
+import com.db117.learnagent.project.domain.ProjectMilestone;
+import com.db117.learnagent.project.domain.ProjectMilestoneStatus;
+import com.db117.learnagent.project.domain.ProjectRepository;
+import com.db117.learnagent.project.domain.ProjectStatus;
 import jakarta.enterprise.context.ApplicationScoped;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -12,6 +16,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import javax.sql.DataSource;
 
 /** Project 聚合的 SQLite 适配器；Milestone 证据只追加，不覆盖既有历史。 */
 @ApplicationScoped
@@ -24,11 +29,11 @@ public class SqliteProjectRepository implements ProjectRepository {
 
     @Override
     public Project save(Project project) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             connection.setAutoCommit(false);
             try {
-                var saved = project.id() == null
+                Project saved = project.id() == null
                         ? insertNew(connection, project)
                         : updateExisting(connection, project);
                 connection.commit();
@@ -44,7 +49,7 @@ public class SqliteProjectRepository implements ProjectRepository {
 
     @Override
     public Optional<Project> findById(long id) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             return readProject(connection, "WHERE id = ?", statement -> statement.setLong(1, id));
         } catch (SQLException error) {
@@ -54,7 +59,7 @@ public class SqliteProjectRepository implements ProjectRepository {
 
     @Override
     public Optional<Project> findByJourneyId(long journeyId) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             return readProject(connection, "WHERE journey_id = ?", statement -> statement.setLong(1, journeyId));
         } catch (SQLException error) {
@@ -64,7 +69,7 @@ public class SqliteProjectRepository implements ProjectRepository {
 
     private Project insertNew(Connection connection, Project project) throws SQLException {
         long projectId;
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO project(journey_id, title, status, created_at, completed_at) VALUES (?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
             statement.setLong(1, project.journeyId());
@@ -75,7 +80,7 @@ public class SqliteProjectRepository implements ProjectRepository {
             statement.executeUpdate();
             projectId = SqliteSupport.generatedId(connection, statement);
         }
-        var persistedMilestones = insertMilestones(connection, projectId, project.milestones());
+        List<ProjectMilestone> persistedMilestones = insertMilestones(connection, projectId, project.milestones());
         return Project.reconstitute(
                 projectId,
                 project.journeyId(),
@@ -88,7 +93,7 @@ public class SqliteProjectRepository implements ProjectRepository {
 
     private Project updateExisting(Connection connection, Project project) throws SQLException {
         long projectId = project.id();
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "UPDATE project SET title = ?, status = ?, completed_at = ? WHERE id = ? AND journey_id = ?")) {
             statement.setString(1, project.title());
             statement.setString(2, project.status().name());
@@ -101,7 +106,7 @@ public class SqliteProjectRepository implements ProjectRepository {
         if (project.milestones().stream().anyMatch(milestone -> milestone.id() == null)) {
             throw new IllegalStateException("persisted project milestones cannot be replaced or added");
         }
-        var persistedMilestones = updateMilestones(connection, project.milestones());
+        List<ProjectMilestone> persistedMilestones = updateMilestones(connection, project.milestones());
         return Project.reconstitute(
                 projectId,
                 project.journeyId(),
@@ -114,8 +119,8 @@ public class SqliteProjectRepository implements ProjectRepository {
 
     private List<ProjectMilestone> insertMilestones(
             Connection connection, long projectId, List<ProjectMilestone> milestones) throws SQLException {
-        var persisted = new ArrayList<ProjectMilestone>();
-        try (var statement = connection.prepareStatement(
+        ArrayList<ProjectMilestone> persisted = new ArrayList<ProjectMilestone>();
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO project_milestone(project_id, code, title, sequence, status) VALUES (?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
             for (ProjectMilestone milestone : milestones) {
@@ -141,8 +146,8 @@ public class SqliteProjectRepository implements ProjectRepository {
 
     private List<ProjectMilestone> updateMilestones(
             Connection connection, List<ProjectMilestone> milestones) throws SQLException {
-        var persisted = new ArrayList<ProjectMilestone>();
-        try (var statement = connection.prepareStatement(
+        ArrayList<ProjectMilestone> persisted = new ArrayList<ProjectMilestone>();
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "UPDATE project_milestone SET code = ?, title = ?, sequence = ?, status = ? WHERE id = ?")) {
             for (ProjectMilestone milestone : milestones) {
                 statement.setString(1, milestone.code());
@@ -152,7 +157,7 @@ public class SqliteProjectRepository implements ProjectRepository {
                 statement.setLong(5, milestone.id());
                 SqliteSupport.requireUpdated(statement.executeUpdate(), "project milestone", milestone.id());
 
-                var existingEvidence = readEvidence(connection, milestone.id());
+                List<ProjectEvidence> existingEvidence = readEvidence(connection, milestone.id());
                 if (existingEvidence.size() > milestone.evidence().size()
                         || !milestone.evidence().subList(0, existingEvidence.size()).equals(existingEvidence)) {
                     throw new IllegalStateException("project evidence history cannot be changed or removed");
@@ -174,7 +179,7 @@ public class SqliteProjectRepository implements ProjectRepository {
 
     private void insertEvidence(Connection connection, long milestoneId, List<ProjectEvidence> evidence)
             throws SQLException {
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO project_evidence(milestone_id, artifact_reference, verification_summary, passed, verified_at) "
                         + "VALUES (?, ?, ?, ?, ?)")) {
             for (ProjectEvidence item : evidence) {
@@ -190,10 +195,10 @@ public class SqliteProjectRepository implements ProjectRepository {
 
     private Optional<Project> readProject(Connection connection, String predicate, SqlBinder binder)
             throws SQLException {
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "SELECT id, journey_id, title, status, created_at, completed_at FROM project " + predicate)) {
             binder.bind(statement);
-            try (var result = statement.executeQuery()) {
+            try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? Optional.of(readProject(connection, result)) : Optional.empty();
             }
         }
@@ -201,12 +206,12 @@ public class SqliteProjectRepository implements ProjectRepository {
 
     private Project readProject(Connection connection, ResultSet result) throws SQLException {
         long projectId = result.getLong("id");
-        var milestones = new ArrayList<ProjectMilestone>();
-        try (var statement = connection.prepareStatement(
+        ArrayList<ProjectMilestone> milestones = new ArrayList<ProjectMilestone>();
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "SELECT id, code, title, sequence, status FROM project_milestone "
                         + "WHERE project_id = ? ORDER BY sequence, code")) {
             statement.setLong(1, projectId);
-            try (var milestoneResult = statement.executeQuery()) {
+            try (ResultSet milestoneResult = statement.executeQuery()) {
                 while (milestoneResult.next()) {
                     long milestoneId = milestoneResult.getLong("id");
                     milestones.add(ProjectMilestone.reconstitute(
@@ -230,12 +235,12 @@ public class SqliteProjectRepository implements ProjectRepository {
     }
 
     private List<ProjectEvidence> readEvidence(Connection connection, long milestoneId) throws SQLException {
-        var evidence = new ArrayList<ProjectEvidence>();
-        try (var statement = connection.prepareStatement(
+        ArrayList<ProjectEvidence> evidence = new ArrayList<ProjectEvidence>();
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "SELECT artifact_reference, verification_summary, passed, verified_at "
                         + "FROM project_evidence WHERE milestone_id = ? ORDER BY id")) {
             statement.setLong(1, milestoneId);
-            try (var result = statement.executeQuery()) {
+            try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
                     evidence.add(new ProjectEvidence(
                             result.getString("artifact_reference"),

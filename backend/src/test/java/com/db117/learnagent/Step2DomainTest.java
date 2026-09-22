@@ -33,25 +33,25 @@ class Step2DomainTest {
 
     @Test
     void journeyBuildsStableTopoPathAndCompletesSequentially() {
-        var journey = journey().withId(100);
+        LearningJourney journey = journey().withId(100);
 
         assertEquals(List.of("variables", "loops"), journey.pathItems().stream()
                 .map(item -> item.learnUnitCode()).toList());
         assertEquals(LearningPathItemStatus.CURRENT, journey.currentItem().status());
 
-        var afterFirst = journey.recordPracticeVerified("variables", T0.plusSeconds(3));
+        LearningJourney afterFirst = journey.recordPracticeVerified("variables", T0.plusSeconds(3));
         assertEquals(LearningJourneyStatus.ACTIVE, afterFirst.status());
         assertEquals("loops", afterFirst.currentItem().learnUnitCode());
 
-        var completed = afterFirst.recordPracticeVerified("loops", T0.plusSeconds(7));
+        LearningJourney completed = afterFirst.recordPracticeVerified("loops", T0.plusSeconds(7));
         assertEquals(LearningJourneyStatus.COMPLETED, completed.status());
         assertEquals(LearningPathItemStatus.COMPLETED, completed.pathItems().get(1).status());
     }
 
     @Test
     void practiceEvidenceCompletesTheCurrentLearnUnit() {
-        var journey = journey().withId(101);
-        var afterPractice = journey.recordPracticeVerified("variables", T0.plusSeconds(1));
+        LearningJourney journey = journey().withId(101);
+        LearningJourney afterPractice = journey.recordPracticeVerified("variables", T0.plusSeconds(1));
 
         assertEquals(LearningPathItemStatus.COMPLETED, afterPractice.pathItems().get(0).status());
         assertTrue(afterPractice.pathItems().get(0).practiceVerified());
@@ -62,7 +62,7 @@ class Step2DomainTest {
 
     @Test
     void lockedPathCannotActivateALaterLearnUnit() {
-        var journey = journey().withId(101);
+        LearningJourney journey = journey().withId(101);
 
         assertThrows(DomainRuleViolation.class,
                 () -> journey.activate("loops", T0.plusSeconds(1)));
@@ -70,18 +70,18 @@ class Step2DomainTest {
 
     @Test
     void cyclicPrerequisitesAreRejected() {
-        var chapter = Chapter.create("basics", "Basics", 0);
-        var first = LearnUnit.create("a", "A", "A", "A", 0, "basics", Set.of("b"));
-        var second = LearnUnit.create("b", "B", "B", "B", 1, "basics", Set.of("a"));
+        Chapter chapter = Chapter.create("basics", "Basics", 0);
+        LearnUnit first = LearnUnit.create("a", "A", "A", "A", 0, "basics", Set.of("b"));
+        LearnUnit second = LearnUnit.create("b", "B", "B", "B", 1, "basics", Set.of("a"));
         assertThrows(DomainRuleViolation.class, () -> LearningJourney.create(
                 1, "java", "cycle", List.of(chapter), List.of(first, second), T0));
     }
 
     @Test
     void outlineLearnUnitCanReceiveContentWhenLearningStarts() {
-        var outline = LearnUnit.create("a", "A", "Learn A", "", 0, "basics", Set.of());
+        LearnUnit outline = LearnUnit.create("a", "A", "Learn A", "", 0, "basics", Set.of());
 
-        var materialized = outline.withContent("## Concept\nA concept\n## Practice\nDo A");
+        LearnUnit materialized = outline.withContent("## Concept\nA concept\n## Practice\nDo A");
 
         assertEquals("", outline.content());
         assertEquals("Do A", materialized.practiceInstruction());
@@ -89,9 +89,9 @@ class Step2DomainTest {
 
     @Test
     void learningJourneyCanPersistContentForItsCurrentUnit() {
-        var journey = journey().withId(101);
+        LearningJourney journey = journey().withId(101);
 
-        var materialized = journey.materializeLearnUnitContent(
+        LearningJourney materialized = journey.materializeLearnUnitContent(
                 "variables", "## Concept\nVariables\n## Practice\nFix variables");
 
         assertEquals("## Concept\nVariables\n## Practice\nFix variables",
@@ -101,8 +101,8 @@ class Step2DomainTest {
 
     @Test
     void practiceKeepsFailedEvidenceAndStopsAfterVerification() {
-        var policy = new VerificationPolicy(true, true, false, false);
-        var task = PracticeTask.create(
+        VerificationPolicy policy = new VerificationPolicy(true, true, false, false);
+        PracticeTask task = PracticeTask.create(
                 100,
                 200,
                 "java",
@@ -113,14 +113,14 @@ class Step2DomainTest {
                 "class Main {}",
                 policy,
                 T0);
-        var failed = new PracticeEvidence(
+        PracticeEvidence failed = new PracticeEvidence(
                 true, true, 0, false, RuntimeResult.NOT_RUN, List.of("src/Main.java"), T0.plusSeconds(1));
-        var open = task.recordAttempt(PracticeAttempt.submit(failed, T0.plusSeconds(1)));
+        PracticeTask open = task.recordAttempt(PracticeAttempt.submit(failed, T0.plusSeconds(1)));
         assertEquals(PracticeTaskStatus.OPEN, open.status());
 
-        var passed = new PracticeEvidence(
+        PracticeEvidence passed = new PracticeEvidence(
                 true, true, 1, false, RuntimeResult.NOT_RUN, List.of("src/Main.java"), T0.plusSeconds(2));
-        var verified = open.recordAttempt(PracticeAttempt.submit(passed, T0.plusSeconds(2)));
+        PracticeTask verified = open.recordAttempt(PracticeAttempt.submit(passed, T0.plusSeconds(2)));
         assertEquals(PracticeTaskStatus.VERIFIED, verified.status());
         assertEquals(2, verified.attempts().size());
         assertThrows(DomainRuleViolation.class,
@@ -129,21 +129,21 @@ class Step2DomainTest {
 
     @Test
     void projectCompletesOnlyAfterPassingMilestoneEvidence() {
-        var project = Project.create(
+        Project project = Project.create(
                 100,
                 "Todo app",
                 List.of(ProjectMilestone.create("m1", "First milestone", 0)),
                 T0);
         assertThrows(DomainRuleViolation.class, () -> project.startMilestone("m1"));
 
-        var active = project.activate().startMilestone("m1");
-        var failed = active.recordEvidence(
+        Project active = project.activate().startMilestone("m1");
+        Project failed = active.recordEvidence(
                 "m1",
                 new ProjectEvidence("workspace://todo", "tests failed", false, T0.plusSeconds(1)));
         assertEquals(ProjectStatus.ACTIVE, failed.status());
         assertEquals(ProjectMilestoneStatus.IN_PROGRESS, failed.milestones().get(0).status());
 
-        var completed = failed.recordEvidence(
+        Project completed = failed.recordEvidence(
                 "m1",
                 new ProjectEvidence("workspace://todo", "tests passed", true, T0.plusSeconds(2)));
         assertEquals(ProjectStatus.COMPLETED, completed.status());
@@ -152,10 +152,10 @@ class Step2DomainTest {
     }
 
     private LearningJourney journey() {
-        var chapter = Chapter.create("basics", "Basics", 0);
-        var variables = LearnUnit.create(
+        Chapter chapter = Chapter.create("basics", "Basics", 0);
+        LearnUnit variables = LearnUnit.create(
                 "variables", "Variables", "Use values", "Variables content", 0, "basics", Set.of());
-        var loops = LearnUnit.create(
+        LearnUnit loops = LearnUnit.create(
                 "loops", "Loops", "Repeat work", "Loops content", 1, "basics", Set.of("variables"));
         return LearningJourney.create(
                 11,

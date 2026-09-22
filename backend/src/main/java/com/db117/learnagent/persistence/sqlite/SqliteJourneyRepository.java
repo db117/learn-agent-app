@@ -26,14 +26,14 @@ public class SqliteJourneyRepository implements JourneyRepository {
 
     @Override
     public Journey save(Journey journey) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             connection.setAutoCommit(false);
             try {
                 if (journey.current()) {
                     clearCurrent(connection, journey.learnerId());
                 }
-                var saved = journey.id() == null
+                Journey saved = journey.id() == null
                         ? insert(connection, journey)
                         : update(connection, journey);
                 connection.commit();
@@ -49,7 +49,7 @@ public class SqliteJourneyRepository implements JourneyRepository {
 
     @Override
     public Optional<Journey> findById(long id) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             return read(connection, "WHERE id = ?", statement -> statement.setLong(1, id));
         } catch (SQLException error) {
@@ -59,7 +59,7 @@ public class SqliteJourneyRepository implements JourneyRepository {
 
     @Override
     public List<Journey> findByLearnerId(long learnerId) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             return readAll(connection, "WHERE learner_id = ? ORDER BY created_at DESC, id DESC",
                     statement -> statement.setLong(1, learnerId));
@@ -70,7 +70,7 @@ public class SqliteJourneyRepository implements JourneyRepository {
 
     @Override
     public Optional<Journey> findCurrentByLearnerId(long learnerId) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             return read(connection, "WHERE learner_id = ? AND is_current = 1",
                     statement -> statement.setLong(1, learnerId));
@@ -81,11 +81,11 @@ public class SqliteJourneyRepository implements JourneyRepository {
 
     @Override
     public Journey selectCurrent(long journeyId, long learnerId) {
-        try (var connection = dataSource.getConnection()) {
+        try (Connection connection = dataSource.getConnection()) {
             SqliteSupport.enableForeignKeys(connection);
             connection.setAutoCommit(false);
             try {
-                var target = read(connection, "WHERE id = ? AND learner_id = ?",
+                Journey target = read(connection, "WHERE id = ? AND learner_id = ?",
                         statement -> {
                             statement.setLong(1, journeyId);
                             statement.setLong(2, learnerId);
@@ -94,7 +94,7 @@ public class SqliteJourneyRepository implements JourneyRepository {
                     throw new IllegalStateException("Only active journey can be selected");
                 }
                 clearCurrent(connection, learnerId);
-                try (var statement = connection.prepareStatement(
+                try (java.sql.PreparedStatement statement = connection.prepareStatement(
                         "UPDATE journey SET is_current = 1 WHERE id = ? AND learner_id = ?")) {
                     statement.setLong(1, journeyId);
                     statement.setLong(2, learnerId);
@@ -114,8 +114,8 @@ public class SqliteJourneyRepository implements JourneyRepository {
 
     @Override
     public Journey attachLearningJourney(long journeyId, long learningJourneyId, long learnerId) {
-        try (var connection = dataSource.getConnection();
-             var statement = connection.prepareStatement(
+        try (Connection connection = dataSource.getConnection();
+             java.sql.PreparedStatement statement = connection.prepareStatement(
                      "UPDATE journey SET learning_journey_id = ? "
                              + "WHERE id = ? AND learner_id = ? "
                              + "AND EXISTS (SELECT 1 FROM learning_journey "
@@ -134,7 +134,7 @@ public class SqliteJourneyRepository implements JourneyRepository {
     }
 
     private Journey insert(Connection connection, Journey journey) throws SQLException {
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "INSERT INTO journey(learner_id, goal_description, status, created_at, archived_at, "
                         + "learning_journey_id, is_current) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
@@ -155,7 +155,7 @@ public class SqliteJourneyRepository implements JourneyRepository {
     }
 
     private Journey update(Connection connection, Journey journey) throws SQLException {
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "UPDATE journey SET goal_description = ?, status = ?, archived_at = ?, "
                         + "learning_journey_id = ?, is_current = ? WHERE id = ? AND learner_id = ?")) {
             statement.setString(1, journey.goalDescription());
@@ -175,7 +175,7 @@ public class SqliteJourneyRepository implements JourneyRepository {
     }
 
     private void clearCurrent(Connection connection, long learnerId) throws SQLException {
-        try (var statement = connection.prepareStatement(
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "UPDATE journey SET is_current = 0 WHERE learner_id = ? AND is_current = 1")) {
             statement.setLong(1, learnerId);
             statement.executeUpdate();
@@ -183,19 +183,19 @@ public class SqliteJourneyRepository implements JourneyRepository {
     }
 
     private Optional<Journey> read(Connection connection, String predicate, SqlBinder binder) throws SQLException {
-        try (var statement = connection.prepareStatement(selectSql() + predicate)) {
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(selectSql() + predicate)) {
             binder.bind(statement);
-            try (var result = statement.executeQuery()) {
+            try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? Optional.of(read(result)) : Optional.empty();
             }
         }
     }
 
     private List<Journey> readAll(Connection connection, String predicate, SqlBinder binder) throws SQLException {
-        var journeys = new ArrayList<Journey>();
-        try (var statement = connection.prepareStatement(selectSql() + predicate)) {
+        ArrayList<Journey> journeys = new ArrayList<Journey>();
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(selectSql() + predicate)) {
             binder.bind(statement);
-            try (var result = statement.executeQuery()) {
+            try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
                     journeys.add(read(result));
                 }
