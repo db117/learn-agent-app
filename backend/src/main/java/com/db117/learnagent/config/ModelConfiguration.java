@@ -6,7 +6,7 @@ package com.db117.learnagent.config;
  * @param modelName OpenAI 兼容服务的模型名称
  * @param baseUrl OpenAI 兼容服务基础地址；空值表示使用 SDK 默认地址
  * @param apiKey API Key；空值表示服务不需要认证
- * @param protocol 发送请求时使用的 OpenAI 兼容协议
+ * @param protocol 配置选择的 OpenAI 兼容协议；当前运行时只接受 CHAT_COMPLETIONS
  */
 public record ModelConfiguration(
         String modelName,

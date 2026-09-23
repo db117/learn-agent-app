@@ -115,6 +115,9 @@ public class ModelConfigurationService {
         if (protocol == null) {
             throw new IllegalArgumentException("请选择 OpenAI 协议");
         }
+        if (protocol == OpenAIProtocol.RESPONSES) {
+            throw new IllegalArgumentException("Responses API 暂不可用，请选择 Chat Completions");
+        }
         String normalizedBaseUrl = normalizeBaseUrl(baseUrl);
         String submittedApiKey = apiKey == null ? "" : apiKey.trim();
         if (submittedApiKey.length() > MAX_API_KEY_LENGTH) {

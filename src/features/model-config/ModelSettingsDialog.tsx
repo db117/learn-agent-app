@@ -75,6 +75,7 @@ export function ModelSettingsDialog({open, config, onClose, onSaved}: ModelSetti
         apiKey,
         clearApiKey: apiKey.trim() === "" && clearApiKey,
     });
+    const protocolUnavailable = protocol === "RESPONSES";
 
     const testConnection = async () => {
         if (!formRef.current?.reportValidity()) return;
@@ -169,10 +170,10 @@ export function ModelSettingsDialog({open, config, onClose, onSaved}: ModelSetti
                             aria-describedby="model-settings-protocol-hint"
                         >
                             <option value="CHAT_COMPLETIONS">Chat Completions</option>
-                            <option value="RESPONSES">Responses API</option>
+                            <option value="RESPONSES" disabled>Responses API（暂不可用）</option>
                         </select>
                         <span className="model-settings-hint" id="model-settings-protocol-hint">
-                            按服务支持的协议选择；不会根据 API 地址自动判断。
+                            当前仅支持 Chat Completions；Responses API 暂不可用。
                         </span>
                     </label>
 
@@ -253,10 +254,10 @@ export function ModelSettingsDialog({open, config, onClose, onSaved}: ModelSetti
 
                     <div className="model-settings-actions">
                         <button type="button" className="secondary" onClick={() => void testConnection()}
-                                disabled={busy !== null}>
+                                disabled={busy !== null || protocolUnavailable}>
                             {busy === "testing" ? "测试中…" : "测试连接"}
                         </button>
-                        <button type="submit" disabled={busy !== null}>
+                        <button type="submit" disabled={busy !== null || protocolUnavailable}>
                             {busy === "saving" ? "保存中…" : "保存"}
                         </button>
                     </div>

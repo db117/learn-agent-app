@@ -7,8 +7,6 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
-import io.agentscope.core.model.transport.HttpTransport;
-import io.agentscope.core.model.transport.HttpTransportFactory;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import jakarta.enterprise.context.ApplicationScoped;
 import reactor.core.publisher.Flux;
@@ -50,24 +48,19 @@ public class TutorModel implements Model {
     }
 
     public Model createModel(ModelConfiguration configuration, boolean streaming) {
+        if (configuration.protocol() == OpenAIProtocol.RESPONSES) {
+            throw new IllegalArgumentException("Responses API 暂不可用，请选择 Chat Completions");
+        }
         if (configuration.modelName().isBlank()) {
             return null;
         }
 
-        HttpTransport transport = HttpTransportFactory.getDefault();
-        if (configuration.protocol() == OpenAIProtocol.RESPONSES) {
-            transport = new OpenAIResponsesHttpTransport(transport);
-        }
         OpenAIChatModel.Builder builder = OpenAIChatModel.builder()
                 .apiKey(configuration.apiKey())
                 .modelName(configuration.modelName())
-                .stream(streaming)
-                .httpTransport(transport);
+                .stream(streaming);
         if (!configuration.baseUrl().isBlank()) {
             builder.baseUrl(configuration.baseUrl());
-        }
-        if (configuration.protocol() == OpenAIProtocol.RESPONSES) {
-            builder.endpointPath("/responses");
         }
         return builder.build();
     }
