@@ -22,6 +22,12 @@ Lint 和 runtime 检查尚未形成固定契约，要求这些检查的任务会
 Practice 状态通过安全的 `VerifyResponse` 返回给 Practice UI，Tutor SSE 不包含
 `practice.verified`。Sandbox、Permission、macOS arm64 和真实 OpenAI provider 尚未验收。
 
+## Tutor 模型
+
+设置 `OPENAI_API_KEY` 和 `OPENAI_MODEL` 后，Tutor 使用 OpenAI 协议。`OPENAI_BASE_URL` 的路径以
+`/responses` 结尾时使用 Responses API；其他地址（包括通用 `/v1`）使用 Chat Completions。
+例如官方 Responses API 地址为 `https://api.openai.com/v1/responses`。
+
 ## 检查
 
 ```bash
