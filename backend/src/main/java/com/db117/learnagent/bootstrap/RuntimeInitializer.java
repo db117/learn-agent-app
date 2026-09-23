@@ -1,5 +1,6 @@
 package com.db117.learnagent.bootstrap;
 
+import com.db117.learnagent.config.ModelConfigurationService;
 import com.db117.learnagent.config.RuntimeConfig;
 import com.db117.learnagent.persistence.sqlite.SqliteSchemaInitializer;
 import io.agroal.api.AgroalDataSource;
@@ -18,10 +19,15 @@ import java.sql.SQLException;
 public class RuntimeInitializer {
     private final RuntimeConfig config;
     private final AgroalDataSource dataSource;
+    private final ModelConfigurationService modelConfigurationService;
 
-    public RuntimeInitializer(RuntimeConfig config, AgroalDataSource dataSource) {
+    public RuntimeInitializer(
+            RuntimeConfig config,
+            AgroalDataSource dataSource,
+            ModelConfigurationService modelConfigurationService) {
         this.config = config;
         this.dataSource = dataSource;
+        this.modelConfigurationService = modelConfigurationService;
     }
 
     @PostConstruct
@@ -35,6 +41,7 @@ public class RuntimeInitializer {
             }
             // 先确认 clean-slate 标记和业务表结构，再允许其他 Repository 使用数据库。
             new SqliteSchemaInitializer(dataSource).initialize();
+            modelConfigurationService.initialize();
         } catch (IOException | SQLException error) {
             throw new IllegalStateException("Unable to initialize the runtime database", error);
         }

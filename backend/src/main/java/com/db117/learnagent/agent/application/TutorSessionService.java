@@ -124,7 +124,8 @@ public class TutorSessionService {
                 throw TutorRequestException.conflict("TURN_ACTIVE", "当前 Tutor Turn 仍在处理中");
             }
             if (!runtime.configured()) {
-                throw TutorRequestException.serviceUnavailable("MODEL_UNAVAILABLE", "Tutor 模型尚未配置");
+                throw TutorRequestException.serviceUnavailable(
+                        "MODEL_UNAVAILABLE", "Tutor 模型尚未配置，请点击顶部的模型设置按钮完成配置");
             }
 
             UserMessage userMessage = UserMessage.builder()

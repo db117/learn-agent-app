@@ -13,7 +13,8 @@ import javax.sql.DataSource;
  */
 public final class SqliteSchemaInitializer {
     public static final String SCHEMA_MARKER = "learn-agent-app-v2";
-    public static final int SCHEMA_VERSION = 7;
+    public static final int SCHEMA_VERSION = 8;
+    private static final int PREVIOUS_SCHEMA_VERSION = 7;
     public static final String SCHEMA_SOURCE = "step-3-journey-bootstrap";
 
     private static final List<String> REQUIRED_TABLES = List.of(
@@ -70,9 +71,16 @@ public final class SqliteSchemaInitializer {
             version = result.getInt("schema_version");
         }
         if (version != SCHEMA_VERSION) {
-            throw new IllegalStateException("database schema marker is not recognized");
+            if (version != PREVIOUS_SCHEMA_VERSION) {
+                throw new IllegalStateException("database schema marker is not recognized");
+            }
+            verifyRequiredTables(connection);
+            migrateV7ToV8(connection);
         }
         verifyRequiredTables(connection);
+        if (!tableExists(connection, "model_configuration")) {
+            throw new IllegalStateException("recognized schema is missing table: model_configuration");
+        }
     }
 
     private void verifyRequiredTables(Connection connection) throws SQLException {
@@ -277,6 +285,7 @@ public final class SqliteSchemaInitializer {
                     verified_at TEXT NOT NULL
                 )
                 """);
+        createModelConfigurationTable(connection);
         // Mastery 是 LearningPathItem 的只读投影，不另建可写的第二事实源。
         execute(connection, """
                 CREATE VIEW mastery AS
@@ -291,6 +300,27 @@ public final class SqliteSchemaInitializer {
             statement.setString(3, SCHEMA_SOURCE);
             statement.executeUpdate();
         }
+    }
+
+    private void migrateV7ToV8(Connection connection) throws SQLException {
+        // v7 只新增应用层设置表，保留原有学习事实与 Agent State 文件。
+        createModelConfigurationTable(connection);
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
+                "UPDATE schema_metadata SET schema_version = ? WHERE id = 1")) {
+            statement.setInt(1, SCHEMA_VERSION);
+            statement.executeUpdate();
+        }
+    }
+
+    private void createModelConfigurationTable(Connection connection) throws SQLException {
+        execute(connection, """
+                CREATE TABLE IF NOT EXISTS model_configuration (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    model_name TEXT NOT NULL,
+                    base_url TEXT NOT NULL,
+                    api_key TEXT NOT NULL
+                )
+                """);
     }
 
     private void execute(Connection connection, String sql) throws SQLException {

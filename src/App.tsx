@@ -1,8 +1,10 @@
 import {useEffect, useRef, useState} from "react";
 import {MarkdownMessage} from "./features/agent/MarkdownMessage";
+import {type ModelConfig, ModelSettingsDialog} from "./features/model-config/ModelSettingsDialog";
 import {PracticeWorkspace} from "./features/practice/PracticeWorkspace";
 
 const BACKEND_URL = "http://127.0.0.1:18080";
+const MODEL_CONFIG_URL = `${BACKEND_URL}/api/model-config`;
 const PLANNING_PROMPT = "请开始生成当前 Journey 的学习路径草稿。";
 const LEARNING_PROMPT = "请开始当前 LearnUnit。";
 
@@ -107,6 +109,9 @@ export default function App() {
     const [theme, setTheme] = useState<Theme>(readStoredTheme);
     const [health, setHealth] = useState<Health | null>(null);
     const [healthState, setHealthState] = useState<"loading" | "online" | "error">("loading");
+    const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
+    const [modelConfigState, setModelConfigState] = useState<"loading" | "ready" | "error">("loading");
+    const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
     const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
     const [bootstrapState, setBootstrapState] = useState<"loading" | "ready" | "error">("loading");
     const [bootstrapError, setBootstrapError] = useState<string | null>(null);
@@ -248,6 +253,23 @@ export default function App() {
             })
             .catch((requestError: Error) => {
                 if (requestError.name !== "AbortError") setHealthState("error");
+            });
+        return () => controller.abort();
+    }, []);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        fetch(MODEL_CONFIG_URL, {signal: controller.signal})
+            .then(async (response) => {
+                if (!response.ok) throw new Error(await readError(response));
+                return response.json() as Promise<ModelConfig>;
+            })
+            .then((configuration) => {
+                setModelConfig(configuration);
+                setModelConfigState("ready");
+            })
+            .catch((requestError: Error) => {
+                if (requestError.name !== "AbortError") setModelConfigState("error");
             });
         return () => controller.abort();
     }, []);
@@ -580,7 +602,34 @@ export default function App() {
                                 <dd>{formatValue(health?.[key])}</dd>
                             </div>
                         ))}
+                        <div>
+                            <dt>模型</dt>
+                            <dd className={`status-label model-config-status ${modelConfigState === "loading"
+                                ? "loading"
+                                : modelConfigState === "error"
+                                    ? "error"
+                                    : modelConfig?.configured ? "online" : "error"}`}
+                                role="status">
+                                {modelConfigState === "loading"
+                                    ? "读取中"
+                                    : modelConfigState === "error"
+                                        ? "状态不可用"
+                                        : modelConfig?.configured
+                                            ? modelConfig.modelName
+                                            : "尚未配置"}
+                            </dd>
+                        </div>
                     </dl>
+                <button
+                    type="button"
+                    className="theme-toggle"
+                    aria-haspopup="dialog"
+                    aria-expanded={modelSettingsOpen}
+                    disabled={modelConfigState === "loading"}
+                    onClick={() => setModelSettingsOpen(true)}
+                >
+                    模型设置
+                </button>
                 <button
                     type="button"
                     className="theme-toggle"
@@ -946,6 +995,15 @@ export default function App() {
                     </article>
                 )}
             </section>
+            <ModelSettingsDialog
+                open={modelSettingsOpen}
+                config={modelConfig}
+                onClose={() => setModelSettingsOpen(false)}
+                onSaved={(configuration) => {
+                    setModelConfig(configuration);
+                    setModelConfigState("ready");
+                }}
+            />
         </main>
     );
 }

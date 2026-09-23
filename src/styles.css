@@ -110,6 +110,13 @@ h3 {
     font-size: 0.85rem;
 }
 
+.health-strip .model-config-status {
+    max-width: 16rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .health-strip dl {
     display: flex;
     flex-wrap: wrap;

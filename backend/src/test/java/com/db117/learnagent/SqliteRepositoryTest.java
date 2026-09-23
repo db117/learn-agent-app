@@ -1,5 +1,8 @@
 package com.db117.learnagent;
 
+import com.db117.learnagent.agent.runtime.TutorModel;
+import com.db117.learnagent.config.ModelConfiguration;
+import com.db117.learnagent.config.ModelConfigurationService;
 import com.db117.learnagent.learning.domain.Chapter;
 import com.db117.learnagent.learning.domain.Journey;
 import com.db117.learnagent.learning.domain.LearnUnit;
@@ -9,6 +12,7 @@ import com.db117.learnagent.learning.domain.LearningPathItemStatus;
 import com.db117.learnagent.persistence.sqlite.SqliteJourneyRepository;
 import com.db117.learnagent.persistence.sqlite.SqliteLearnerRepository;
 import com.db117.learnagent.persistence.sqlite.SqliteLearningJourneyRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteModelConfigurationRepository;
 import com.db117.learnagent.persistence.sqlite.SqlitePracticeTaskRepository;
 import com.db117.learnagent.persistence.sqlite.SqliteProjectRepository;
 import com.db117.learnagent.persistence.sqlite.SqliteSchemaInitializer;
@@ -166,6 +170,42 @@ class SqliteRepositoryTest {
             connection.createStatement().execute("CREATE TABLE legacy_business(id INTEGER)");
             assertThrows(IllegalStateException.class,
                     () -> new SqliteSchemaInitializer(dataSource).initialize());
+        }
+    }
+
+    @Test
+    void modelConfigurationUpgradePreservesLearningDataAndAppliesNewSettings() throws SQLException {
+        SQLiteDataSource dataSource = dataSource();
+        try (java.sql.Connection anchor = dataSource.getConnection()) {
+            new SqliteSchemaInitializer(dataSource).initialize();
+            SqliteLearnerRepository learnerRepository = new SqliteLearnerRepository(dataSource);
+            learnerRepository.save(Learner.create("Alice", "TypeScript learner", T0));
+
+            try (java.sql.Connection connection = dataSource.getConnection();
+                 java.sql.Statement statement = connection.createStatement()) {
+                statement.execute("DROP TABLE model_configuration");
+                statement.execute("UPDATE schema_metadata SET schema_version = 7 WHERE id = 1");
+            }
+            new SqliteSchemaInitializer(dataSource).initialize();
+            assertEquals("Alice", learnerRepository.findCurrent().orElseThrow().displayName());
+
+            SqliteModelConfigurationRepository repository = new SqliteModelConfigurationRepository(dataSource);
+            ModelConfiguration previous = new ModelConfiguration(
+                    "old-model", "https://one.example/v1", "test-secret");
+            repository.save(previous);
+            TutorModel tutorModel = new TutorModel();
+            ModelConfigurationService service = new ModelConfigurationService(repository, tutorModel);
+
+            ModelConfigurationService.ConfigurationView saved = service.save(
+                    "new-model", "https://one.example/v1", "", false);
+            assertTrue(saved.configured());
+            assertEquals("new-model", tutorModel.getModelName());
+            assertEquals("test-secret", repository.find().orElseThrow().apiKey());
+            assertFalse(saved.toString().contains("test-secret"));
+
+            service.save("local-model", "http://127.0.0.1:9000/v1", "", false);
+            assertEquals("", repository.find().orElseThrow().apiKey());
+            assertEquals("local-model", tutorModel.getModelName());
         }
     }
 
