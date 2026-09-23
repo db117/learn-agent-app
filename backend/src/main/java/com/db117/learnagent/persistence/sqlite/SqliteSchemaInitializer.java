@@ -13,8 +13,9 @@ import javax.sql.DataSource;
  */
 public final class SqliteSchemaInitializer {
     public static final String SCHEMA_MARKER = "learn-agent-app-v2";
-    public static final int SCHEMA_VERSION = 8;
-    private static final int PREVIOUS_SCHEMA_VERSION = 7;
+    public static final int SCHEMA_VERSION = 9;
+    private static final int SCHEMA_VERSION_WITH_MODEL_CONFIGURATION = 8;
+    private static final int SCHEMA_VERSION_BEFORE_MODEL_CONFIGURATION = 7;
     public static final String SCHEMA_SOURCE = "step-3-journey-bootstrap";
 
     private static final List<String> REQUIRED_TABLES = List.of(
@@ -70,12 +71,17 @@ public final class SqliteSchemaInitializer {
             }
             version = result.getInt("schema_version");
         }
-        if (version != SCHEMA_VERSION) {
-            if (version != PREVIOUS_SCHEMA_VERSION) {
-                throw new IllegalStateException("database schema marker is not recognized");
-            }
+        if (version == SCHEMA_VERSION_BEFORE_MODEL_CONFIGURATION) {
             verifyRequiredTables(connection);
-            migrateV7ToV8(connection);
+            migrateV7ToV9(connection);
+        } else if (version == SCHEMA_VERSION_WITH_MODEL_CONFIGURATION) {
+            verifyRequiredTables(connection);
+            if (!tableExists(connection, "model_configuration")) {
+                throw new IllegalStateException("recognized schema is missing table: model_configuration");
+            }
+            migrateV8ToV9(connection);
+        } else if (version != SCHEMA_VERSION) {
+            throw new IllegalStateException("database schema marker is not recognized");
         }
         verifyRequiredTables(connection);
         if (!tableExists(connection, "model_configuration")) {
@@ -302,9 +308,23 @@ public final class SqliteSchemaInitializer {
         }
     }
 
-    private void migrateV7ToV8(Connection connection) throws SQLException {
-        // v7 只新增应用层设置表，保留原有学习事实与 Agent State 文件。
+    private void migrateV7ToV9(Connection connection) throws SQLException {
+        // v7 新增模型设置表；保留原有学习事实与 Agent State 文件。
         createModelConfigurationTable(connection);
+        updateSchemaVersion(connection);
+    }
+
+    private void migrateV8ToV9(Connection connection) throws SQLException {
+        // v8 已有模型设置；新增协议列并将现有配置明确设为 Chat Completions。
+        execute(connection, """
+                ALTER TABLE model_configuration
+                ADD COLUMN protocol TEXT NOT NULL DEFAULT 'CHAT_COMPLETIONS'
+                    CHECK (protocol IN ('CHAT_COMPLETIONS', 'RESPONSES'))
+                """);
+        updateSchemaVersion(connection);
+    }
+
+    private void updateSchemaVersion(Connection connection) throws SQLException {
         try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "UPDATE schema_metadata SET schema_version = ? WHERE id = 1")) {
             statement.setInt(1, SCHEMA_VERSION);
@@ -318,7 +338,8 @@ public final class SqliteSchemaInitializer {
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     model_name TEXT NOT NULL,
                     base_url TEXT NOT NULL,
-                    api_key TEXT NOT NULL
+                    api_key TEXT NOT NULL,
+                    protocol TEXT NOT NULL CHECK (protocol IN ('CHAT_COMPLETIONS', 'RESPONSES'))
                 )
                 """);
     }

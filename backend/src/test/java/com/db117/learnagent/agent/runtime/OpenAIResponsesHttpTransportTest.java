@@ -183,15 +183,6 @@ class OpenAIResponsesHttpTransportTest {
                         .build()));
     }
 
-    @Test
-    void selectsResponsesOnlyFromTheUrlPathAndRemovesTheEndpointSuffix() {
-        String url = "https://api.openai.com/v1/responses?tenant=test";
-
-        assertTrue(TutorModel.isResponsesEndpoint(url));
-        assertEquals("https://api.openai.com/v1?tenant=test", TutorModel.removeResponsesEndpoint(url));
-        assertFalse(TutorModel.isResponsesEndpoint("https://api.openai.com/v1"));
-    }
-
     private static final class StubTransport implements HttpTransport {
         private final HttpResponse response;
         private final Flux<String> stream;

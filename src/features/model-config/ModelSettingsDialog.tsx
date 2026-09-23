@@ -3,15 +3,19 @@ import "./ModelSettingsDialog.css";
 
 const MODEL_CONFIG_URL = "http://127.0.0.1:10707/api/model-config";
 
+export type OpenAIProtocol = "CHAT_COMPLETIONS" | "RESPONSES";
+
 export type ModelConfig = {
     configured: boolean;
     modelName: string | null;
+    protocol: OpenAIProtocol;
     baseUrl: string;
     apiKeyConfigured: boolean;
 };
 
 type ModelConfigRequest = {
     modelName: string;
+    protocol: OpenAIProtocol;
     baseUrl: string;
     apiKey: string;
     clearApiKey: boolean;
@@ -39,6 +43,7 @@ export function ModelSettingsDialog({open, config, onClose, onSaved}: ModelSetti
     const dialogRef = useRef<HTMLDialogElement>(null);
     const formRef = useRef<HTMLFormElement>(null);
     const [modelName, setModelName] = useState("");
+    const [protocol, setProtocol] = useState<OpenAIProtocol>("CHAT_COMPLETIONS");
     const [baseUrl, setBaseUrl] = useState("");
     const [apiKey, setApiKey] = useState("");
     const [clearApiKey, setClearApiKey] = useState(false);
@@ -55,6 +60,7 @@ export function ModelSettingsDialog({open, config, onClose, onSaved}: ModelSetti
     useEffect(() => {
         if (!open) return;
         setModelName(config?.modelName ?? "");
+        setProtocol(config?.protocol ?? "CHAT_COMPLETIONS");
         setBaseUrl(config?.baseUrl ?? "");
         setApiKey("");
         setClearApiKey(false);
@@ -64,6 +70,7 @@ export function ModelSettingsDialog({open, config, onClose, onSaved}: ModelSetti
 
     const requestBody = (): ModelConfigRequest => ({
         modelName: modelName.trim(),
+        protocol,
         baseUrl: baseUrl.trim(),
         apiKey,
         clearApiKey: apiKey.trim() === "" && clearApiKey,
@@ -150,6 +157,25 @@ export function ModelSettingsDialog({open, config, onClose, onSaved}: ModelSetti
                 </header>
 
                 <form ref={formRef} className="model-settings-form" onSubmit={(event) => void saveConfig(event)}>
+                    <label htmlFor="model-settings-protocol">
+                        OpenAI 协议 <span aria-hidden="true">（必选）</span>
+                        <select
+                            id="model-settings-protocol"
+                            name="protocol"
+                            value={protocol}
+                            onChange={(event) => setProtocol(event.target.value as OpenAIProtocol)}
+                            required
+                            disabled={busy !== null}
+                            aria-describedby="model-settings-protocol-hint"
+                        >
+                            <option value="CHAT_COMPLETIONS">Chat Completions</option>
+                            <option value="RESPONSES">Responses API</option>
+                        </select>
+                        <span className="model-settings-hint" id="model-settings-protocol-hint">
+                            按服务支持的协议选择；不会根据 API 地址自动判断。
+                        </span>
+                    </label>
+
                     <label htmlFor="model-settings-name">
                         模型名称 <span aria-hidden="true">（必填）</span>
                         <input
@@ -178,7 +204,7 @@ export function ModelSettingsDialog({open, config, onClose, onSaved}: ModelSetti
                             aria-describedby="model-settings-base-url-hint"
                         />
                         <span className="model-settings-hint" id="model-settings-base-url-hint">
-                            留空时使用 OpenAI 默认地址。
+                            填写 API 基础地址，不含 /chat/completions 或 /responses；留空时使用 OpenAI 默认地址。
                         </span>
                     </label>
 

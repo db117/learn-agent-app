@@ -3,6 +3,7 @@ package com.db117.learnagent.api;
 import com.db117.learnagent.config.ModelConfigurationService;
 import com.db117.learnagent.config.ModelConfigurationService.ConfigurationView;
 import com.db117.learnagent.config.ModelConfigurationService.ModelConnectionException;
+import com.db117.learnagent.config.OpenAIProtocol;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -36,7 +37,8 @@ public class ModelConfigurationResource {
         }
         try {
             return Response.ok(service.save(
-                    request.modelName(), request.baseUrl(), request.apiKey(), request.clearApiKey())).build();
+                    request.modelName(), request.protocol(), request.baseUrl(),
+                    request.apiKey(), request.clearApiKey())).build();
         } catch (IllegalArgumentException error) {
             return invalid(error.getMessage());
         }
@@ -49,7 +51,8 @@ public class ModelConfigurationResource {
             return invalid("模型配置不能为空");
         }
         try {
-            service.test(request.modelName(), request.baseUrl(), request.apiKey(), request.clearApiKey());
+            service.test(request.modelName(), request.protocol(), request.baseUrl(),
+                    request.apiKey(), request.clearApiKey());
             return Response.ok(new ConnectionTestResponse(true, "连接成功")).build();
         } catch (IllegalArgumentException error) {
             return invalid(error.getMessage());
@@ -70,13 +73,15 @@ public class ModelConfigurationResource {
      * 配置提交请求。
      *
      * @param modelName OpenAI 兼容服务中的模型名称
-     * @param baseUrl 自定义 API 地址；空值表示使用 SDK 默认地址
+     * @param protocol 要使用的 OpenAI 兼容协议
+     * @param baseUrl 自定义 API 基础地址；空值表示使用 SDK 默认地址
      * @param apiKey 新 API Key；空值表示保留当前 Key，除非勾选清除或地址已更改
      * @param clearApiKey 是否明确清除当前 API Key
      */
     @RegisterForReflection
     public record ConfigurationRequest(
             String modelName,
+            OpenAIProtocol protocol,
             String baseUrl,
             String apiKey,
             boolean clearApiKey) {

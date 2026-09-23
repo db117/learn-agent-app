@@ -61,6 +61,21 @@
     font-size: 0.8rem;
 }
 
+.model-settings-form select {
+    width: 100%;
+    min-height: 2.7rem;
+    padding: 0.65rem 0.7rem;
+    border: 1px solid #334568;
+    border-radius: 0.55rem;
+    background: #0b1224;
+    color: #e8edf5;
+}
+
+.model-settings-form select:focus {
+    border-color: #8da9d5;
+    outline: 2px solid rgba(141, 169, 213, 0.25);
+}
+
 .model-settings-hint {
     color: #8391aa;
     font-size: 0.74rem;
@@ -126,6 +141,17 @@
 :root[data-theme="light"] .model-settings-form label,
 :root[data-theme="light"] .model-settings-clear-key {
     color: var(--light-text) !important;
+}
+
+:root[data-theme="light"] .model-settings-form select {
+    border-color: var(--light-border-strong);
+    background: var(--light-surface);
+    color: var(--light-text);
+}
+
+:root[data-theme="light"] .model-settings-form select:focus {
+    border-color: var(--light-accent);
+    outline-color: rgba(63, 111, 168, 0.2);
 }
 
 :root[data-theme="light"] .model-settings-feedback.success {

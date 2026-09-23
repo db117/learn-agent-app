@@ -1,6 +1,7 @@
 package com.db117.learnagent.persistence.sqlite;
 
 import com.db117.learnagent.config.ModelConfiguration;
+import com.db117.learnagent.config.OpenAIProtocol;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.sql.Connection;
@@ -22,7 +23,7 @@ public class SqliteModelConfigurationRepository {
     public Optional<ModelConfiguration> find() {
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(
-                     "SELECT model_name, base_url, api_key FROM model_configuration WHERE id = 1");
+                     "SELECT model_name, base_url, api_key, protocol FROM model_configuration WHERE id = 1");
              ResultSet result = statement.executeQuery()) {
             if (!result.next()) {
                 return Optional.empty();
@@ -30,7 +31,8 @@ public class SqliteModelConfigurationRepository {
             return Optional.of(new ModelConfiguration(
                     result.getString("model_name"),
                     result.getString("base_url"),
-                    result.getString("api_key")));
+                    result.getString("api_key"),
+                    OpenAIProtocol.valueOf(result.getString("protocol"))));
         } catch (SQLException error) {
             throw new IllegalStateException("Unable to read model configuration", error);
         }
@@ -40,16 +42,18 @@ public class SqliteModelConfigurationRepository {
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
             try (PreparedStatement statement = connection.prepareStatement("""
-                    INSERT INTO model_configuration(id, model_name, base_url, api_key)
-                    VALUES (1, ?, ?, ?)
+                    INSERT INTO model_configuration(id, model_name, base_url, api_key, protocol)
+                    VALUES (1, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         model_name = excluded.model_name,
                         base_url = excluded.base_url,
-                        api_key = excluded.api_key
+                        api_key = excluded.api_key,
+                        protocol = excluded.protocol
                     """)) {
                 statement.setString(1, configuration.modelName());
                 statement.setString(2, configuration.baseUrl());
                 statement.setString(3, configuration.apiKey());
+                statement.setString(4, configuration.protocol().name());
                 statement.executeUpdate();
                 connection.commit();
             } catch (SQLException error) {

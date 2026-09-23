@@ -47,10 +47,12 @@ public class ModelConfigurationService {
 
     public synchronized ConfigurationView save(
             String modelName,
+            OpenAIProtocol protocol,
             String baseUrl,
             String apiKey,
             boolean clearApiKey) {
-        ModelConfiguration configuration = resolveConfiguration(modelName, baseUrl, apiKey, clearApiKey);
+        ModelConfiguration configuration = resolveConfiguration(
+                modelName, protocol, baseUrl, apiKey, clearApiKey);
 
         Model model;
         try {
@@ -67,8 +69,14 @@ public class ModelConfigurationService {
         return view(configuration);
     }
 
-    public synchronized void test(String modelName, String baseUrl, String apiKey, boolean clearApiKey) {
-        ModelConfiguration configuration = resolveConfiguration(modelName, baseUrl, apiKey, clearApiKey);
+    public synchronized void test(
+            String modelName,
+            OpenAIProtocol protocol,
+            String baseUrl,
+            String apiKey,
+            boolean clearApiKey) {
+        ModelConfiguration configuration = resolveConfiguration(
+                modelName, protocol, baseUrl, apiKey, clearApiKey);
         Model model;
         try {
             model = tutorModel.createModel(configuration, false);
@@ -99,10 +107,14 @@ public class ModelConfigurationService {
 
     private ModelConfiguration resolveConfiguration(
             String modelName,
+            OpenAIProtocol protocol,
             String baseUrl,
             String apiKey,
             boolean clearApiKey) {
         String normalizedModelName = normalizeModelName(modelName);
+        if (protocol == null) {
+            throw new IllegalArgumentException("请选择 OpenAI 协议");
+        }
         String normalizedBaseUrl = normalizeBaseUrl(baseUrl);
         String submittedApiKey = apiKey == null ? "" : apiKey.trim();
         if (submittedApiKey.length() > MAX_API_KEY_LENGTH) {
@@ -112,7 +124,8 @@ public class ModelConfigurationService {
         return new ModelConfiguration(
                 normalizedModelName,
                 normalizedBaseUrl,
-                resolveApiKey(previous, normalizedBaseUrl, submittedApiKey, clearApiKey));
+                resolveApiKey(previous, normalizedBaseUrl, submittedApiKey, clearApiKey),
+                protocol);
     }
 
     private ConfigurationView view(ModelConfiguration configuration) {
@@ -120,6 +133,7 @@ public class ModelConfigurationService {
         return new ConfigurationView(
                 tutorModel.configured(),
                 modelName,
+                configuration.protocol(),
                 configuration.baseUrl(),
                 !configuration.apiKey().isBlank());
     }
@@ -186,12 +200,14 @@ public class ModelConfigurationService {
      *
      * @param configured 当前 Tutor 模型是否可用
      * @param modelName 配置的模型名称；未配置时为 null
-     * @param baseUrl 自定义 API 地址；空值表示 SDK 默认地址
+     * @param protocol 发送请求时使用的 OpenAI 兼容协议
+     * @param baseUrl 自定义 API 基础地址；空值表示 SDK 默认地址
      * @param apiKeyConfigured 是否已设置 API Key，不包含密钥本身
      */
     public record ConfigurationView(
             boolean configured,
             String modelName,
+            OpenAIProtocol protocol,
             String baseUrl,
             boolean apiKeyConfigured) {
     }

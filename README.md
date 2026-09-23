@@ -24,9 +24,9 @@ Practice 状态通过安全的 `VerifyResponse` 返回给 Practice UI，Tutor SS
 
 ## Tutor 模型
 
-设置 `OPENAI_API_KEY` 和 `OPENAI_MODEL` 后，Tutor 使用 OpenAI 协议。`OPENAI_BASE_URL` 的路径以
-`/responses` 结尾时使用 Responses API；其他地址（包括通用 `/v1`）使用 Chat Completions。
-例如官方 Responses API 地址为 `https://api.openai.com/v1/responses`。
+设置 `OPENAI_API_KEY`、`OPENAI_MODEL` 和 `OPENAI_PROTOCOL` 后，Tutor 使用所选 OpenAI 兼容协议。
+`OPENAI_PROTOCOL` 可设为 `CHAT_COMPLETIONS` 或 `RESPONSES`；`OPENAI_BASE_URL` 填写 API 基础地址，
+例如 `https://api.openai.com/v1`，应用会按所选协议请求对应接口。
 
 ## 检查
 

@@ -1,6 +1,7 @@
 package com.db117.learnagent.agent.runtime;
 
 import com.db117.learnagent.config.ModelConfiguration;
+import com.db117.learnagent.config.OpenAIProtocol;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
@@ -12,19 +13,20 @@ import io.agentscope.extensions.model.openai.OpenAIChatModel;
 import jakarta.enterprise.context.ApplicationScoped;
 import reactor.core.publisher.Flux;
 
-import java.net.URI;
 import java.util.List;
 
 /** Tutor 使用的可热切换模型；AgentScope Harness 始终持有本委托对象。 */
 @ApplicationScoped
 public class TutorModel implements Model {
-    private volatile ActiveModel active = new ActiveModel(new ModelConfiguration("", "", ""), null);
+    private volatile ActiveModel active = new ActiveModel(
+            new ModelConfiguration("", "", "", OpenAIProtocol.CHAT_COMPLETIONS), null);
 
     public TutorModel() {
     }
 
     TutorModel(Model model) {
-        this.active = new ActiveModel(new ModelConfiguration("test-model", "", ""), model);
+        this.active = new ActiveModel(new ModelConfiguration(
+                "test-model", "", "", OpenAIProtocol.CHAT_COMPLETIONS), model);
     }
 
     public boolean configured() {
@@ -43,7 +45,8 @@ public class TutorModel implements Model {
         return new ModelConfiguration(
                 environment("OPENAI_MODEL"),
                 environment("OPENAI_BASE_URL"),
-                environment("OPENAI_API_KEY"));
+                environment("OPENAI_API_KEY"),
+                environmentProtocol());
     }
 
     public Model createModel(ModelConfiguration configuration, boolean streaming) {
@@ -51,11 +54,8 @@ public class TutorModel implements Model {
             return null;
         }
 
-        String baseUrl = configuration.baseUrl();
-        boolean responsesApi = isResponsesEndpoint(baseUrl);
         HttpTransport transport = HttpTransportFactory.getDefault();
-        if (responsesApi) {
-            // ponytail: 只用 URL 路径后缀区分 Responses；需要更多协议时再加显式配置。
+        if (configuration.protocol() == OpenAIProtocol.RESPONSES) {
             transport = new OpenAIResponsesHttpTransport(transport);
         }
         OpenAIChatModel.Builder builder = OpenAIChatModel.builder()
@@ -63,10 +63,10 @@ public class TutorModel implements Model {
                 .modelName(configuration.modelName())
                 .stream(streaming)
                 .httpTransport(transport);
-        if (!baseUrl.isBlank()) {
-            builder.baseUrl(responsesApi ? removeResponsesEndpoint(baseUrl) : baseUrl);
+        if (!configuration.baseUrl().isBlank()) {
+            builder.baseUrl(configuration.baseUrl());
         }
-        if (responsesApi) {
+        if (configuration.protocol() == OpenAIProtocol.RESPONSES) {
             builder.endpointPath("/responses");
         }
         return builder.build();
@@ -109,46 +109,16 @@ public class TutorModel implements Model {
         return model == null ? 0 : model.getContextWindowSize();
     }
 
-    static boolean isResponsesEndpoint(String baseUrl) {
-        if (baseUrl == null || baseUrl.isBlank()) {
-            return false;
-        }
-        try {
-            String path = URI.create(baseUrl).getRawPath();
-            return path != null && trimTrailingSlashes(path).endsWith("/responses");
-        } catch (IllegalArgumentException ignored) {
-            return false;
-        }
-    }
-
-    static String removeResponsesEndpoint(String baseUrl) {
-        if (!isResponsesEndpoint(baseUrl)) {
-            return baseUrl;
-        }
-        URI uri = URI.create(baseUrl);
-        String path = uri.getRawPath();
-        String normalizedPath = trimTrailingSlashes(path);
-        int endpointIndex = normalizedPath.length() - "/responses".length();
-        int pathStart = baseUrl.indexOf(path);
-        if (pathStart < 0) {
-            return baseUrl;
-        }
-        int pathEnd = pathStart + path.length();
-        return baseUrl.substring(0, pathStart + endpointIndex)
-                + baseUrl.substring(pathEnd);
-    }
-
-    private static String trimTrailingSlashes(String value) {
-        int end = value.length();
-        while (end > 0 && value.charAt(end - 1) == '/') {
-            end--;
-        }
-        return value.substring(0, end);
-    }
-
     private String environment(String name) {
         String value = System.getenv(name);
         return value == null ? "" : value.trim();
+    }
+
+    private OpenAIProtocol environmentProtocol() {
+        // 环境变量未指定时使用通用兼容服务的默认协议。
+        return "RESPONSES".equalsIgnoreCase(environment("OPENAI_PROTOCOL"))
+                ? OpenAIProtocol.RESPONSES
+                : OpenAIProtocol.CHAT_COMPLETIONS;
     }
 
     /**

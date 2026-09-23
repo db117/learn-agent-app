@@ -3,6 +3,7 @@ package com.db117.learnagent;
 import com.db117.learnagent.agent.runtime.TutorModel;
 import com.db117.learnagent.config.ModelConfiguration;
 import com.db117.learnagent.config.ModelConfigurationService;
+import com.db117.learnagent.config.OpenAIProtocol;
 import com.db117.learnagent.learning.domain.Chapter;
 import com.db117.learnagent.learning.domain.Journey;
 import com.db117.learnagent.learning.domain.LearnUnit;
@@ -191,19 +192,20 @@ class SqliteRepositoryTest {
 
             SqliteModelConfigurationRepository repository = new SqliteModelConfigurationRepository(dataSource);
             ModelConfiguration previous = new ModelConfiguration(
-                    "old-model", "https://one.example/v1", "test-secret");
+                    "old-model", "https://one.example/v1", "test-secret", OpenAIProtocol.CHAT_COMPLETIONS);
             repository.save(previous);
             TutorModel tutorModel = new TutorModel();
             ModelConfigurationService service = new ModelConfigurationService(repository, tutorModel);
 
             ModelConfigurationService.ConfigurationView saved = service.save(
-                    "new-model", "https://one.example/v1", "", false);
+                    "new-model", OpenAIProtocol.CHAT_COMPLETIONS, "https://one.example/v1", "", false);
             assertTrue(saved.configured());
             assertEquals("new-model", tutorModel.getModelName());
             assertEquals("test-secret", repository.find().orElseThrow().apiKey());
             assertFalse(saved.toString().contains("test-secret"));
 
-            service.save("local-model", "http://127.0.0.1:9000/v1", "", false);
+            service.save(
+                    "local-model", OpenAIProtocol.CHAT_COMPLETIONS, "http://127.0.0.1:9000/v1", "", false);
             assertEquals("", repository.find().orElseThrow().apiKey());
             assertEquals("local-model", tutorModel.getModelName());
         }
