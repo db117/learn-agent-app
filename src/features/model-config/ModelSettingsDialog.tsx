@@ -1,7 +1,7 @@
 import {type FormEvent, useEffect, useRef, useState} from "react";
 import "./ModelSettingsDialog.css";
 
-const MODEL_CONFIG_URL = "http://127.0.0.1:18080/api/model-config";
+const MODEL_CONFIG_URL = "http://127.0.0.1:10707/api/model-config";
 
 export type ModelConfig = {
     configured: boolean;

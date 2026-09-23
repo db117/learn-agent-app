@@ -5,7 +5,7 @@ import type {ChoiceQuestion, PracticeDiagnostic} from "./practiceTypes";
 import {createWorkspaceApi, type WorkspaceFileEntry} from "../workspace/workspaceApi";
 import {beginSave, editDraft, failSave, finishSave, initialSaveState, selectFile} from "../workspace/saveState";
 
-const BACKEND_URL = "http://127.0.0.1:18080";
+const BACKEND_URL = "http://127.0.0.1:10707";
 
 type Props = {
     journeyId: number;

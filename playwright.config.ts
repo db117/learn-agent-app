@@ -36,7 +36,7 @@ export default defineConfig({
         }] : []),
         {
             command: "node scripts/maven.mjs quarkus:dev",
-            url: "http://127.0.0.1:18080/health",
+            url: "http://127.0.0.1:10707/health",
             timeout: 120_000,
             reuseExistingServer: false,
             env: tutorEnv,

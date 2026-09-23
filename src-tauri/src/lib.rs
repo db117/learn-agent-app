@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager, State};
 
 const BACKEND_HOST: &str = "127.0.0.1";
-const BACKEND_PORT: u16 = 18080;
+const BACKEND_PORT: u16 = 10707;
 const BACKEND_JAR: &str = "agent-backend.jar";
 const BACKEND_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const BACKEND_POLL_INTERVAL: Duration = Duration::from_millis(200);

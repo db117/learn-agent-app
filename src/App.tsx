@@ -3,7 +3,7 @@ import {MarkdownMessage} from "./features/agent/MarkdownMessage";
 import {type ModelConfig, ModelSettingsDialog} from "./features/model-config/ModelSettingsDialog";
 import {PracticeWorkspace} from "./features/practice/PracticeWorkspace";
 
-const BACKEND_URL = "http://127.0.0.1:18080";
+const BACKEND_URL = "http://127.0.0.1:10707";
 const MODEL_CONFIG_URL = `${BACKEND_URL}/api/model-config`;
 const PLANNING_PROMPT = "请开始生成当前 Journey 的学习路径草稿。";
 const LEARNING_PROMPT = "请开始当前 LearnUnit。";

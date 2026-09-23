@@ -5,7 +5,7 @@ import {WorkspaceFileTree} from "./WorkspaceFileTree";
 import {beginSave, editDraft, failSave, finishSave, initialSaveState, selectFile} from "./saveState";
 import {createWorkspaceApi, type WorkspaceFileEntry} from "./workspaceApi";
 
-const BACKEND_URL = "http://127.0.0.1:18080";
+const BACKEND_URL = "http://127.0.0.1:10707";
 
 type Props = {
     journeyId: number;
