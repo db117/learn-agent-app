@@ -12,10 +12,10 @@ import com.db117.learnagent.agent.runtime.TutorAgentRuntime;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.agentscope.core.agent.Event;
-import io.agentscope.core.agent.EventType;
 import io.agentscope.core.agent.RuntimeContext;
-import io.agentscope.core.agent.StreamOptions;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
+import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
@@ -51,12 +51,6 @@ public class TutorSessionService {
     private static final String CANCELLED = "CANCELLED";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final JsonNode PLANNING_OUTPUT_SCHEMA = planningOutputSchema();
-    private static final StreamOptions STREAM_OPTIONS = StreamOptions.builder()
-            .eventTypes(EventType.ALL)
-            .incremental(true)
-            .includeReasoningChunk(true)
-            .includeReasoningResult(true)
-            .build();
 
     private final TutorContextAssembler contextAssembler;
     private final TutorAgentRuntime runtime;
@@ -161,21 +155,19 @@ public class TutorSessionService {
         return new TutorCancelResponse(true);
     }
 
-    @SuppressWarnings("deprecation")
     private Flux<TutorEvent> run(ActiveTurn active, Semaphore lock) {
         Flux<TutorEvent> prefix = Flux.just(
                 active.event(TutorEventType.TURN_STARTED, null, null),
                 active.event(TutorEventType.ACTIVITY, "正在加载学习上下文", null),
                 active.event(TutorEventType.ACTIVITY, "模型正在组织回答", null));
         try {
-            Flux<Event> modelEvents = active.binding.mode() == TutorSessionMode.PLANNING
-                    ? runtime.agent().stream(
-                            List.of(active.userMessage),
-                            STREAM_OPTIONS,
-                            PLANNING_OUTPUT_SCHEMA,
-                            active.context)
-                    : runtime.agent().stream(
-                            List.of(active.userMessage), STREAM_OPTIONS, active.context);
+            // streamEvents 没有 JsonNode Schema 重载；规划模式继续用结构化 call 保持输出约束。
+            Flux<AgentEvent> modelEvents = active.binding.mode() == TutorSessionMode.PLANNING
+                    ? runtime.agent()
+                    .call(List.of(active.userMessage), PLANNING_OUTPUT_SCHEMA, active.context)
+                    .map(result -> (AgentEvent) new AgentResultEvent(result))
+                    .flux()
+                    : runtime.agent().streamEvents(List.of(active.userMessage), active.context);
             return Flux.concat(
                             prefix,
                             project(modelEvents, active),
@@ -241,17 +233,29 @@ public class TutorSessionService {
         }
     }
 
-    private Flux<TutorEvent> project(Flux<Event> events, ActiveTurn active) {
+    private Flux<TutorEvent> project(Flux<AgentEvent> events, ActiveTurn active) {
         return events.handle((event, sink) -> {
             for (TutorEventMapper.Projection projection : TutorEventMapper.map(event)) {
                 sink.next(active.event(projection.type(), projection.text(), projection.errorCode()));
             }
-            if (event.getType() == EventType.REASONING && !event.isLast()) {
-                emitVisibleText(event.getMessage(), active, sink);
-            } else if (event.getType() == EventType.AGENT_RESULT && !active.hasDelta.get()) {
-                emitVisibleText(event.getMessage(), active, sink);
+            if (event instanceof TextBlockDeltaEvent textDelta) {
+                emitVisibleText(textDelta.getDelta(), active, sink);
+            } else if (event instanceof AgentResultEvent result && !active.hasDelta.get()) {
+                emitVisibleText(result.getResult(), active, sink);
             }
         });
+    }
+
+    private void emitVisibleText(
+            String text,
+            ActiveTurn active,
+            reactor.core.publisher.SynchronousSink<TutorEvent> sink) {
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        active.hasDelta.set(true);
+        active.answer.append(text);
+        sink.next(active.event(TutorEventType.MESSAGE_DELTA, text, null));
     }
 
     private void emitVisibleText(
@@ -262,13 +266,7 @@ public class TutorSessionService {
             return;
         }
         for (TextBlock block : message.getContentBlocks(TextBlock.class)) {
-            String text = block.getText();
-            if (text == null || text.isBlank()) {
-                continue;
-            }
-            active.hasDelta.set(true);
-            active.answer.append(text);
-            sink.next(active.event(TutorEventType.MESSAGE_DELTA, text, null));
+            emitVisibleText(block.getText(), active, sink);
         }
     }
 
@@ -280,7 +278,7 @@ public class TutorSessionService {
             persistTerminal(active, CANCELLED);
             return Flux.just(active.event(TutorEventType.TURN_CANCELLED, null, "TURN_CANCELLED"));
         }
-        if (active.answer.isEmpty()) {
+        if (active.answer.toString().isBlank()) {
             persistTerminal(active, FAILED);
             return Flux.just(active.event(TutorEventType.TURN_FAILED, null, "EMPTY_RESPONSE"));
         }
@@ -351,7 +349,7 @@ public class TutorSessionService {
                 continue;
             }
             String text = message.getTextContent();
-            if (text == null || text.isBlank()) {
+            if (text == null || text.isEmpty()) {
                 continue;
             }
             messages.add(new TutorMessage(
