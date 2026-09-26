@@ -141,13 +141,13 @@ function ChapterPath({chapters}: { chapters: LearningChapter[] }) {
                 <h5>第 {chapterIndex + 1} 章：{chapter.title}</h5>
                 <ol>
                     {chapter.units.map((unit, unitIndex) => (
-                        <li className={unit.status === "COMPLETED" ? "completed" : unit.status === "CURRENT" ? "current" : ""}
+                        <li className={unit.status === "COMPLETED" ? "completed" : unit.status === "CURRENT" ? "current" : unit.status === "SKIPPED" ? "skipped" : ""}
                             key={unit.code}>
                             <span aria-hidden="true">
-                                {unit.status === "COMPLETED" ? "✓" : unit.status === "CURRENT" ? "▶" : unitIndex + 1}
+                                {unit.status === "COMPLETED" ? "✓" : unit.status === "CURRENT" ? "▶" : unit.status === "SKIPPED" ? "↷" : unitIndex + 1}
                             </span>
                             <span>{unit.title}</span>
-                            <small>{unit.status === "CURRENT" ? "当前学习" : unit.status === "COMPLETED" ? "已完成" : "待解锁"}</small>
+                            <small>{unit.status === "CURRENT" ? "当前学习" : unit.status === "COMPLETED" ? "已完成" : unit.status === "SKIPPED" ? "已跳过" : "待解锁"}</small>
                         </li>
                     ))}
                 </ol>

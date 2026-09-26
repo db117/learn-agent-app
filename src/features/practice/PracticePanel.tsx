@@ -17,7 +17,6 @@ export function PracticePanel({
                                   compiling = false,
                                   testing = false,
                                   verifying = false,
-                                  practiceVerified = false,
                                   codeVerified = false,
                                   choiceQuestion = null,
                                   choiceLoading = false,
@@ -67,7 +66,7 @@ export function PracticePanel({
             <div className="practice-flow-heading">
                 <div>
                     <p className="mode-label">PRACTICE FLOW</p>
-                    <h3 id="practice-title">{showChoiceStage ? "选择题检查" : codeVerified ? "等待选择题" : "代码练习"}</h3>
+                    <h3 id="practice-title">代码练习与理解检查</h3>
                 </div>
                 <ol className="practice-stages" aria-label="Practice 流程">
                     <li className={!codeVerified ? "active" : "completed"}
@@ -83,11 +82,11 @@ export function PracticePanel({
                 </ol>
             </div>
 
-            {!codeVerified ? <>
+            <>
                 <div className="workspace-heading">
                     <div>
                         <p className="mode-label">CODE PRACTICE</p>
-                        <h4>先完成代码，再进入理解检查</h4>
+                        <h4>保存代码后提交检查，再请 Tutor 评估</h4>
                     </div>
                     <div className="workspace-actions">
                     {onToggleFullscreen && (
@@ -112,9 +111,9 @@ export function PracticePanel({
                         {saving ? "保存中…" : "保存"}
                     </button>
                     <button type="button" className="secondary" onClick={() => void onVerify()}
-                            disabled={actionsDisabled || compiling || testing || verifying || codeVerified || practiceVerified}
+                            disabled={actionsDisabled || compiling || testing || verifying}
                             aria-busy={verifying}>
-                        {verifying ? "验证中…" : practiceVerified ? "Practice 已记录" : "验证并记录"}
+                        {verifying ? "检查中…" : codeVerified ? "重新提交检查" : "提交检查"}
                     </button>
                 </div>
             </div>
@@ -185,12 +184,13 @@ export function PracticePanel({
                     </ol>
                 )}
             </section>
-            </> : null}
+            </>
 
             {codeVerified && choiceLoading &&
                 <p className="choice-question-loading" role="status">正在读取已保存选择题…</p>}
             {codeVerified && !choiceLoading && !choiceQuestion && (
-                <p className="choice-question-loading" role="status">代码练习已通过，正在等待当前单元的选择题。</p>
+                <p className="choice-question-loading" role="status">本单元没有选择题；Tutor
+                    会结合代码和对话评估理解。</p>
             )}
             {showChoiceStage && (
                 <section className="stored-choice-question choice-stage" aria-labelledby="stored-choice-title">

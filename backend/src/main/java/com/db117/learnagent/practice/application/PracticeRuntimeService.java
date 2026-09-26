@@ -1,20 +1,8 @@
 package com.db117.learnagent.practice.application;
 
-import com.db117.learnagent.execution.ExecutionEnvironment;
-import com.db117.learnagent.execution.ExecutionOperation;
-import com.db117.learnagent.execution.ExecutionRequest;
-import com.db117.learnagent.execution.ExecutionResult;
-import com.db117.learnagent.execution.TypeScriptCompileResult;
-import com.db117.learnagent.execution.TypeScriptCompiler;
-import com.db117.learnagent.execution.TypeScriptTestResult;
-import com.db117.learnagent.execution.TypeScriptTestRunner;
+import com.db117.learnagent.execution.*;
 import com.db117.learnagent.learning.application.LearningRequestException;
-import com.db117.learnagent.practice.domain.PracticeAttempt;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.PracticeTaskRepository;
-import com.db117.learnagent.practice.domain.RuntimeResult;
-import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.practice.domain.*;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.Workspace;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -95,9 +83,14 @@ public final class PracticeRuntimeService {
         PracticeTask currentTask = Objects.requireNonNull(task, "task must not be null");
         requireSupportedPolicy(currentTask.verificationPolicy());
         Workspace currentWorkspace = requireWorkspace(workspace);
+        String workspaceDigest = workspaceDigest(currentWorkspace);
         TypeScriptCompileResult compile = compile(currentWorkspace);
         TypeScriptTestResult tests = runTests(currentWorkspace);
         List<String> submittedFiles = submittedFiles(currentWorkspace);
+        if (!workspaceDigest.equals(workspaceDigest(currentWorkspace))) {
+            throw LearningRequestException.conflict(
+                    "WORKSPACE_CHANGED_DURING_CHECK", "检查期间代码发生变化，请保存后重新提交");
+        }
         PracticeEvidence candidate = new PracticeEvidence(
                 compile.execution().success(),
                 tests.passed(),
@@ -105,7 +98,9 @@ public final class PracticeRuntimeService {
                 false,
                 RuntimeResult.NOT_RUN,
                 submittedFiles,
-                null);
+                null,
+                false,
+                workspaceDigest);
         Instant verifiedAt = currentTask.verificationPolicy().accepts(candidate)
                 && changedFromStarter(currentTask, currentWorkspace)
                 ? Instant.now()
@@ -117,10 +112,16 @@ public final class PracticeRuntimeService {
                 candidate.lintPassed(),
                 candidate.runtimeResult(),
                 candidate.submittedFiles(),
-                verifiedAt);
+                verifiedAt,
+                false,
+                workspaceDigest);
         PracticeTask saved = practiceTasks.save(currentTask.recordAttempt(
                 PracticeAttempt.submit(evidence, Instant.now())));
         return new PracticeVerification(saved, compile, tests, evidence);
+    }
+
+    public String contentDigest(Workspace workspace) {
+        return workspaceDigest(requireWorkspace(workspace));
     }
 
     /** Step 6 的 TypeScript 练习必须先改变初始源码，避免 starter 测试本身伪造完成证据。 */
@@ -159,6 +160,14 @@ public final class PracticeRuntimeService {
                     .toList();
         } catch (IOException error) {
             throw new IllegalStateException("Unable to list practice files", error);
+        }
+    }
+
+    private String workspaceDigest(Workspace workspace) {
+        try {
+            return workspaceManager.contentDigest(workspace);
+        } catch (IOException error) {
+            throw new IllegalStateException("Unable to fingerprint practice files", error);
         }
     }
 

@@ -1,7 +1,8 @@
 import {useEffect, useMemo, useState} from "react";
 import {LearningPathPanel, type LearningProgress, LearnModePanel} from "../learn/LearnModePanel";
 import {PracticePanel} from "./PracticePanel";
-import type {ChoiceQuestion, PracticeDiagnostic} from "./practiceTypes";
+import {LearningIdeActions} from "./LearningIdeActions";
+import type {ChoiceQuestion, PracticeCheckSummary, PracticeDiagnostic} from "./practiceTypes";
 import {createWorkspaceApi, type WorkspaceFileEntry} from "../workspace/workspaceApi";
 import {beginSave, editDraft, failSave, finishSave, initialSaveState, selectFile} from "../workspace/saveState";
 
@@ -11,6 +12,8 @@ type Props = {
     journeyId: number;
     onDirtyChange?: (dirty: boolean) => void;
     onProgressChanged?: (status: string, currentLearnUnitCode: string | null) => void;
+    onRequestAssessment?: (summary: PracticeCheckSummary) => void;
+    tutorBusy?: boolean;
     theme?: "dark" | "light";
     workspaceVersion?: number;
     progressVersion?: number;
@@ -33,9 +36,31 @@ type TestResponse = {
 
 type VerifyResponse = {
     verified: boolean;
+    assessmentAttemptId: number;
+    compilePassed: boolean;
+    testsPassed: boolean;
+    testCount: number;
     learningJourneyStatus: string;
     currentLearnUnitCode: string | null;
     advanced: boolean;
+};
+
+type AssessmentResponse = {
+    available: boolean;
+    assessmentId: number | null;
+    attemptId: number | null;
+    verdict: "READY" | "CONTINUE" | null;
+    rationale: string | null;
+    stale: boolean;
+    compilePassed: boolean;
+    testsPassed: boolean;
+    testCount: number;
+};
+
+type AssessmentAcceptedResponse = {
+    learningJourneyStatus: string;
+    currentLearnUnitCode: string | null;
+    accepted: boolean;
 };
 
 type ChoiceResponse = {
@@ -61,6 +86,8 @@ export function PracticeWorkspace({
                                       journeyId,
                                       onDirtyChange,
                                       onProgressChanged,
+                                      onRequestAssessment,
+                                      tutorBusy = false,
                                       theme = "dark",
                                       workspaceVersion = 0,
                                       progressVersion = 0,
@@ -85,10 +112,13 @@ export function PracticeWorkspace({
     const [choiceQuestion, setChoiceQuestion] = useState<ChoiceQuestion | null>(null);
     const [choiceLoading, setChoiceLoading] = useState(true);
     const [codeVerified, setCodeVerified] = useState(false);
+    const [assessment, setAssessment] = useState<AssessmentResponse | null>(null);
+    const [acceptingAssessment, setAcceptingAssessment] = useState(false);
     const [choiceSubmitting, setChoiceSubmitting] = useState(false);
     const [choiceFeedback, setChoiceFeedback] = useState<string | null>(null);
     const [selectedChoiceId, setSelectedChoiceId] = useState<string | null>(null);
     const [practiceFullscreen, setPracticeFullscreen] = useState(false);
+    const [editorExpanded, setEditorExpanded] = useState(false);
 
     useEffect(() => {
         onDirtyChange?.(state.dirty);
@@ -125,6 +155,20 @@ export function PracticeWorkspace({
         }
     };
 
+    const refreshEditorFromWorkspace = async () => {
+        if (state.dirty) return;
+        try {
+            const nextFiles = await api.listFiles("journey", journeyId);
+            setFiles(nextFiles);
+            const selectedPath = nextFiles.some((file) => file.path === state.selectedPath)
+                ? state.selectedPath
+                : nextFiles[0]?.path;
+            if (selectedPath) await readFile(selectedPath);
+        } catch (error: unknown) {
+            setFeedback(error instanceof Error ? error.message : "无法刷新练习 Workspace");
+        }
+    };
+
     const loadChoiceQuestion = async (signal?: AbortSignal) => {
         setChoiceLoading(true);
         try {
@@ -154,6 +198,17 @@ export function PracticeWorkspace({
         }
     };
 
+    const loadAssessment = async (signal?: AbortSignal) => {
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/journeys/${journeyId}/practice/assessment`, {signal});
+            if (!response.ok) throw new Error("无法读取 Tutor 评估");
+            const next = await response.json() as AssessmentResponse;
+            if (!signal?.aborted) setAssessment(next.available ? next : null);
+        } catch (error: unknown) {
+            if (!signal?.aborted) setFeedback(error instanceof Error ? error.message : "无法读取 Tutor 评估");
+        }
+    };
+
     useEffect(() => {
         const controller = new AbortController();
         setState(initialSaveState());
@@ -164,6 +219,7 @@ export function PracticeWorkspace({
         setChoiceQuestion(null);
         setChoiceLoading(true);
         setCodeVerified(false);
+        setAssessment(null);
         setChoiceSubmitting(false);
         setChoiceFeedback(null);
         setSelectedChoiceId(null);
@@ -171,6 +227,7 @@ export function PracticeWorkspace({
         setLoading(true);
         void loadProgress(controller.signal);
         void loadChoiceQuestion(controller.signal);
+        void loadAssessment(controller.signal);
         api.listFiles("journey", journeyId)
             .then((nextFiles) => {
                 if (controller.signal.aborted) return;
@@ -184,7 +241,7 @@ export function PracticeWorkspace({
                 setFeedback(error instanceof Error ? error.message : "无法读取练习 Workspace");
             });
         return () => controller.abort();
-    }, [api, journeyId, progressVersion]);
+    }, [api, journeyId]);
 
     useEffect(() => {
         if (workspaceVersion === 0) return;
@@ -202,12 +259,13 @@ export function PracticeWorkspace({
     }, [api, journeyId, workspaceVersion]);
 
     useEffect(() => {
-        if (contentVersion === 0) return;
+        if (contentVersion === 0 && progressVersion === 0) return;
         const controller = new AbortController();
         void loadProgress(controller.signal);
         void loadChoiceQuestion(controller.signal);
+        void loadAssessment(controller.signal);
         return () => controller.abort();
-    }, [contentVersion, journeyId]);
+    }, [contentVersion, progressVersion, journeyId]);
 
     const selectWorkspaceFile = (path: string) => {
         if (path === state.selectedPath) return;
@@ -328,20 +386,40 @@ export function PracticeWorkspace({
             });
             if (!response.ok) throw new Error("Practice 验证请求失败");
             const result = await response.json() as VerifyResponse;
-            setCodeVerified(result.verified && !result.advanced);
-            setFeedback(result.advanced
-                ? "Practice 已通过，已进入下一个 LearnUnit。"
-                : result.verified
-                    ? "Practice 已记录。"
-                    : "Practice 尚未通过，请根据编译和测试结果继续修改。");
-            if (result.advanced) {
-                onProgressChanged?.(result.learningJourneyStatus, result.currentLearnUnitCode);
-            }
-            await loadProgress();
+            setCodeVerified(result.verified);
+            setFeedback("检查结果已保存，正在请 Tutor 综合代码和理解情况评估。");
+            onRequestAssessment?.({
+                attemptId: result.assessmentAttemptId,
+                compilePassed: result.compilePassed,
+                testsPassed: result.testsPassed,
+                testCount: result.testCount,
+                verified: result.verified,
+            });
         } catch (error: unknown) {
             setFeedback(error instanceof Error ? error.message : "无法验证 Practice");
         } finally {
             setVerifying(false);
+        }
+    };
+
+    const acceptAssessment = async () => {
+        if (!assessment?.assessmentId || assessment.verdict !== "READY" || assessment.stale || acceptingAssessment) {
+            return;
+        }
+        setAcceptingAssessment(true);
+        setFeedback(null);
+        try {
+            const response = await fetch(
+                `${BACKEND_URL}/api/journeys/${journeyId}/practice/assessments/${assessment.assessmentId}/accept`,
+                {method: "POST", headers: {"Content-Type": "application/json"}},
+            );
+            if (!response.ok) throw new Error("无法确认 Tutor 评估");
+            const result = await response.json() as AssessmentAcceptedResponse;
+            onProgressChanged?.(result.learningJourneyStatus, result.currentLearnUnitCode);
+        } catch (error: unknown) {
+            setFeedback(error instanceof Error ? error.message : "无法确认 Tutor 评估");
+        } finally {
+            setAcceptingAssessment(false);
         }
     };
 
@@ -363,10 +441,7 @@ export function PracticeWorkspace({
                 setChoiceFeedback("还不对，再试一次；可以回看上面的课程内容。");
                 return;
             }
-            setChoiceFeedback("回答正确，正在进入下一个 LearnUnit…");
-            if (result.advanced) {
-                onProgressChanged?.(result.learningJourneyStatus, result.currentLearnUnitCode);
-            }
+            setChoiceFeedback("答案已记录；学习进度由 Tutor 综合评估，并在你确认后更新。");
         } catch (error: unknown) {
             setChoiceFeedback(error instanceof Error ? error.message : "无法提交选择题");
         } finally {
@@ -379,41 +454,95 @@ export function PracticeWorkspace({
         loading={progressLoading}
         showPath={!learningLayout}
     />;
-    const practicePanel = <PracticePanel
-            files={files}
-            selectedPath={state.selectedPath}
-            content={state.draftContent}
-            loading={loading}
-            loadingContent={loadingContent}
-            creating={creatingFile}
-            dirty={state.dirty}
-            saving={saving}
-            compiling={compiling}
-            testing={testing}
-            verifying={verifying}
-            practiceVerified={progress?.practiceVerified}
-            codeVerified={codeVerified}
-            choiceQuestion={choiceQuestion}
-            choiceLoading={choiceLoading}
-            choiceSubmitting={choiceSubmitting}
-            choiceFeedback={choiceFeedback}
-            selectedChoiceId={selectedChoiceId}
-            feedback={feedback}
-            runtimeSummary={runtimeSummary}
-            diagnostics={diagnostics}
-            onSelectFile={selectWorkspaceFile}
-            onContentChange={(content) => setState((current) => editDraft(current, content))}
-            onSave={save}
-            onCompile={compile}
-            onTest={runTests}
-            onCreateFile={createFile}
-            onVerify={verify}
-            onSelectChoice={setSelectedChoiceId}
-            onVerifyChoice={verifyChoice}
-            theme={theme}
-            fullscreen={practiceFullscreen}
-            onToggleFullscreen={() => setPracticeFullscreen((current) => !current)}
-    />;
+    const practicePanel = <section className="practice-workspace-shell" aria-label="代码练习工作区">
+        <div className="practice-workspace-controls">
+            <LearningIdeActions journeyId={journeyId}/>
+            <button
+                type="button"
+                onClick={() => void verify()}
+                disabled={state.dirty || saving || compiling || testing || verifying || tutorBusy || progress?.status === "COMPLETED"}
+                aria-busy={verifying}
+            >
+                {verifying ? "检查中…" : "提交检查"}
+            </button>
+            <button
+                type="button"
+                className="secondary"
+                aria-expanded={editorExpanded}
+                onClick={() => {
+                    const expanding = !editorExpanded;
+                    setEditorExpanded(expanding);
+                    if (expanding) void refreshEditorFromWorkspace();
+                }}
+            >
+                {editorExpanded ? "收起内置编辑器" : "展开内置编辑器"}
+            </button>
+        </div>
+        {assessment && (
+            <section className={`practice-assessment ${assessment.verdict === "READY" ? "ready" : "continue"}`}
+                     aria-labelledby="practice-assessment-title">
+                <div>
+                    <p className="mode-label">TUTOR 评估</p>
+                    <h3 id="practice-assessment-title">
+                        {assessment.verdict === "READY" ? "Tutor 建议通过" : "Tutor 建议继续练习"}
+                    </h3>
+                    <p>{assessment.rationale}</p>
+                    <p className="assessment-evidence">
+                        编译{assessment.compilePassed ? "通过" : "未通过"} ·
+                        测试{assessment.testsPassed ? `通过（${assessment.testCount} 个）` : `未通过（${assessment.testCount} 个）`}
+                    </p>
+                    {assessment.stale && <p role="alert">检查后代码或提交记录已变化，请重新提交检查。</p>}
+                </div>
+                {assessment.verdict === "READY" && (
+                    <button
+                        type="button"
+                        onClick={() => void acceptAssessment()}
+                        disabled={assessment.stale || acceptingAssessment || tutorBusy}
+                    >
+                        {acceptingAssessment ? "确认中…" : "确认通过并进入下一课"}
+                    </button>
+                )}
+            </section>
+        )}
+        <div hidden={!editorExpanded}>
+            <PracticePanel
+                files={files}
+                selectedPath={state.selectedPath}
+                content={state.draftContent}
+                loading={loading}
+                loadingContent={loadingContent}
+                creating={creatingFile}
+                dirty={state.dirty}
+                saving={saving}
+                compiling={compiling}
+                testing={testing}
+                verifying={verifying || tutorBusy}
+                codeVerified={codeVerified}
+                choiceQuestion={choiceQuestion}
+                choiceLoading={choiceLoading}
+                choiceSubmitting={choiceSubmitting}
+                choiceFeedback={choiceFeedback}
+                selectedChoiceId={selectedChoiceId}
+                feedback={feedback}
+                runtimeSummary={runtimeSummary}
+                diagnostics={diagnostics}
+                onSelectFile={selectWorkspaceFile}
+                onContentChange={(content) => setState((current) => editDraft(current, content))}
+                onSave={save}
+                onCompile={compile}
+                onTest={runTests}
+                onCreateFile={createFile}
+                onVerify={() => {
+                    if (!tutorBusy) void verify();
+                }}
+                onSelectChoice={setSelectedChoiceId}
+                onVerifyChoice={verifyChoice}
+                theme={theme}
+                fullscreen={practiceFullscreen}
+                onToggleFullscreen={() => setPracticeFullscreen((current) => !current)}
+            />
+        </div>
+    </section>;
     const completionMessage = progressLoading ? (
             <p className="session-status">正在读取当前学习单元…</p>
         ) : progress?.status === "COMPLETED" ? (

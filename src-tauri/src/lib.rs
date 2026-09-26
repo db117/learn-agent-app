@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::net::{SocketAddr, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
@@ -197,6 +197,129 @@ fn stop_backend(state: State<'_, BackendState>) -> Result<BackendStatus, String>
     Ok(status(&state))
 }
 
+fn learning_workspace_path(workspace_path: &str) -> Result<PathBuf, String> {
+    let workspace = PathBuf::from(workspace_path.trim());
+    if !workspace.is_absolute() || !workspace.is_dir() {
+        return Err("The learning workspace does not exist yet".to_string());
+    }
+    Ok(workspace)
+}
+
+#[tauri::command]
+fn open_learning_workspace(workspace_path: String) -> Result<(), String> {
+    let workspace = learning_workspace_path(&workspace_path)?;
+    #[cfg(target_os = "windows")]
+    let mut command = Command::new("explorer.exe");
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = Command::new("xdg-open");
+    command
+        .arg(workspace)
+        .spawn()
+        .map_err(|error| format!("Unable to open the learning workspace: {error}"))?;
+    Ok(())
+}
+
+fn allowed_ide_executable(ide: &str, executable: &Path) -> bool {
+    let Some(name) = executable.file_name().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    let name = name.to_ascii_lowercase();
+    match ide {
+        "vscode" => matches!(name.as_str(), "code" | "code.exe"),
+        "jetbrains" => matches!(
+            name.as_str(),
+            "idea"
+                | "idea.exe"
+                | "idea64.exe"
+                | "webstorm"
+                | "webstorm.exe"
+                | "webstorm64.exe"
+                | "pycharm"
+                | "pycharm.exe"
+                | "pycharm64.exe"
+                | "goland"
+                | "goland.exe"
+                | "goland64.exe"
+                | "rider"
+                | "rider.exe"
+                | "rider64.exe"
+                | "clion"
+                | "clion.exe"
+                | "clion64.exe"
+                | "rustrover"
+                | "rustrover.exe"
+                | "rustrover64.exe"
+                | "datagrip"
+                | "datagrip.exe"
+                | "datagrip64.exe"
+        ),
+        _ => false,
+    }
+}
+
+#[tauri::command]
+fn launch_learning_ide(
+    workspace_path: String,
+    ide: String,
+    executable_path: String,
+) -> Result<(), String> {
+    let workspace = learning_workspace_path(&workspace_path)?;
+    let executable_path = PathBuf::from(executable_path.trim());
+    if !allowed_ide_executable(&ide, &executable_path)
+        || (!executable_path.is_absolute() && executable_path.components().count() != 1)
+    {
+        return Err("Choose a VS Code or JetBrains IDE launcher".to_string());
+    }
+    if executable_path.is_absolute() && !executable_path.is_file() {
+        return Err("The configured IDE launcher does not exist".to_string());
+    }
+    Command::new(executable_path)
+        .arg(workspace)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Unable to start the IDE: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{allowed_ide_executable, learning_workspace_path};
+    use std::path::Path;
+
+    #[test]
+    fn allows_only_known_ide_launchers() {
+        assert!(allowed_ide_executable("vscode", Path::new("Code.exe")));
+        assert!(allowed_ide_executable(
+            "jetbrains",
+            Path::new("webstorm64.exe")
+        ));
+        assert!(!allowed_ide_executable(
+            "vscode",
+            Path::new("powershell.exe")
+        ));
+        assert!(!allowed_ide_executable(
+            "jetbrains",
+            Path::new("powershell.exe")
+        ));
+        assert!(!allowed_ide_executable("unknown", Path::new("idea64.exe")));
+    }
+
+    #[test]
+    fn opens_only_existing_absolute_workspace_paths() {
+        let workspace = std::env::temp_dir();
+        assert_eq!(
+            learning_workspace_path(workspace.to_str().unwrap()).unwrap(),
+            workspace
+        );
+        assert!(learning_workspace_path("relative/workspace").is_err());
+        assert!(learning_workspace_path(
+            &workspace.join("missing-learning-workspace").to_string_lossy()
+        )
+        .is_err());
+    }
+}
+
 fn stop_managed_backend(app: &tauri::AppHandle) {
     if let Some(state) = app.try_state::<BackendState>() {
         if let Ok(mut child) = state.0.lock() {
@@ -213,7 +336,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             backend_status,
             start_backend,
-            stop_backend
+            stop_backend,
+            open_learning_workspace,
+            launch_learning_ide
         ])
         .setup(|app| {
             // 启动桌面壳时自动拉起后端；失败通过事件交给前端处理，不阻断 Tauri 初始化。

@@ -1,13 +1,9 @@
 package com.db117.learnagent.persistence.sqlite;
 
-import com.db117.learnagent.practice.domain.PracticeAttempt;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.PracticeTaskRepository;
-import com.db117.learnagent.practice.domain.PracticeTaskStatus;
-import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.*;
 import jakarta.enterprise.context.ApplicationScoped;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -16,7 +12,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import javax.sql.DataSource;
 
 /** PracticeTask 聚合的 SQLite 适配器；Attempt/Evidence 只追加不覆盖。 */
 @ApplicationScoped
@@ -173,8 +168,8 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
                 Statement.RETURN_GENERATED_KEYS);
              java.sql.PreparedStatement evidenceStatement = connection.prepareStatement(
                      "INSERT INTO practice_evidence(attempt_id, compile_passed, tests_passed, test_count, lint_passed, "
-                             + "runtime_result, submitted_files, verified_at, choice_correct) "
-                             + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                             + "runtime_result, submitted_files, verified_at, choice_correct, workspace_digest) "
+                             + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             for (PracticeAttempt attempt : attempts) {
                 if (attempt.id() != null) {
                     // 已持久化 Attempt 是不可变历史，不能因再次保存聚合而复制。
@@ -195,6 +190,7 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
                 evidenceStatement.setString(7, SqliteJson.write(evidence.submittedFiles()));
                 evidenceStatement.setString(8, SqliteSupport.instant(evidence.verifiedAt()));
                 evidenceStatement.setInt(9, SqliteSupport.bool(evidence.choiceCorrect()));
+                evidenceStatement.setString(10, evidence.workspaceDigest());
                 evidenceStatement.executeUpdate();
                 persisted.add(attempt.withId(attemptId));
             }
@@ -207,7 +203,7 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
         ArrayList<PracticeAttempt> attempts = new ArrayList<PracticeAttempt>();
         try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "SELECT pa.id, pa.submitted_at, pe.compile_passed, pe.tests_passed, pe.test_count, pe.lint_passed, "
-                        + "pe.runtime_result, pe.submitted_files, pe.verified_at, pe.choice_correct "
+                        + "pe.runtime_result, pe.submitted_files, pe.verified_at, pe.choice_correct, pe.workspace_digest "
                         + "FROM practice_attempt pa JOIN practice_evidence pe ON pe.attempt_id = pa.id "
                         + "WHERE pa.practice_task_id = ? ORDER BY pa.id")) {
             statement.setLong(1, taskId);
@@ -221,7 +217,8 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
                             RuntimeResult.valueOf(evidenceResult.getString("runtime_result")),
                             SqliteJson.strings(evidenceResult.getString("submitted_files")),
                             SqliteSupport.parseInstant(evidenceResult, "verified_at"),
-                            SqliteSupport.bool(evidenceResult, "choice_correct"));
+                            SqliteSupport.bool(evidenceResult, "choice_correct"),
+                            evidenceResult.getString("workspace_digest"));
                     attempts.add(new PracticeAttempt(
                             evidenceResult.getLong("id"),
                             Instant.parse(evidenceResult.getString("submitted_at")),

@@ -7,12 +7,7 @@ import com.db117.learnagent.learning.application.JourneyApplicationService;
 import com.db117.learnagent.learning.domain.Chapter;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.practice.domain.PracticeAttempt;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.PracticeTaskRepository;
-import com.db117.learnagent.practice.domain.RuntimeResult;
-import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.practice.domain.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -22,9 +17,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class TutorPracticeToolsTest {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -32,8 +25,7 @@ class TutorPracticeToolsTest {
     @Test
     void savesRedactedQuestionAndRecordsChoiceEvidence() throws Exception {
         LearningJourney journey = learningJourney();
-        LearningJourney updated = journey.recordPracticeVerified("variables", Instant.parse("2026-01-01T00:01:00Z"));
-        TutorPracticeToolsTest.StubJourneys journeys = new StubJourneys(journey, updated);
+        TutorPracticeToolsTest.StubJourneys journeys = new StubJourneys(journey, journey);
         TutorPracticeToolsTest.InMemoryPracticeTasks tasks = new InMemoryPracticeTasks(verifiedCodeTask());
         TutorPracticeTools tools = new TutorPracticeTools(journeys, tasks);
         TutorContext context = context(journey);
@@ -61,7 +53,9 @@ class TutorPracticeToolsTest {
         assertTrue(correct.get("verified").asBoolean());
         assertTrue(correct.get("choiceCorrect").asBoolean());
         assertEquals("VERIFIED", tasks.task().status().name());
-        assertEquals("COMPLETED", journeys.current().status().name());
+        assertFalse(correct.get("advanced").asBoolean());
+        assertEquals("ACTIVE", journeys.current().status().name());
+        assertEquals("variables", journeys.current().currentItem().learnUnitCode());
     }
 
     private static TutorContext context(LearningJourney journey) {

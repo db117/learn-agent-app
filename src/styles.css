@@ -147,6 +147,132 @@ h3 {
     background: #293858;
 }
 
+.practice-workspace-controls {
+    display: grid;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.route-proposal-card {
+    display: grid;
+    gap: 0.8rem;
+    margin: 0.8rem 0;
+    padding: 1rem;
+    border: 1px solid #6b85b2;
+    border-radius: 0.85rem;
+    background: rgba(22, 35, 62, 0.9);
+}
+
+.route-proposal-card > div,
+.route-proposal-card section {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.route-proposal-card h3,
+.route-proposal-card h4,
+.route-proposal-card p,
+.route-proposal-card ul {
+    margin: 0;
+}
+
+.route-proposal-card ul {
+    padding-left: 1.25rem;
+}
+
+.route-proposal-card li + li {
+    margin-top: 0.3rem;
+}
+
+.practice-assessment {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid #293858;
+    border-radius: 12px;
+    background: rgba(18, 28, 51, 0.76);
+}
+
+.practice-assessment.ready {
+    border-color: #58d39a;
+}
+
+.practice-assessment.continue {
+    border-color: #f2c46d;
+}
+
+.practice-assessment h3,
+.practice-assessment p {
+    margin: 0.25rem 0;
+}
+
+.practice-assessment .assessment-evidence {
+    color: #9aa9c2;
+    font-size: 0.875rem;
+}
+
+:root[data-theme="light"] .practice-assessment {
+    border-color: var(--light-border);
+    background: var(--light-surface);
+    color: var(--light-text);
+}
+
+:root[data-theme="light"] .route-proposal-card {
+    border-color: var(--light-border-strong);
+    background: var(--light-surface-soft);
+    color: var(--light-text);
+}
+
+:root[data-theme="light"] .practice-assessment.ready {
+    border-color: var(--light-success);
+}
+
+:root[data-theme="light"] .practice-assessment.continue {
+    border-color: var(--light-warning);
+}
+
+:root[data-theme="light"] .practice-assessment .assessment-evidence {
+    color: var(--light-muted);
+}
+
+.workspace-ide-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.workspace-ide-settings {
+    position: relative;
+}
+
+.workspace-ide-settings summary {
+    color: #b8c7df;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.workspace-ide-settings label {
+    display: grid;
+    gap: 0.35rem;
+    width: min(28rem, 80vw);
+    margin-top: 0.5rem;
+    color: #b8c7df;
+    font-size: 0.75rem;
+}
+
+.workspace-ide-settings input {
+    width: 100%;
+    min-width: 0;
+}
+
+.workspace-ide-feedback {
+    color: #b8c7df;
+    font-size: 0.8rem;
+}
+
 .status-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -760,6 +886,10 @@ button.secondary {
 
 .chapter-path-item li.completed {
     color: #78e0ad;
+}
+
+.chapter-path-item li.skipped {
+    color: #73819a;
 }
 
 .chapter-path-item li span:first-child {

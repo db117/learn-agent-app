@@ -23,6 +23,14 @@ export type ChoiceQuestion = {
     options: readonly ChoiceOption[];
 };
 
+export type PracticeCheckSummary = {
+    attemptId: number;
+    compilePassed: boolean;
+    testsPassed: boolean;
+    testCount: number;
+    verified: boolean;
+};
+
 export type PracticePanelProps = {
     files: readonly WorkspaceFileEntry[];
     selectedPath: string | null;
@@ -35,7 +43,6 @@ export type PracticePanelProps = {
     compiling?: boolean;
     testing?: boolean;
     verifying?: boolean;
-    practiceVerified?: boolean;
     codeVerified?: boolean;
     choiceQuestion?: ChoiceQuestion | null;
     choiceLoading?: boolean;

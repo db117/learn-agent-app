@@ -6,15 +6,7 @@ import com.db117.learnagent.learning.application.JourneyApplicationService;
 import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.practice.domain.ChoiceOption;
-import com.db117.learnagent.practice.domain.ChoiceQuestion;
-import com.db117.learnagent.practice.domain.PracticeAttempt;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.PracticeTaskRepository;
-import com.db117.learnagent.practice.domain.PracticeTaskStatus;
-import com.db117.learnagent.practice.domain.RuntimeResult;
-import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.practice.domain.*;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,7 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 
-/** TutorAgent 的选择题领域工具；只校验并持久化题目和答案，不调用模型。 */
+/** TutorAgent 的选择题领域工具；只校验并持久化题目和答案，不调用模型或推进进度。 */
 @Dependent
 public final class TutorPracticeTools {
     private static final String CODE_TASK_TYPE = "CODE";
@@ -80,7 +72,7 @@ public final class TutorPracticeTools {
 
     @Tool(
             name = "verify_practice_test",
-            description = "校验学习者提交的选择题选项，追加 PracticeEvidence，并在答对时推进 Learning Domain。")
+            description = "校验学习者提交的选择题选项并追加 PracticeEvidence；学习者确认 Tutor 评估前不得推进 Learning Domain。")
     public String verifyPracticeTest(
             TutorContext context,
             @ToolParam(name = "task_id", description = "save_practice_test 返回的 PracticeTask ID") long taskId,
@@ -123,10 +115,7 @@ public final class TutorPracticeTools {
                 correct);
         PracticeTask saved = practiceTasks.save(task.recordAttempt(
                 PracticeAttempt.submit(evidence, Instant.now())));
-        LearningJourney updated = evidence.isVerified(task.verificationPolicy())
-                ? journeys.recordPracticeVerified(context.journeyId(), unit.code())
-                : journey;
-        return verificationResult(saved, evidence, journey, updated);
+        return verificationResult(saved, evidence, journey, journey);
     }
 
     private LearningJourney currentJourney(TutorContext context) {

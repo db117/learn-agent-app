@@ -1,10 +1,10 @@
 package com.db117.learnagent.persistence.sqlite;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
-import javax.sql.DataSource;
 
 /**
  * 创建并验证当前 clean-slate SQLite 结构。
@@ -13,7 +13,8 @@ import javax.sql.DataSource;
  */
 public final class SqliteSchemaInitializer {
     public static final String SCHEMA_MARKER = "learn-agent-app-v2";
-    public static final int SCHEMA_VERSION = 9;
+    public static final int SCHEMA_VERSION = 10;
+    private static final int SCHEMA_VERSION_BEFORE_ASSESSMENTS = 9;
     private static final int SCHEMA_VERSION_WITH_MODEL_CONFIGURATION = 8;
     private static final int SCHEMA_VERSION_BEFORE_MODEL_CONFIGURATION = 7;
     public static final String SCHEMA_SOURCE = "step-3-journey-bootstrap";
@@ -29,6 +30,7 @@ public final class SqliteSchemaInitializer {
             "practice_task",
             "practice_attempt",
             "practice_evidence",
+            "practice_assessment",
             "project",
             "project_milestone",
             "project_evidence");
@@ -72,14 +74,22 @@ public final class SqliteSchemaInitializer {
             version = result.getInt("schema_version");
         }
         if (version == SCHEMA_VERSION_BEFORE_MODEL_CONFIGURATION) {
-            verifyRequiredTables(connection);
+            verifyLegacyRequiredTables(connection);
             migrateV7ToV9(connection);
+            migrateV9ToV10(connection);
         } else if (version == SCHEMA_VERSION_WITH_MODEL_CONFIGURATION) {
-            verifyRequiredTables(connection);
+            verifyLegacyRequiredTables(connection);
             if (!tableExists(connection, "model_configuration")) {
                 throw new IllegalStateException("recognized schema is missing table: model_configuration");
             }
             migrateV8ToV9(connection);
+            migrateV9ToV10(connection);
+        } else if (version == SCHEMA_VERSION_BEFORE_ASSESSMENTS) {
+            verifyLegacyRequiredTables(connection);
+            if (!tableExists(connection, "model_configuration")) {
+                throw new IllegalStateException("recognized schema is missing table: model_configuration");
+            }
+            migrateV9ToV10(connection);
         } else if (version != SCHEMA_VERSION) {
             throw new IllegalStateException("database schema marker is not recognized");
         }
@@ -92,6 +102,14 @@ public final class SqliteSchemaInitializer {
     private void verifyRequiredTables(Connection connection) throws SQLException {
         for (String table : REQUIRED_TABLES) {
             if (!tableExists(connection, table)) {
+                throw new IllegalStateException("recognized schema is missing table: " + table);
+            }
+        }
+    }
+
+    private void verifyLegacyRequiredTables(Connection connection) throws SQLException {
+        for (String table : REQUIRED_TABLES) {
+            if (!"practice_assessment".equals(table) && !tableExists(connection, table)) {
                 throw new IllegalStateException("recognized schema is missing table: " + table);
             }
         }
@@ -195,25 +213,7 @@ public final class SqliteSchemaInitializer {
                     FOREIGN KEY (journey_id, chapter_id) REFERENCES chapter(journey_id, id)
                 )
                 """);
-        execute(connection, """
-                CREATE TABLE learning_path_item (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    journey_id INTEGER NOT NULL REFERENCES learning_journey(id) ON DELETE CASCADE,
-                    learn_unit_id INTEGER NOT NULL,
-                    learn_unit_code TEXT NOT NULL,
-                    sequence INTEGER NOT NULL CHECK (sequence >= 0),
-                    status TEXT NOT NULL CHECK (status IN ('PENDING', 'CURRENT', 'COMPLETED', 'SKIPPED')),
-                    practice_verified INTEGER NOT NULL CHECK (practice_verified IN (0, 1)),
-                    pass_reason TEXT,
-                    started_at TEXT,
-                    completed_at TEXT,
-                    updated_at TEXT NOT NULL,
-                    CHECK (status <> 'COMPLETED'
-                        OR (practice_verified = 1 AND completed_at IS NOT NULL)),
-                    UNIQUE (journey_id, learn_unit_id),
-                    FOREIGN KEY (journey_id, learn_unit_id) REFERENCES learn_unit(journey_id, id)
-                )
-                """);
+        execute(connection, learningPathItemTableSql());
         execute(connection, """
                 CREATE UNIQUE INDEX uq_current_path_item
                 ON learning_path_item(journey_id)
@@ -255,9 +255,11 @@ public final class SqliteSchemaInitializer {
                     runtime_result TEXT NOT NULL CHECK (runtime_result IN ('NOT_RUN', 'PASSED', 'FAILED')),
                     submitted_files TEXT NOT NULL,
                     verified_at TEXT,
-                    choice_correct INTEGER NOT NULL CHECK (choice_correct IN (0, 1))
+                    choice_correct INTEGER NOT NULL CHECK (choice_correct IN (0, 1)),
+                    workspace_digest TEXT NOT NULL
                 )
                 """);
+        createPracticeAssessmentTable(connection);
         execute(connection, """
                 CREATE TABLE project (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -311,7 +313,7 @@ public final class SqliteSchemaInitializer {
     private void migrateV7ToV9(Connection connection) throws SQLException {
         // v7 新增模型设置表；保留原有学习事实与 Agent State 文件。
         createModelConfigurationTable(connection);
-        updateSchemaVersion(connection);
+        updateSchemaVersion(9, connection);
     }
 
     private void migrateV8ToV9(Connection connection) throws SQLException {
@@ -321,13 +323,87 @@ public final class SqliteSchemaInitializer {
                 ADD COLUMN protocol TEXT NOT NULL DEFAULT 'CHAT_COMPLETIONS'
                     CHECK (protocol IN ('CHAT_COMPLETIONS', 'RESPONSES'))
                 """);
-        updateSchemaVersion(connection);
+        updateSchemaVersion(9, connection);
     }
 
-    private void updateSchemaVersion(Connection connection) throws SQLException {
+    private void migrateV9ToV10(Connection connection) throws SQLException {
+        createPracticeAssessmentTable(connection);
+        if (!columnExists(connection, "learning_path_item", "assessment_id")) {
+            rebuildLearningPathItemTable(connection);
+        }
+        if (!columnExists(connection, "practice_evidence", "workspace_digest")) {
+            execute(connection, "ALTER TABLE practice_evidence ADD COLUMN workspace_digest TEXT NOT NULL DEFAULT ''");
+        }
+        updateSchemaVersion(SCHEMA_VERSION, connection);
+    }
+
+    private void rebuildLearningPathItemTable(Connection connection) throws SQLException {
+        execute(connection, "DROP VIEW IF EXISTS mastery");
+        execute(connection, "DROP INDEX IF EXISTS uq_current_path_item");
+        execute(connection, "ALTER TABLE learning_path_item RENAME TO learning_path_item_v9");
+        execute(connection, learningPathItemTableSql());
+        execute(connection, """
+                INSERT INTO learning_path_item(
+                    id, journey_id, learn_unit_id, learn_unit_code, sequence, status, practice_verified,
+                    assessment_id, pass_reason, started_at, completed_at, updated_at)
+                SELECT id, journey_id, learn_unit_id, learn_unit_code, sequence, status, practice_verified,
+                       NULL, pass_reason, started_at, completed_at, updated_at
+                FROM learning_path_item_v9
+                """);
+        execute(connection, "DROP TABLE learning_path_item_v9");
+        execute(connection, """
+                CREATE UNIQUE INDEX uq_current_path_item
+                ON learning_path_item(journey_id)
+                WHERE status = 'CURRENT'
+                """);
+        execute(connection, """
+                CREATE VIEW mastery AS
+                SELECT journey_id, learn_unit_id,
+                       CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END AS mastered
+                FROM learning_path_item
+                """);
+    }
+
+    private String learningPathItemTableSql() {
+        return """
+                CREATE TABLE learning_path_item (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    journey_id INTEGER NOT NULL REFERENCES learning_journey(id) ON DELETE CASCADE,
+                    learn_unit_id INTEGER NOT NULL,
+                    learn_unit_code TEXT NOT NULL,
+                    sequence INTEGER NOT NULL CHECK (sequence >= 0),
+                    status TEXT NOT NULL CHECK (status IN ('PENDING', 'CURRENT', 'COMPLETED', 'SKIPPED')),
+                    practice_verified INTEGER NOT NULL CHECK (practice_verified IN (0, 1)),
+                    assessment_id INTEGER REFERENCES practice_assessment(id),
+                    pass_reason TEXT,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    updated_at TEXT NOT NULL,
+                    CHECK (status <> 'COMPLETED'
+                        OR ((practice_verified = 1 OR assessment_id IS NOT NULL) AND completed_at IS NOT NULL)),
+                    UNIQUE (journey_id, learn_unit_id),
+                    FOREIGN KEY (journey_id, learn_unit_id) REFERENCES learn_unit(journey_id, id)
+                )
+                """;
+    }
+
+    private boolean columnExists(Connection connection, String table, String column) throws SQLException {
+        try (java.sql.PreparedStatement statement = connection.prepareStatement(
+                "PRAGMA table_info(" + table + ")");
+             ResultSet result = statement.executeQuery()) {
+            while (result.next()) {
+                if (column.equals(result.getString("name"))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private void updateSchemaVersion(int version, Connection connection) throws SQLException {
         try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "UPDATE schema_metadata SET schema_version = ? WHERE id = 1")) {
-            statement.setInt(1, SCHEMA_VERSION);
+            statement.setInt(1, version);
             statement.executeUpdate();
         }
     }
@@ -340,6 +416,23 @@ public final class SqliteSchemaInitializer {
                     base_url TEXT NOT NULL,
                     api_key TEXT NOT NULL,
                     protocol TEXT NOT NULL CHECK (protocol IN ('CHAT_COMPLETIONS', 'RESPONSES'))
+                )
+                """);
+    }
+
+    private void createPracticeAssessmentTable(Connection connection) throws SQLException {
+        execute(connection, """
+                CREATE TABLE IF NOT EXISTS practice_assessment (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    journey_id INTEGER NOT NULL REFERENCES learning_journey(id),
+                    learn_unit_id INTEGER NOT NULL,
+                    practice_task_id INTEGER NOT NULL REFERENCES practice_task(id),
+                    practice_attempt_id INTEGER NOT NULL REFERENCES practice_attempt(id),
+                    verdict TEXT NOT NULL CHECK (verdict IN ('READY', 'CONTINUE')),
+                    rationale TEXT NOT NULL,
+                    workspace_digest TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (journey_id, learn_unit_id) REFERENCES learn_unit(journey_id, id)
                 )
                 """);
     }

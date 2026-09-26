@@ -4,13 +4,7 @@ import com.db117.learnagent.learning.application.JourneyApplicationService;
 import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import com.db117.learnagent.workspace.application.WorkspaceInitializationException;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.PUT;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 
 /** Learner/Journey 引导 API；UI 只操作用户目标，不直接接触 AgentScope。 */
@@ -85,6 +79,19 @@ public class JourneyResource {
         return LearningProgressResponse.from(
                 journeyId,
                 journeys.learningJourneyFor(journeyId));
+    }
+
+    @POST
+    @Path("/journeys/{journeyId}/learning/route/confirm")
+    public LearningProgressResponse confirmLearningRoute(
+            @PathParam("journeyId") long journeyId,
+            ConfirmPlanRequest request) {
+        if (request == null) {
+            throw LearningRequestException.badRequest("INVALID_LEARNING_ROUTE", "路线提案不能为空");
+        }
+        return LearningProgressResponse.from(
+                journeyId,
+                journeys.confirmLearningRoute(journeyId, request.plan()));
     }
 
 }

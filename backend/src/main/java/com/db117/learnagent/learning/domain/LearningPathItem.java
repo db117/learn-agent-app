@@ -13,6 +13,7 @@ import java.time.Instant;
  * @param sequence 路径中的稳定排序值
  * @param status {@code PENDING/CURRENT/COMPLETED/SKIPPED} 生命周期状态
  * @param practiceVerified 是否存在满足 VerificationPolicy 的 PracticeEvidence
+ * @param assessmentId 经学习者确认并完成当前项的 Tutor 评估 ID；没有时为空
  * @param passReason 进入 {@code COMPLETED} 的领域原因；未完成时为空
  * @param startedAt 首次进入 {@code CURRENT} 的时间
  * @param completedAt 进入 {@code COMPLETED} 的时间；未完成时为空
@@ -24,6 +25,7 @@ public record LearningPathItem(
         int sequence,
         LearningPathItemStatus status,
         boolean practiceVerified,
+        Long assessmentId,
         String passReason,
         Instant startedAt,
         Instant completedAt,
@@ -38,6 +40,9 @@ public record LearningPathItem(
             throw new DomainRuleViolation("sequence must not be negative");
         }
         status = status == null ? throwRule("status must not be null") : status;
+        if (assessmentId != null && assessmentId <= 0) {
+            throw new DomainRuleViolation("assessmentId must be positive");
+        }
         if (passReason != null && passReason.isBlank()) {
             passReason = null;
         }
@@ -47,8 +52,11 @@ public record LearningPathItem(
         if (completedAt != null && updatedAt != null && updatedAt.isBefore(completedAt)) {
             throw new DomainRuleViolation("updatedAt must not precede completedAt");
         }
-        if (status == LearningPathItemStatus.COMPLETED && !practiceVerified) {
-            throw new DomainRuleViolation("completed item needs practice evidence");
+        if (status == LearningPathItemStatus.COMPLETED && !practiceVerified && assessmentId == null) {
+            throw new DomainRuleViolation("completed item needs verified practice or accepted assessment");
+        }
+        if (assessmentId != null && status != LearningPathItemStatus.COMPLETED) {
+            throw new DomainRuleViolation("accepted assessment must belong to a completed item");
         }
         if (status == LearningPathItemStatus.COMPLETED && completedAt == null) {
             throw new DomainRuleViolation("completed item needs completedAt");
@@ -69,6 +77,7 @@ public record LearningPathItem(
                 null,
                 null,
                 null,
+                null,
                 at);
     }
 
@@ -83,13 +92,47 @@ public record LearningPathItem(
                 sequence,
                 status,
                 practiceVerified,
+                assessmentId,
                 passReason,
                 startedAt,
                 completedAt,
                 updatedAt);
     }
 
-    /** 返回当前路径项的只读掌握投影；掌握状态由已验证 Practice 的完成条件决定。 */
+    public LearningPathItem withSequence(int nextSequence) {
+        return new LearningPathItem(id, learnUnitCode, nextSequence, status, practiceVerified,
+                assessmentId, passReason, startedAt, completedAt, updatedAt);
+    }
+
+    /** 路线重排时保留非完成项目的练习事实和开始时间。 */
+    public LearningPathItem replan(
+            int nextSequence,
+            LearningPathItemStatus nextStatus,
+            Instant at) {
+        DomainChecks.time(at, "at");
+        if (status == LearningPathItemStatus.COMPLETED
+                || nextStatus == LearningPathItemStatus.COMPLETED) {
+            throw new DomainRuleViolation("completed item cannot be changed by route proposal: " + learnUnitCode);
+        }
+        if (nextStatus != LearningPathItemStatus.PENDING
+                && nextStatus != LearningPathItemStatus.CURRENT
+                && nextStatus != LearningPathItemStatus.SKIPPED) {
+            throw new DomainRuleViolation("invalid route proposal status: " + nextStatus);
+        }
+        return new LearningPathItem(
+                id,
+                learnUnitCode,
+                nextSequence,
+                nextStatus,
+                practiceVerified,
+                null,
+                null,
+                startedAt == null && nextStatus == LearningPathItemStatus.CURRENT ? at : startedAt,
+                null,
+                at);
+    }
+
+    /** 返回当前路径项的只读掌握投影；Tutor 评估只有经学习者确认后才完成路径项。 */
     public Mastery mastery() {
         return new Mastery(status == LearningPathItemStatus.COMPLETED);
     }
@@ -104,6 +147,7 @@ public record LearningPathItem(
                     sequence,
                     LearningPathItemStatus.CURRENT,
                     practiceVerified,
+                    null,
                     passReason,
                     startedAt == null ? at : startedAt,
                     null,
@@ -125,6 +169,7 @@ public record LearningPathItem(
                 sequence,
                 LearningPathItemStatus.SKIPPED,
                 practiceVerified,
+                null,
                 passReason,
                 startedAt,
                 null,
@@ -140,11 +185,30 @@ public record LearningPathItem(
                 sequence,
                 status,
                 true,
+                null,
                 passReason,
                 startedAt,
                 completedAt,
                 at);
         return next.complete(at, "PRACTICE_EVIDENCE");
+    }
+
+    /** 保存学习者确认通过的 Tutor 评估；不修改不可变 PracticeEvidence。 */
+    public LearningPathItem acceptAssessment(long acceptedAssessmentId, boolean objectivePracticeVerified, Instant at) {
+        requireCurrent();
+        DomainChecks.id(acceptedAssessmentId, "acceptedAssessmentId");
+        DomainChecks.time(at, "at");
+        return new LearningPathItem(
+                id,
+                learnUnitCode,
+                sequence,
+                LearningPathItemStatus.COMPLETED,
+                practiceVerified || objectivePracticeVerified,
+                acceptedAssessmentId,
+                "AGENT_ASSESSMENT",
+                startedAt,
+                at,
+                at);
     }
 
     private LearningPathItem complete(Instant at, String reason) {
@@ -154,6 +218,7 @@ public record LearningPathItem(
                 sequence,
                 LearningPathItemStatus.COMPLETED,
                 practiceVerified,
+                null,
                 reason,
                 startedAt,
                 at,

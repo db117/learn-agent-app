@@ -25,6 +25,9 @@ class TutorToolCdiTest {
     @Inject
     TutorPracticeTools practiceTools;
 
+    @Inject
+    TutorProgressTools progressTools;
+
     @Test
     void cdiToolBeansRegisterTheirAgentScopeTools() {
         Toolkit learningToolkit = new Toolkit();
@@ -39,6 +42,9 @@ class TutorToolCdiTest {
         assertEquals(
                 java.util.Set.of("save_practice_test", "verify_practice_test"),
                 practiceToolkit.getToolNames());
+        Toolkit progressToolkit = new Toolkit();
+        progressToolkit.registerTool(progressTools);
+        assertEquals(java.util.Set.of("record_practice_assessment"), progressToolkit.getToolNames());
         assertEquals(
                 java.util.Set.of(
                         "list_files", "read_file", "write_file", "initialize_npm_project",

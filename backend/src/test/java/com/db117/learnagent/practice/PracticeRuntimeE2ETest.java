@@ -2,6 +2,9 @@ package com.db117.learnagent.practice;
 
 import com.db117.learnagent.learning.domain.LearningJourneyRepository;
 import com.db117.learnagent.learning.domain.LearningPathItemStatus;
+import com.db117.learnagent.practice.domain.PracticeAssessment;
+import com.db117.learnagent.practice.domain.PracticeAssessmentRepository;
+import com.db117.learnagent.practice.domain.PracticeAssessmentVerdict;
 import com.db117.learnagent.practice.domain.PracticeTaskRepository;
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
@@ -23,11 +26,7 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 @QuarkusTest
 @TestProfile(PracticeRuntimeE2ETest.IsolatedPracticeProfile.class)
@@ -49,6 +48,11 @@ class PracticeRuntimeE2ETest {
                       "code": "functions",
                       "title": "函数",
                       "objective": "能够声明带类型的函数"
+                    },
+                    {
+                      "code": "async",
+                      "title": "异步函数",
+                      "objective": "能够理解 Promise 与 async/await"
                     }
                   ]
                 }
@@ -62,11 +66,14 @@ class PracticeRuntimeE2ETest {
     @Inject
     LearningJourneyRepository learningJourneys;
 
+    @Inject
+    PracticeAssessmentRepository assessments;
+
     @TestHTTPResource("/api/bootstrap")
     URL bootstrapUrl;
 
     @Test
-    void completesARealPracticeFailureFixAndAdvancesFlow() throws Exception {
+    void recordsRealPracticeEvidenceThenWaitsForConfirmedTutorAssessment() throws Exception {
         HttpResponse<String> learner = put("/api/learner", "{\"backgroundSummary\":\"TypeScript learner\"}", 200);
         assertTrue(learner.body().contains("\"id\":"));
 
@@ -136,22 +143,58 @@ class PracticeRuntimeE2ETest {
         assertEquals(1, evidence.testCount());
         assertNotNull(evidence.verifiedAt());
 
-        HttpResponse<String> secondVerification = post("/api/journeys/" + journeyId + "/practice/verify", null, 200);
-        assertTrue(secondVerification.body().contains("\"verified\":true"));
-        assertSafeVerifyResponse(secondVerification.body());
-        long secondTaskId = jsonLong(secondVerification.body(), "taskId");
-        com.db117.learnagent.practice.domain.PracticeTask secondTask = practiceTasks.findById(secondTaskId).orElseThrow();
-        assertEquals("CODE", secondTask.type());
-        assertEquals("VERIFIED", secondTask.status().name());
-        assertEquals(1, secondTask.attempts().size());
+        com.db117.learnagent.learning.domain.LearningJourney persisted =
+                learningJourneys.findById(learningJourneyId).orElseThrow();
+        assertEquals("ACTIVE", persisted.status().name());
+        assertEquals("variables", persisted.currentItem().learnUnitCode());
+        assertFalse(persisted.pathItems().getFirst().practiceVerified());
 
-        com.db117.learnagent.learning.domain.LearningJourney persisted = learningJourneys.findById(learningJourneyId).orElseThrow();
-        assertEquals("COMPLETED", persisted.status().name());
-        assertEquals(LearningPathItemStatus.COMPLETED, persisted.pathItems().getFirst().status());
-        assertEquals(LearningPathItemStatus.COMPLETED, persisted.pathItems().getLast().status());
-        assertTrue(persisted.pathItems().getLast().practiceVerified());
-        assertEquals("PRACTICE_EVIDENCE", persisted.pathItems().getLast().passReason());
-        assertNull(persisted.currentItem());
+        com.db117.learnagent.practice.domain.PracticeTask checkedTask = practiceTasks.findById(taskId).orElseThrow();
+        com.db117.learnagent.practice.domain.PracticeEvidence checkedEvidence =
+                checkedTask.attempts().getLast().evidence();
+        com.db117.learnagent.practice.domain.PracticeAssessment assessment = assessments.save(
+                PracticeAssessment.create(
+                        learningJourneyId,
+                        persisted.learnUnit("variables").id(),
+                        taskId,
+                        checkedTask.attempts().getLast().id(),
+                        PracticeAssessmentVerdict.READY,
+                        "代码检查通过；对话中能说明变量类型的用途。",
+                        checkedEvidence.workspaceDigest(),
+                        java.time.Instant.now()));
+
+        HttpResponse<String> pendingAssessment = get(
+                "/api/journeys/" + journeyId + "/practice/assessment", 200);
+        assertTrue(pendingAssessment.body().contains("\"verdict\":\"READY\""));
+        assertTrue(pendingAssessment.body().contains("\"stale\":false"));
+        HttpResponse<String> accepted = post(
+                "/api/journeys/" + journeyId + "/practice/assessments/" + assessment.id() + "/accept", null, 200);
+        assertTrue(accepted.body().contains("\"currentLearnUnitCode\":\"functions\""));
+
+        HttpResponse<String> confirmedRoute = post(
+                "/api/journeys/" + journeyId + "/learning/route/confirm",
+                "{\"plan\":" + jsonString("""
+                        {"reason":"先学异步基础，再补充循环练习。","chapters":[
+                          {"code":"basics","title":"基础","units":[
+                            {"code":"async","title":"异步函数","objective":"理解 async/await"}]},
+                          {"code":"review","title":"复习","units":[
+                            {"code":"loops","title":"循环","objective":"使用循环遍历集合"}]}
+                        ]}
+                        """) + "}",
+                200);
+        assertTrue(confirmedRoute.body().contains("\"currentLearnUnitCode\":\"async\""));
+
+        com.db117.learnagent.learning.domain.LearningJourney replanned =
+                learningJourneys.findById(learningJourneyId).orElseThrow();
+        assertEquals(LearningPathItemStatus.COMPLETED, pathItem(replanned, "variables").status());
+        assertEquals(assessment.id(), pathItem(replanned, "variables").assessmentId());
+        assertTrue(pathItem(replanned, "variables").practiceVerified());
+        assertEquals("AGENT_ASSESSMENT", pathItem(replanned, "variables").passReason());
+        assertEquals(LearningPathItemStatus.SKIPPED, pathItem(replanned, "functions").status());
+        assertEquals(LearningPathItemStatus.CURRENT, pathItem(replanned, "async").status());
+        assertEquals(LearningPathItemStatus.PENDING, pathItem(replanned, "loops").status());
+        assertNotNull(replanned.learnUnit("loops").id());
+        assertEquals("variables", replanned.pathItems().getFirst().learnUnitCode());
     }
 
     private HttpResponse<String> get(String path, int expectedStatus) throws Exception {
@@ -196,6 +239,15 @@ class PracticeRuntimeE2ETest {
         return Long.parseLong(matcher.group(1));
     }
 
+    private static com.db117.learnagent.learning.domain.LearningPathItem pathItem(
+            com.db117.learnagent.learning.domain.LearningJourney journey,
+            String learnUnitCode) {
+        return journey.pathItems().stream()
+                .filter(item -> item.learnUnitCode().equals(learnUnitCode))
+                .findFirst()
+                .orElseThrow();
+    }
+
     private static String jsonString(String value) {
         return "\"" + value.replace("\\", "\\\\")
                 .replace("\"", "\\\"")
@@ -206,7 +258,7 @@ class PracticeRuntimeE2ETest {
     /** 锁定 Practice REST 对 UI 的安全摘要契约；不把运行时内部数据带出边界。 */
     private static void assertSafeVerifyResponse(String body) {
         Set<String> fields = Set.of(
-                "taskId", "status", "verified", "compilePassed", "testsPassed", "testCount",
+                "taskId", "assessmentAttemptId", "status", "verified", "compilePassed", "testsPassed", "testCount",
                 "submittedFiles", "verifiedAt", "learningJourneyStatus", "currentLearnUnitCode", "advanced");
         for (String field : fields) {
             assertTrue(body.contains("\"" + field + "\":"), () -> "Missing VerifyResponse field: " + field);

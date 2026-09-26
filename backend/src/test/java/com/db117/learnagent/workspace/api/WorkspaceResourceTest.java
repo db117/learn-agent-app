@@ -27,6 +27,14 @@ class WorkspaceResourceTest {
     }
 
     @Test
+    void exposesTheConfiguredLearningWorkspacePathForTheLocalIde() {
+        WorkspaceResource resource = resource();
+
+        assertEquals(dataDir.resolve("journeys/1/workspace").toAbsolutePath().normalize().toString(),
+                resource.learningWorkspacePath(1));
+    }
+
+    @Test
     void mapsUnsafeAndMissingFileRequests() throws IOException {
         WorkspaceResource resource = resource();
         resource.writeProjectFile(2, ".env", new WorkspaceContentRequest("x"));

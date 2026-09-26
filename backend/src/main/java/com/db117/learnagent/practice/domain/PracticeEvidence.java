@@ -17,6 +17,7 @@ import java.util.List;
  * @param submittedFiles 提交文件的路径或 Artifact 引用，不是文件内容
  * @param verifiedAt 产生验证结果的时间；没有结果时可为空
  * @param choiceCorrect 选择题答案是否正确
+ * @param workspaceDigest 提交时学习目录的 SHA-256 摘要；选择题没有源码时为空
  */
 public record PracticeEvidence(
         boolean compilePassed,
@@ -26,7 +27,8 @@ public record PracticeEvidence(
         RuntimeResult runtimeResult,
         List<String> submittedFiles,
         Instant verifiedAt,
-        boolean choiceCorrect) {
+        boolean choiceCorrect,
+        String workspaceDigest) {
 
     public PracticeEvidence(
             boolean compilePassed,
@@ -36,7 +38,20 @@ public record PracticeEvidence(
             RuntimeResult runtimeResult,
             List<String> submittedFiles,
             Instant verifiedAt) {
-        this(compilePassed, testsPassed, testCount, lintPassed, runtimeResult, submittedFiles, verifiedAt, false);
+        this(compilePassed, testsPassed, testCount, lintPassed, runtimeResult, submittedFiles, verifiedAt, false, "");
+    }
+
+    public PracticeEvidence(
+            boolean compilePassed,
+            boolean testsPassed,
+            int testCount,
+            boolean lintPassed,
+            RuntimeResult runtimeResult,
+            List<String> submittedFiles,
+            Instant verifiedAt,
+            boolean choiceCorrect) {
+        this(compilePassed, testsPassed, testCount, lintPassed, runtimeResult,
+                submittedFiles, verifiedAt, choiceCorrect, "");
     }
 
     public PracticeEvidence {
@@ -50,6 +65,10 @@ public record PracticeEvidence(
         submittedFiles = submittedFiles.stream()
                 .map(file -> DomainChecks.text(file, "submittedFile"))
                 .toList();
+        workspaceDigest = workspaceDigest == null ? "" : workspaceDigest.strip();
+        if (!workspaceDigest.isEmpty() && !workspaceDigest.matches("[0-9a-f]{64}")) {
+            throw new DomainRuleViolation("workspaceDigest must be a lowercase SHA-256 digest");
+        }
         if (verifiedAt != null) {
             DomainChecks.time(verifiedAt, "verifiedAt");
         }

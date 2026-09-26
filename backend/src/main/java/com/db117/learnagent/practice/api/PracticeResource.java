@@ -9,25 +9,10 @@ import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
 import com.db117.learnagent.practice.application.PracticeRuntimeService;
-import com.db117.learnagent.practice.domain.ChoiceOption;
-import com.db117.learnagent.practice.domain.ChoiceQuestion;
-import com.db117.learnagent.practice.domain.PracticeAttempt;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.PracticeTaskRepository;
-import com.db117.learnagent.practice.domain.PracticeTaskStatus;
-import com.db117.learnagent.practice.domain.RuntimeResult;
-import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.practice.domain.*;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.BadRequestException;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.NotFoundException;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 
 import java.time.Instant;
@@ -45,6 +30,7 @@ public final class PracticeResource {
     private final WorkspaceApplicationService workspaces;
     private final PracticeRuntimeService runtime;
     private final PracticeTaskRepository practiceTasks;
+    private final PracticeAssessmentRepository assessments;
     private final JourneyApplicationService journeys;
 
     @Inject
@@ -52,10 +38,12 @@ public final class PracticeResource {
             WorkspaceApplicationService workspaces,
             PracticeRuntimeService runtime,
             PracticeTaskRepository practiceTasks,
+            PracticeAssessmentRepository assessments,
             JourneyApplicationService journeys) {
         this.workspaces = workspaces;
         this.runtime = runtime;
         this.practiceTasks = practiceTasks;
+        this.assessments = assessments;
         this.journeys = journeys;
     }
 
@@ -150,11 +138,7 @@ public final class PracticeResource {
                 correct);
         PracticeTask saved = practiceTasks.save(task.recordAttempt(
                 PracticeAttempt.submit(evidence, Instant.now())));
-        LearningJourney updated = recordLearningProgress(journeyId, learningJourney, saved, evidence);
-        boolean advanced = !Objects.equals(
-                learningJourney.currentItem() == null ? null : learningJourney.currentItem().learnUnitCode(),
-                updated.currentItem() == null ? null : updated.currentItem().learnUnitCode());
-        return ChoiceVerifyResponse.from(saved, evidence, updated, advanced);
+        return ChoiceVerifyResponse.from(saved, evidence, learningJourney, false);
     }
 
     @POST
@@ -167,9 +151,9 @@ public final class PracticeResource {
                 .filter(value -> value.journeyId() == learningJourney.id())
                 .orElseThrow(() -> new NotFoundException("PracticeTask 不存在"));
         requireCodeTask(task);
+        requireCurrentTask(learningJourney, task);
         PracticeRuntimeService.PracticeVerification result = runtime.verify(task, workspaces.learningWorkspace(journeyId));
-        LearningJourney updated = recordLearningProgress(journeyId, learningJourney, result);
-        return VerifyResponse.from(result.task(), result.evidence(), learningJourney, updated);
+        return VerifyResponse.from(result.task(), result.evidence(), learningJourney, learningJourney);
     }
 
     /** 验证当前 LearnUnit；首次验证时按当前路径项创建最小 PracticeTask。 */
@@ -184,9 +168,6 @@ public final class PracticeResource {
         LearnUnit unit = learningJourney.learnUnit(currentItem.learnUnitCode());
         Long learnUnitId = Objects.requireNonNull(unit.id(), "persisted LearnUnit id must not be null");
         List<PracticeTask> candidates = practiceTasks.findByLearnUnit(learningJourney.id(), learnUnitId);
-        if (currentItem.practiceVerified()) {
-            throw LearningRequestException.conflict("PRACTICE_ALREADY_VERIFIED", "当前单元的 Practice 已验证");
-        }
         PracticeTask task = candidates.stream()
                 .filter(value -> value.status() == PracticeTaskStatus.OPEN)
                 .filter(value -> CODE_TASK_TYPE.equals(value.type()))
@@ -203,33 +184,99 @@ public final class PracticeResource {
                         new VerificationPolicy(true, true, false, false),
                         Instant.now())));
         PracticeRuntimeService.PracticeVerification result = runtime.verify(task, workspaces.learningWorkspace(journeyId));
-        LearningJourney updated = recordLearningProgress(journeyId, learningJourney, result);
-        return VerifyResponse.from(result.task(), result.evidence(), learningJourney, updated);
+        return VerifyResponse.from(result.task(), result.evidence(), learningJourney, learningJourney);
     }
 
-    private LearningJourney recordLearningProgress(
-            long journeyId, LearningJourney before, PracticeRuntimeService.PracticeVerification result) {
-        return recordLearningProgress(journeyId, before, result.task(), result.evidence());
-    }
-
-    private LearningJourney recordLearningProgress(
-            long journeyId, LearningJourney before, PracticeTask task, PracticeEvidence evidence) {
-        if (!evidence.isVerified(task.verificationPolicy())) {
-            return before;
+    @GET
+    @Path("/assessment")
+    public AssessmentResponse assessment(@PathParam("journeyId") long journeyId) {
+        LearningJourney learningJourney = journeys.learningJourneyFor(journeyId);
+        com.db117.learnagent.learning.domain.LearningPathItem currentItem = learningJourney.currentItem();
+        if (currentItem == null) {
+            return AssessmentResponse.empty();
         }
-        // 有选择题时，代码证据只关闭代码阶段；选择题证据才关闭当前 LearnUnit。
-        if (CODE_TASK_TYPE.equals(task.type())
-                && practiceTasks.findByLearnUnit(before.id(), task.learnUnitId()).stream()
-                .anyMatch(value -> CHOICE_TASK_TYPE.equals(value.type())
-                        && value.status() == PracticeTaskStatus.OPEN)) {
-            return before;
+        long learnUnitId = requireLearnUnitId(learningJourney.learnUnit(currentItem.learnUnitCode()));
+        PracticeAssessment assessment = assessments.findLatest(learningJourney.id(), learnUnitId).orElse(null);
+        if (assessment == null) {
+            return AssessmentResponse.empty();
         }
-        String learnUnitCode = before.learnUnits().stream()
-                .filter(unit -> Objects.equals(unit.id(), task.learnUnitId()))
-                .map(unit -> unit.code())
+        PracticeTask assessedTask = practiceTasks.findById(assessment.practiceTaskId())
+                .filter(task -> task.journeyId() == learningJourney.id())
+                .orElseThrow(() -> new IllegalStateException("assessment task is missing"));
+        PracticeAttempt attempt = assessedTask.attempts().stream()
+                .filter(value -> Objects.equals(value.id(), assessment.practiceAttemptId()))
                 .findFirst()
-                .orElseThrow(() -> new NotFoundException("PracticeTask 对应的 LearnUnit 不存在"));
-        return journeys.recordPracticeVerified(journeyId, learnUnitCode);
+                .orElseThrow(() -> new IllegalStateException("assessment attempt is missing"));
+        String currentDigest = runtime.contentDigest(workspaces.learningWorkspace(journeyId));
+        boolean latestAttempt = latestCodeAttempt(learningJourney, learnUnitId)
+                .map(value -> Objects.equals(value.id(), attempt.id()))
+                .orElse(false);
+        return AssessmentResponse.from(assessment, attempt.evidence(),
+                !latestAttempt || !assessment.workspaceDigest().equals(currentDigest));
+    }
+
+    @POST
+    @Path("/assessments/{assessmentId}/accept")
+    public AcceptAssessmentResponse acceptAssessment(
+            @PathParam("journeyId") long journeyId,
+            @PathParam("assessmentId") long assessmentId) {
+        LearningJourney learningJourney = journeys.learningJourneyFor(journeyId);
+        PracticeAssessment assessment = assessments.findById(assessmentId)
+                .filter(value -> value.journeyId() == learningJourney.id())
+                .orElseThrow(() -> new NotFoundException("PracticeAssessment 不存在"));
+        boolean alreadyAccepted = learningJourney.pathItems().stream()
+                .anyMatch(item -> Objects.equals(item.assessmentId(), assessmentId));
+        if (alreadyAccepted) {
+            return AcceptAssessmentResponse.from(learningJourney);
+        }
+        com.db117.learnagent.learning.domain.LearningPathItem currentItem = learningJourney.currentItem();
+        if (currentItem == null) {
+            throw LearningRequestException.conflict("LEARNING_JOURNEY_COMPLETED", "学习路径已经完成");
+        }
+        long learnUnitId = requireLearnUnitId(learningJourney.learnUnit(currentItem.learnUnitCode()));
+        if (assessment.learnUnitId() != learnUnitId
+                || assessment.verdict() != PracticeAssessmentVerdict.READY) {
+            throw LearningRequestException.conflict("ASSESSMENT_NOT_ACCEPTABLE", "当前评估不能推进当前 LearnUnit");
+        }
+        PracticeAssessment latest = assessments.findLatest(learningJourney.id(), learnUnitId).orElse(null);
+        if (latest == null || !Objects.equals(latest.id(), assessment.id())) {
+            throw LearningRequestException.conflict("ASSESSMENT_OUTDATED", "已有更新的 Tutor 评估，请查看最新结果");
+        }
+        PracticeTask assessedTask = practiceTasks.findById(assessment.practiceTaskId())
+                .filter(task -> task.journeyId() == learningJourney.id())
+                .orElseThrow(() -> new IllegalStateException("assessment task is missing"));
+        PracticeAttempt attempt = assessedTask.attempts().stream()
+                .filter(value -> Objects.equals(value.id(), assessment.practiceAttemptId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("assessment attempt is missing"));
+        boolean latestAttempt = latestCodeAttempt(learningJourney, learnUnitId)
+                .map(value -> Objects.equals(value.id(), attempt.id()))
+                .orElse(false);
+        String currentDigest = runtime.contentDigest(workspaces.learningWorkspace(journeyId));
+        if (!latestAttempt || !assessment.workspaceDigest().equals(currentDigest)) {
+            throw LearningRequestException.conflict("ASSESSMENT_STALE", "代码在检查后发生变化，请重新提交检查");
+        }
+        return AcceptAssessmentResponse.from(
+                journeys.acceptPracticeAssessment(
+                        journeyId,
+                        currentItem.learnUnitCode(),
+                        assessment.id(),
+                        attempt.evidence().isVerified(assessedTask.verificationPolicy())));
+    }
+
+    private void requireCurrentTask(LearningJourney journey, PracticeTask task) {
+        com.db117.learnagent.learning.domain.LearningPathItem current = journey.currentItem();
+        if (current == null || task.learnUnitId() != requireLearnUnitId(journey.learnUnit(current.learnUnitCode()))) {
+            throw LearningRequestException.conflict("PRACTICE_TASK_NOT_CURRENT", "编码题不属于当前 LearnUnit");
+        }
+    }
+
+    private java.util.Optional<PracticeAttempt> latestCodeAttempt(LearningJourney journey, long learnUnitId) {
+        return practiceTasks.findByLearnUnit(journey.id(), learnUnitId).stream()
+                .filter(value -> CODE_TASK_TYPE.equals(value.type()))
+                .flatMap(value -> value.attempts().stream())
+                .max(java.util.Comparator.comparing(PracticeAttempt::submittedAt)
+                        .thenComparing(value -> value.id() == null ? 0L : value.id()));
     }
 
     private static long requireLearnUnitId(LearnUnit unit) {
@@ -387,9 +434,9 @@ public final class PracticeResource {
      * @param status 验证后的任务状态
      * @param verified 本次 Evidence 是否满足选择题验证策略
      * @param choiceCorrect 本次答案是否正确
-     * @param learningJourneyStatus 回写 Learning Domain 后的 Journey 状态
-     * @param currentLearnUnitCode 回写后的当前 LearnUnit；路径完成后为空
-     * @param advanced 本次答案是否推进了路径
+     * @param learningJourneyStatus 本次选择题验证后的 LearningJourney 状态；验证本身不修改进度
+     * @param currentLearnUnitCode 验证后当前 LearnUnit；路径完成后为空
+     * @param advanced 本次验证是否推进路径；Tutor 评估确认前始终为 false
      */
     public record ChoiceVerifyResponse(
             long taskId,
@@ -415,10 +462,44 @@ public final class PracticeResource {
         }
     }
 
+    /** 当前 Tutor 对最新编码提交的评估；stale 表示提交后代码或提交记录已变化。 */
+    public record AssessmentResponse(
+            boolean available,
+            Long assessmentId,
+            Long attemptId,
+            PracticeAssessmentVerdict verdict,
+            String rationale,
+            boolean stale,
+            boolean compilePassed,
+            boolean testsPassed,
+            int testCount) {
+        static AssessmentResponse empty() {
+            return new AssessmentResponse(false, null, null, null, null, false, false, false, 0);
+        }
+
+        static AssessmentResponse from(PracticeAssessment assessment, PracticeEvidence evidence, boolean stale) {
+            return new AssessmentResponse(true, assessment.id(), assessment.practiceAttemptId(),
+                    assessment.verdict(), assessment.rationale(), stale, evidence.compilePassed(),
+                    evidence.testsPassed(), evidence.testCount());
+        }
+    }
+
+    /** 用户确认 Tutor 的 READY 评估后返回新的路径位置。 */
+    public record AcceptAssessmentResponse(
+            String learningJourneyStatus,
+            String currentLearnUnitCode,
+            boolean accepted) {
+        static AcceptAssessmentResponse from(LearningJourney journey) {
+            return new AcceptAssessmentResponse(journey.status().name(),
+                    journey.currentItem() == null ? null : journey.currentItem().learnUnitCode(), true);
+        }
+    }
+
     /**
      * PracticeTask 验证后公开的 Domain 摘要。
      *
      * @param taskId PracticeTask 的稳定主键
+     * @param assessmentAttemptId 本次已保存代码提交的稳定主键，Tutor 评估必须引用该次提交
      * @param status 验证后的任务状态
      * @param verified 本次 Evidence 是否满足任务策略
      * @param compilePassed 编译是否通过
@@ -426,12 +507,13 @@ public final class PracticeResource {
      * @param testCount 实际测试数量
      * @param submittedFiles 本次验证涉及的文件路径
      * @param verifiedAt 通过验证时的时间；失败时为空
-     * @param learningJourneyStatus 回写 Learning Domain 后的 LearningJourney 状态
+     * @param learningJourneyStatus 本次代码验证后的 LearningJourney 状态；验证本身不修改进度
      * @param currentLearnUnitCode 当前 LearningPathItem 对应的 LearnUnit；路径完成后为空
-     * @param advanced 本次验证是否使路径推进到了下一个单元
+     * @param advanced 本次验证是否推进路径；Tutor 评估确认前始终为 false
      */
     public record VerifyResponse(
             long taskId,
+            long assessmentAttemptId,
             String status,
             boolean verified,
             boolean compilePassed,
@@ -449,6 +531,8 @@ public final class PracticeResource {
                 LearningJourney after) {
             return new VerifyResponse(
                     Objects.requireNonNull(task.id(), "persisted task id must not be null"),
+                    Objects.requireNonNull(task.attempts().get(task.attempts().size() - 1).id(),
+                            "persisted practice attempt id must not be null"),
                     task.status().name(),
                     evidence.verifiedAt() != null,
                     evidence.compilePassed(),

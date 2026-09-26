@@ -1,25 +1,15 @@
 package com.db117.learnagent.persistence.sqlite;
 
-import com.db117.learnagent.learning.domain.Chapter;
-import com.db117.learnagent.learning.domain.LearnUnit;
-import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.learning.domain.LearningJourneyRepository;
-import com.db117.learnagent.learning.domain.LearningJourneyStatus;
-import com.db117.learnagent.learning.domain.LearningPathItem;
-import com.db117.learnagent.learning.domain.LearningPathItemStatus;
+import com.db117.learnagent.learning.domain.*;
 import jakarta.enterprise.context.ApplicationScoped;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import javax.sql.DataSource;
+import java.sql.*;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import javax.sql.DataSource;
 
 /**
  * LearningJourney 聚合的 SQLite 适配器。
@@ -139,10 +129,20 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
             statement.setString(6, journey.languagePackId());
             SqliteSupport.requireUpdated(statement.executeUpdate(), "learning journey", journeyId);
         }
-        requirePersistedContent(journey);
-        updateLearnUnitContent(connection, journeyId, journey.learnUnits());
-        Map<String, Long> unitIds = journey.learnUnits().stream().collect(java.util.stream.Collectors.toMap(
+        List<Chapter> persistedChapters = persistChapters(connection, journeyId, journey.chapters());
+        Map<String, Long> chapterIds = persistedChapters.stream().collect(java.util.stream.Collectors.toMap(
+                Chapter::code, Chapter::id));
+        List<LearnUnit> persistedUnits = persistLearnUnits(
+                connection, journeyId, chapterIds, journey.learnUnits());
+        deleteUnusedChapters(connection, journeyId);
+        Map<String, Long> unitIds = persistedUnits.stream().collect(java.util.stream.Collectors.toMap(
                 LearnUnit::code, LearnUnit::id));
+        // 先释放唯一 CURRENT 索引，再按聚合的新路线顺序写入，避免重排中途触发约束。
+        try (PreparedStatement statement = connection.prepareStatement(
+                "UPDATE learning_path_item SET status = 'PENDING' WHERE journey_id = ? AND status = 'CURRENT'")) {
+            statement.setLong(1, journeyId);
+            statement.executeUpdate();
+        }
         List<LearningPathItem> persistedItems = updatePathItems(connection, journeyId, unitIds, journey.pathItems());
         return LearningJourney.reconstitute(
                 journeyId,
@@ -152,29 +152,94 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
                 journey.status(),
                 journey.createdAt(),
                 journey.completedAt(),
-                journey.chapters(),
-                journey.learnUnits(),
+                persistedChapters,
+                persistedUnits,
                 persistedItems);
     }
 
-    private void requirePersistedContent(LearningJourney journey) {
-        if (journey.chapters().stream().anyMatch(chapter -> chapter.id() == null)
-                || journey.learnUnits().stream().anyMatch(unit -> unit.id() == null)) {
-            throw new IllegalStateException("persisted journey content cannot be replaced or added");
+    private void deleteUnusedChapters(Connection connection, long journeyId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM chapter WHERE journey_id = ? "
+                        + "AND id NOT IN (SELECT chapter_id FROM learn_unit WHERE journey_id = ?)")) {
+            statement.setLong(1, journeyId);
+            statement.setLong(2, journeyId);
+            statement.executeUpdate();
         }
     }
 
-    private void updateLearnUnitContent(Connection connection, long journeyId, List<LearnUnit> units)
+    private List<Chapter> persistChapters(Connection connection, long journeyId, List<Chapter> chapters)
             throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                "UPDATE learn_unit SET content = ? WHERE id = ? AND journey_id = ?")) {
-            for (LearnUnit unit : units) {
-                statement.setString(1, unit.content());
-                statement.setLong(2, unit.id());
-                statement.setLong(3, journeyId);
-                SqliteSupport.requireUpdated(statement.executeUpdate(), "learn unit", unit.id());
+        ArrayList<Chapter> persisted = new ArrayList<Chapter>();
+        try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO chapter(journey_id, code, title, sequence) VALUES (?, ?, ?, ?)",
+                Statement.RETURN_GENERATED_KEYS);
+             PreparedStatement update = connection.prepareStatement(
+                     "UPDATE chapter SET title = ?, sequence = ? WHERE id = ? AND journey_id = ?")) {
+            for (Chapter chapter : chapters) {
+                if (chapter.id() == null) {
+                    insert.setLong(1, journeyId);
+                    insert.setString(2, chapter.code());
+                    insert.setString(3, chapter.title());
+                    insert.setInt(4, chapter.sequence());
+                    insert.executeUpdate();
+                    persisted.add(chapter.withId(SqliteSupport.generatedId(connection, insert)));
+                } else {
+                    update.setString(1, chapter.title());
+                    update.setInt(2, chapter.sequence());
+                    update.setLong(3, chapter.id());
+                    update.setLong(4, journeyId);
+                    SqliteSupport.requireUpdated(update.executeUpdate(), "chapter", chapter.id());
+                    persisted.add(chapter);
+                }
             }
         }
+        return List.copyOf(persisted);
+    }
+
+    private List<LearnUnit> persistLearnUnits(
+            Connection connection,
+            long journeyId,
+            Map<String, Long> chapterIds,
+            List<LearnUnit> units) throws SQLException {
+        ArrayList<LearnUnit> persisted = new ArrayList<LearnUnit>();
+        try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO learn_unit(journey_id, chapter_id, code, title, objective, content, sequence, prerequisite_codes) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                Statement.RETURN_GENERATED_KEYS);
+             PreparedStatement update = connection.prepareStatement(
+                     "UPDATE learn_unit SET chapter_id = ?, title = ?, objective = ?, content = ?, sequence = ?, "
+                             + "prerequisite_codes = ? WHERE id = ? AND journey_id = ?")) {
+            for (LearnUnit unit : units) {
+                Long chapterId = chapterIds.get(unit.chapterCode());
+                if (chapterId == null) {
+                    throw new IllegalStateException("missing persisted chapter: " + unit.chapterCode());
+                }
+                if (unit.id() == null) {
+                    insert.setLong(1, journeyId);
+                    insert.setLong(2, chapterId);
+                    insert.setString(3, unit.code());
+                    insert.setString(4, unit.title());
+                    insert.setString(5, unit.objective());
+                    insert.setString(6, unit.content());
+                    insert.setInt(7, unit.sequence());
+                    insert.setString(8, SqliteJson.write(unit.prerequisiteCodes()));
+                    insert.executeUpdate();
+                    persisted.add(unit.withId(SqliteSupport.generatedId(connection, insert)));
+                } else {
+                    update.setLong(1, chapterId);
+                    update.setString(2, unit.title());
+                    update.setString(3, unit.objective());
+                    update.setString(4, unit.content());
+                    update.setInt(5, unit.sequence());
+                    update.setString(6, SqliteJson.write(unit.prerequisiteCodes()));
+                    update.setLong(7, unit.id());
+                    update.setLong(8, journeyId);
+                    SqliteSupport.requireUpdated(update.executeUpdate(), "learn unit", unit.id());
+                    persisted.add(unit);
+                }
+            }
+        }
+        return List.copyOf(persisted);
     }
 
     private List<Chapter> insertChapters(Connection connection, long journeyId, List<Chapter> chapters)
@@ -310,7 +375,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT id, code, title, objective, content, sequence, "
                         + "(SELECT code FROM chapter WHERE chapter.id = learn_unit.chapter_id) AS chapter_code, "
-                        + "prerequisite_codes FROM learn_unit WHERE journey_id = ? ORDER BY id")) {
+                        + "prerequisite_codes FROM learn_unit WHERE journey_id = ? ORDER BY sequence, id")) {
             statement.setLong(1, journeyId);
             try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
@@ -332,9 +397,9 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
     private List<LearningPathItem> readPathItems(Connection connection, long journeyId) throws SQLException {
         ArrayList<LearningPathItem> items = new ArrayList<LearningPathItem>();
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT id, learn_unit_code, sequence, status, practice_verified, pass_reason, started_at, "
+                "SELECT id, learn_unit_code, sequence, status, practice_verified, assessment_id, pass_reason, started_at, "
                         + "completed_at, updated_at "
-                        + "FROM learning_path_item WHERE journey_id = ? ORDER BY id")) {
+                        + "FROM learning_path_item WHERE journey_id = ? ORDER BY sequence, id")) {
             statement.setLong(1, journeyId);
             try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
@@ -344,6 +409,7 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
                             result.getInt("sequence"),
                             LearningPathItemStatus.valueOf(result.getString("status")),
                             SqliteSupport.bool(result, "practice_verified"),
+                            SqliteSupport.nullableLong(result, "assessment_id"),
                             result.getString("pass_reason"),
                             SqliteSupport.parseInstant(result, "started_at"),
                             SqliteSupport.parseInstant(result, "completed_at"),
@@ -356,12 +422,12 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
 
     private String pathItemInsertSql() {
         return "INSERT INTO learning_path_item(journey_id, learn_unit_id, learn_unit_code, sequence, status, "
-                + "practice_verified, pass_reason, started_at, completed_at, updated_at) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                + "practice_verified, assessment_id, pass_reason, started_at, completed_at, updated_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     }
 
     private String pathItemUpdateSql() {
-        return "UPDATE learning_path_item SET sequence = ?, status = ?, practice_verified = ?, pass_reason = ?, "
+        return "UPDATE learning_path_item SET sequence = ?, status = ?, practice_verified = ?, assessment_id = ?, pass_reason = ?, "
                 + "started_at = ?, completed_at = ?, updated_at = ? WHERE id = ?";
     }
 
@@ -373,21 +439,23 @@ public class SqliteLearningJourneyRepository implements LearningJourneyRepositor
         statement.setInt(4, item.sequence());
         statement.setString(5, item.status().name());
         statement.setInt(6, SqliteSupport.bool(item.practiceVerified()));
-        statement.setString(7, item.passReason());
-        statement.setString(8, SqliteSupport.instant(item.startedAt()));
-        statement.setString(9, SqliteSupport.instant(item.completedAt()));
-        statement.setString(10, item.updatedAt().toString());
+        SqliteSupport.nullableLong(statement, 7, item.assessmentId());
+        statement.setString(8, item.passReason());
+        statement.setString(9, SqliteSupport.instant(item.startedAt()));
+        statement.setString(10, SqliteSupport.instant(item.completedAt()));
+        statement.setString(11, item.updatedAt().toString());
     }
 
     private void bindPathItemUpdate(PreparedStatement statement, LearningPathItem item) throws SQLException {
         statement.setInt(1, item.sequence());
         statement.setString(2, item.status().name());
         statement.setInt(3, SqliteSupport.bool(item.practiceVerified()));
-        statement.setString(4, item.passReason());
-        statement.setString(5, SqliteSupport.instant(item.startedAt()));
-        statement.setString(6, SqliteSupport.instant(item.completedAt()));
-        statement.setString(7, item.updatedAt().toString());
-        statement.setLong(8, item.id());
+        SqliteSupport.nullableLong(statement, 4, item.assessmentId());
+        statement.setString(5, item.passReason());
+        statement.setString(6, SqliteSupport.instant(item.startedAt()));
+        statement.setString(7, SqliteSupport.instant(item.completedAt()));
+        statement.setString(8, item.updatedAt().toString());
+        statement.setLong(9, item.id());
     }
 
     @FunctionalInterface

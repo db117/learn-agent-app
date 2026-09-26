@@ -4,12 +4,7 @@ import com.db117.learnagent.config.RuntimeConfig;
 import com.db117.learnagent.language.LanguagePack;
 import com.db117.learnagent.language.WorkspaceTemplate;
 import com.db117.learnagent.language.WorkspaceTemplateProvider;
-import com.db117.learnagent.workspace.domain.LearningWorkspace;
-import com.db117.learnagent.workspace.domain.ProjectWorkspace;
-import com.db117.learnagent.workspace.domain.Workspace;
-import com.db117.learnagent.workspace.domain.WorkspaceFile;
-import com.db117.learnagent.workspace.domain.WorkspaceFileEntry;
-import com.db117.learnagent.workspace.domain.WorkspaceKind;
+import com.db117.learnagent.workspace.domain.*;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.io.IOException;
@@ -18,6 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -103,6 +100,22 @@ public final class WorkspaceManager {
         Path path = resolveFile(workspace, relativePath);
         ensureSize(path);
         return file(workspace, path, Files.readString(path, StandardCharsets.UTF_8));
+    }
+
+    /** 用已列出的受管源码和内容标识一次提交；目录外文件及依赖目录不会参与判断。 */
+    public String contentDigest(Workspace workspace) throws IOException {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            for (WorkspaceFileEntry file : listFiles(workspace)) {
+                digest.update(file.path().getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) 0);
+                digest.update(readFile(workspace, file.path()).content().getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) 0xff);
+            }
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException error) {
+            throw new IllegalStateException("SHA-256 is not available", error);
+        }
     }
 
     public WorkspaceFile writeFile(Workspace workspace, String relativePath, String content)

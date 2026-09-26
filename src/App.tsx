@@ -1,7 +1,8 @@
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
 import {MarkdownMessage} from "./features/agent/MarkdownMessage";
 import {type ModelConfig, ModelSettingsDialog} from "./features/model-config/ModelSettingsDialog";
 import {PracticeWorkspace} from "./features/practice/PracticeWorkspace";
+import type {PracticeCheckSummary} from "./features/practice/practiceTypes";
 
 const BACKEND_URL = "http://127.0.0.1:10707";
 const MODEL_CONFIG_URL = `${BACKEND_URL}/api/model-config`;
@@ -28,6 +29,14 @@ type Workspace = { kind: string; id: number; reference: string };
 type Bootstrap = { learner: Learner | null; journeys: Journey[]; workspace: Workspace | null };
 type ResizablePanel = "path" | "tutor";
 type ResizeState = { side: ResizablePanel; startX: number; startWidth: number };
+type ProposedRouteUnit = { code: string; title: string; objective: string };
+type ProposedRouteChapter = { code: string; title: string; units: ProposedRouteUnit[] };
+type RouteProposal = {
+    reason: string;
+    chapters: ProposedRouteChapter[];
+    json: string;
+    messageIndex: number;
+};
 
 const PATH_WIDTH_DEFAULT = 240;
 const TUTOR_WIDTH_DEFAULT = 340;
@@ -53,6 +62,41 @@ function formatValue(value: unknown) {
 
 function sessionModeFor(journey: Journey): SessionMode {
     return journey.learningJourneyId == null ? "PLANNING" : "LEARNING";
+}
+
+function parseRouteProposal(text: string, messageIndex: number): RouteProposal | null {
+    const match = /<learning-route-proposal>([\s\S]*?)<\/learning-route-proposal>/.exec(text);
+    if (!match) return null;
+    const json = match[1].trim();
+    try {
+        const value: unknown = JSON.parse(json);
+        if (typeof value !== "object" || value === null) return null;
+        const candidate = value as { reason?: unknown; chapters?: unknown };
+        if (typeof candidate.reason !== "string" || !candidate.reason.trim()
+            || !Array.isArray(candidate.chapters) || candidate.chapters.length > 50) return null;
+        let totalUnits = 0;
+        const chapters: ProposedRouteChapter[] = [];
+        for (const chapterValue of candidate.chapters) {
+            if (typeof chapterValue !== "object" || chapterValue === null) return null;
+            const chapter = chapterValue as { code?: unknown; title?: unknown; units?: unknown };
+            if (typeof chapter.code !== "string" || typeof chapter.title !== "string"
+                || !Array.isArray(chapter.units) || chapter.units.length === 0 || chapter.units.length > 50) return null;
+            const units: ProposedRouteUnit[] = [];
+            for (const unitValue of chapter.units) {
+                if (typeof unitValue !== "object" || unitValue === null) return null;
+                const unit = unitValue as { code?: unknown; title?: unknown; objective?: unknown };
+                if (typeof unit.code !== "string" || typeof unit.title !== "string"
+                    || typeof unit.objective !== "string") return null;
+                units.push({code: unit.code, title: unit.title, objective: unit.objective});
+                totalUnits += 1;
+            }
+            chapters.push({code: chapter.code, title: chapter.title, units});
+        }
+        if (totalUnits > 50) return null;
+        return {reason: candidate.reason, chapters, json, messageIndex};
+    } catch {
+        return null;
+    }
 }
 
 async function readError(response: Response) {
@@ -130,6 +174,7 @@ export default function App() {
     const [pendingPlanningPrompt, setPendingPlanningPrompt] = useState(false);
     const [pendingLearningPrompt, setPendingLearningPrompt] = useState(false);
     const [confirmingPlan, setConfirmingPlan] = useState(false);
+    const [confirmingRouteProposal, setConfirmingRouteProposal] = useState(false);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [sessionMode, setSessionMode] = useState<SessionMode | null>(null);
     const [currentLearnUnit, setCurrentLearnUnit] = useState<string | null>(null);
@@ -139,6 +184,7 @@ export default function App() {
     const [error, setError] = useState<string | null>(null);
     const [loadingSession, setLoadingSession] = useState(false);
     const [sending, setSending] = useState(false);
+    const [requestingPracticeCheck, setRequestingPracticeCheck] = useState(false);
     const [pathWidth, setPathWidth] = useState(PATH_WIDTH_DEFAULT);
     const [tutorWidth, setTutorWidth] = useState(TUTOR_WIDTH_DEFAULT);
     const [pathCollapsed, setPathCollapsed] = useState(false);
@@ -289,6 +335,15 @@ export default function App() {
     const planningDraftMessage = [...messages].reverse().find(
         (message) => message.role === "assistant" && message.text.trim(),
     );
+    const routeProposal = useMemo(() => {
+        for (let index = messages.length - 1; index >= 0; index--) {
+            const message = messages[index];
+            if (message.role !== "assistant") continue;
+            const proposal = parseRouteProposal(message.text, index);
+            if (proposal) return proposal;
+        }
+        return null;
+    }, [messages]);
 
     const createSession = async (journey: Journey, learnerId: number, targetKey?: string) => {
         setError(null);
@@ -447,12 +502,22 @@ export default function App() {
         }
     };
 
-    const sendMessage = async (messageOverride?: string) => {
+    const sendMessage = async (messageOverride?: string, displayTextOverride?: string) => {
         const text = (messageOverride ?? draft).trim();
+        if (messageOverride === undefined
+            && visibleSessionMode === "LEARNING"
+            && /^(?:帮我)?(?:检查|验证|测试)(?:一下|当前代码|练习|代码|这段代码|吧|下)*[。.!！?？]*$/.test(text)) {
+            void submitTutorRequestedCheck(text);
+            return;
+        }
         if (!sessionId || !text || sending || confirmingPlan) return;
         setError(null);
         setDraft("");
-        setMessages((current) => [...current, {role: "user", text}, {role: "assistant", text: ""}]);
+        setMessages((current) => [
+            ...current,
+            {role: "user", text: displayTextOverride ?? text},
+            {role: "assistant", text: ""},
+        ]);
         setSending(true);
         setActivity("正在连接 TutorAgent");
         const controller = new AbortController();
@@ -488,6 +553,7 @@ export default function App() {
                     setActivity("TutorAgent 已完成回答");
                     if (visibleSessionMode === "LEARNING") {
                         setContentVersion((version) => version + 1);
+                        setProgressVersion((version) => version + 1);
                     }
                 }
                 if (event.type === "turn.cancelled") {
@@ -544,7 +610,11 @@ export default function App() {
         }
     };
 
-    const handleProgressChanged = (status: string, nextLearnUnitCode: string | null) => {
+    const handleProgressChanged = (
+        status: string,
+        nextLearnUnitCode: string | null,
+        forceSessionRestart = false,
+    ) => {
         setProgressVersion((version) => version + 1);
         if (status === "COMPLETED") {
             setLearningCompleted(true);
@@ -559,12 +629,104 @@ export default function App() {
         }
 
         setLearningCompleted(false);
-        if (currentJourney && bootstrap?.learner
+        if (forceSessionRestart && currentJourney && bootstrap?.learner) {
+            sessionTargetRef.current = sessionTargetKey;
+            void createSession(currentJourney, bootstrap.learner.id);
+        } else if (currentJourney && bootstrap?.learner
             && nextLearnUnitCode !== null && nextLearnUnitCode !== currentLearnUnit) {
             sessionTargetRef.current = null;
             void createSession(currentJourney, bootstrap.learner.id);
         }
         void loadBootstrap();
+    };
+
+    const confirmRouteProposal = async (proposal: RouteProposal) => {
+        if (!currentJourney || confirmingRouteProposal || sending || loadingSession) return;
+        setError(null);
+        setConfirmingRouteProposal(true);
+        try {
+            const response = await fetch(
+                `${BACKEND_URL}/api/journeys/${currentJourney.id}/learning/route/confirm`,
+                {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({plan: proposal.json}),
+                },
+            );
+            if (!response.ok) throw new Error(await readError(response));
+            const progress = await response.json() as {
+                status: string;
+                currentLearnUnitCode: string | null;
+            };
+            setMessages((current) => current.map((message, index) => index === proposal.messageIndex
+                ? {
+                    ...message,
+                    text: message.text.replace(
+                        /<learning-route-proposal>[\s\S]*?<\/learning-route-proposal>/,
+                        "",
+                    ),
+                }
+                : message));
+            handleProgressChanged(progress.status, progress.currentLearnUnitCode, true);
+        } catch (requestError) {
+            setError(requestError instanceof Error ? requestError.message : "无法确认路线调整");
+        } finally {
+            setConfirmingRouteProposal(false);
+        }
+    };
+
+    const submitTutorRequestedCheck = async (requestText: string) => {
+        if (!currentJourney || !sessionId || sending || requestingPracticeCheck || workspaceDirty) {
+            if (workspaceDirty) setError("请先保存 App 编辑器中的修改，再提交检查。");
+            return;
+        }
+        setError(null);
+        setRequestingPracticeCheck(true);
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/journeys/${currentJourney.id}/practice/verify`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+            });
+            if (!response.ok) throw new Error(await readError(response));
+            const result = await response.json() as {
+                assessmentAttemptId: number;
+                compilePassed: boolean;
+                testsPassed: boolean;
+                testCount: number;
+                verified: boolean;
+            };
+            const assessmentRequest = [
+                `学习者要求：“${requestText}”。App 已提交并检查当前编码练习。`,
+                `本次不可变 attempt_id：${result.assessmentAttemptId}`,
+                `App 真实检查结果：${JSON.stringify({
+                    compilePassed: result.compilePassed,
+                    testsPassed: result.testsPassed,
+                    testCount: result.testCount,
+                    practicePolicyPassed: result.verified,
+                })}`,
+                "请读取相关代码并结合已有对话评估；理解证据不足时先追问，否则记录 READY 或 CONTINUE 和简要依据。",
+            ].join("\n");
+            await sendMessage(assessmentRequest, requestText);
+        } catch (requestError) {
+            setError(requestError instanceof Error ? requestError.message : "无法提交当前编码检查");
+        } finally {
+            setRequestingPracticeCheck(false);
+        }
+    };
+
+    const requestPracticeAssessment = (summary: PracticeCheckSummary) => {
+        const message = [
+            "我刚在 App 点击了提交检查。请基于当前学习单元代码和此前对话综合评估，不要只依据运行结果。",
+            `本次不可变 attempt_id：${summary.attemptId}`,
+            `App 真实检查结果：${JSON.stringify({
+                compilePassed: summary.compilePassed,
+                testsPassed: summary.testsPassed,
+                testCount: summary.testCount,
+                practicePolicyPassed: summary.verified,
+            })}`,
+            "请读取相关文件；理解证据不足时先向我追问，不要记录评估。证据充分后再记录 READY 或 CONTINUE，并说明理由。",
+        ].join("\n");
+        void sendMessage(message);
     };
 
     const showLearningCard = sessionTargetKey !== null || learningCompleted;
@@ -877,6 +1039,8 @@ export default function App() {
                             learningLayout
                             onDirtyChange={setWorkspaceDirty}
                             onProgressChanged={handleProgressChanged}
+                            onRequestAssessment={requestPracticeAssessment}
+                            tutorBusy={sending || requestingPracticeCheck || loadingSession || !sessionId || visibleSessionMode !== "LEARNING"}
                             theme={theme}
                             workspaceVersion={workspaceVersion}
                             progressVersion={progressVersion}
@@ -931,6 +1095,8 @@ export default function App() {
                                     journeyId={currentJourney.id}
                                     onDirtyChange={setWorkspaceDirty}
                                     onProgressChanged={handleProgressChanged}
+                                    onRequestAssessment={requestPracticeAssessment}
+                                    tutorBusy={sending || requestingPracticeCheck || loadingSession || !sessionId || visibleSessionMode !== "LEARNING"}
                                     theme={theme}
                                     workspaceVersion={workspaceVersion}
                                     progressVersion={progressVersion}
@@ -956,13 +1122,48 @@ export default function App() {
                                      key={`${message.timestamp ?? "message"}-${index}`}>
                                     <span>{message.role === "user" ? "你" : "TutorAgent"}</span>
                                     {message.role === "assistant" ? (
-                                        <MarkdownMessage text={message.text || (sending ? "正在组织回答…" : "")}/>
+                                        <MarkdownMessage text={(routeProposal?.messageIndex === index
+                                            ? message.text.replace(
+                                                /<learning-route-proposal>[\s\S]*?<\/learning-route-proposal>/,
+                                                "路线调整方案已显示在下方，确认后才会生效。",
+                                            )
+                                            : message.text) || (sending ? "正在组织回答…" : "")}/>
                                     ) : (
                                         <p>{message.text}</p>
                                     )}
                                 </div>
                             ))}
                         </div>
+                        {routeProposal && visibleSessionMode === "LEARNING" && (
+                            <aside className="route-proposal-card" aria-labelledby="route-proposal-title">
+                                <div>
+                                    <p className="mode-label">路线调整建议</p>
+                                    <h3 id="route-proposal-title">请确认是否调整后续课程</h3>
+                                    <p>{routeProposal.reason}</p>
+                                    {routeProposal.chapters.length === 0 ? (
+                                        <p>建议跳过所有剩余未完成单元，并结束当前学习路径。</p>
+                                    ) : routeProposal.chapters.map((chapter) => (
+                                        <section key={chapter.code}>
+                                            <h4>{chapter.title}</h4>
+                                            <ul>
+                                                {chapter.units.map((unit) => (
+                                                    <li key={unit.code}>
+                                                        <strong>{unit.title}</strong>：{unit.objective}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </section>
+                                    ))}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => void confirmRouteProposal(routeProposal)}
+                                    disabled={confirmingRouteProposal || sending || loadingSession}
+                                >
+                                    {confirmingRouteProposal ? "保存调整中…" : "确认调整路线"}
+                                </button>
+                            </aside>
+                        )}
                         <div className="composer">
                             <label className="sr-only" htmlFor="tutor-message">发送给 TutorAgent</label>
                             <textarea
@@ -976,7 +1177,7 @@ export default function App() {
                                     }
                                 }}
                                 placeholder={sessionId ? "问 TutorAgent 一个问题…" : "正在准备 Tutor Session…"}
-                                disabled={!sessionId || sending || confirmingPlan}
+                                disabled={!sessionId || sending || requestingPracticeCheck || confirmingPlan}
                                 rows={3}
                             />
                             <div className="composer-actions">
@@ -986,8 +1187,8 @@ export default function App() {
                                             onClick={() => void cancelMessage()}>取消</button>
                                 ) : (
                                     <button type="button" onClick={() => void sendMessage()}
-                                            disabled={!sessionId || !draft.trim() || confirmingPlan}>
-                                        发送
+                                            disabled={!sessionId || !draft.trim() || requestingPracticeCheck || confirmingPlan}>
+                                        {requestingPracticeCheck ? "检查中…" : "发送"}
                                     </button>
                                 )}
                             </div>

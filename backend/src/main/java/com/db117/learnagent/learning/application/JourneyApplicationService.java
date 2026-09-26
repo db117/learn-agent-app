@@ -1,14 +1,6 @@
 package com.db117.learnagent.learning.application;
 
-import com.db117.learnagent.learning.domain.Chapter;
-import com.db117.learnagent.learning.domain.Journey;
-import com.db117.learnagent.learning.domain.JourneyRepository;
-import com.db117.learnagent.learning.domain.JourneyStatus;
-import com.db117.learnagent.learning.domain.LearnUnit;
-import com.db117.learnagent.learning.domain.Learner;
-import com.db117.learnagent.learning.domain.LearnerRepository;
-import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.learning.domain.LearningJourneyRepository;
+import com.db117.learnagent.learning.domain.*;
 import com.db117.learnagent.shared.domain.DomainRuleViolation;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -18,12 +10,7 @@ import jakarta.inject.Inject;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * 本地单用户的 Learner/Journey 引导应用服务；只编排 Domain，不调用 AgentScope 或模型。
@@ -183,7 +170,7 @@ public class JourneyApplicationService {
         }
     }
 
-    /** 将通过的 Practice 证据写回 Learning Domain，并按领域规则推进当前单元。 */
+    /** 将通过的客观 Practice 证据保留在练习历史中；用户确认 Agent 评估时才完成当前项。 */
     public LearningJourney recordPracticeVerified(long journeyId, String learnUnitCode) {
         LearningJourney learningJourney = learningJourneyFor(journeyId);
         try {
@@ -195,6 +182,64 @@ public class JourneyApplicationService {
                     learningJourney.recordPracticeVerified(learnUnitCode, Instant.now(clock)));
         } catch (DomainRuleViolation error) {
             throw LearningRequestException.badRequest("INVALID_PRACTICE_PROGRESS", error.getMessage());
+        }
+    }
+
+    /** 记录用户确认的 Agent 评估；Agent 本身只能提交候选结论，不能推进路径。 */
+    public LearningJourney acceptPracticeAssessment(
+            long journeyId,
+            String learnUnitCode,
+            long assessmentId,
+            boolean objectivePracticeVerified) {
+        LearningJourney learningJourney = learningJourneyFor(journeyId);
+        try {
+            return learningJourneyRepository.save(
+                    learningJourney.acceptAssessment(
+                            learnUnitCode, assessmentId, objectivePracticeVerified, Instant.now(clock)));
+        } catch (DomainRuleViolation error) {
+            throw LearningRequestException.conflict("INVALID_PRACTICE_ASSESSMENT", error.getMessage());
+        }
+    }
+
+    /** 保存用户确认的路线提案；完成项不改写，提案删除的未完成项保留为 SKIPPED。 */
+    public LearningJourney confirmLearningRoute(long journeyId, String proposal) {
+        Learner learner = requireLearner();
+        Journey journey = ownedJourney(journeyId, learner.id());
+        if (journey.status() != JourneyStatus.ACTIVE || !journey.current()
+                || journey.learningJourneyId() == null) {
+            throw LearningRequestException.conflict("JOURNEY_NOT_CURRENT", "只能调整当前学习路径");
+        }
+        String normalizedProposal = normalizePlan(proposal);
+        JsonNode root;
+        try {
+            root = parseJsonObject(normalizedProposal);
+        } catch (JsonProcessingException error) {
+            throw invalidPlan("路线提案必须是有效的 JSON");
+        }
+        if (root == null || !root.isObject()) {
+            throw invalidPlan("路线提案必须是 JSON 对象");
+        }
+        requiredText(root, "reason");
+        List<PlanChapter> planChapters = parsePlan(normalizedProposal, true);
+        LearningJourney learningJourney = learningJourneyFor(journeyId);
+        ArrayList<Chapter> chapters = new ArrayList<Chapter>();
+        ArrayList<LearnUnit> units = new ArrayList<LearnUnit>();
+        String previousCode = null;
+        int sequence = 0;
+        for (PlanChapter planChapter : planChapters) {
+            chapters.add(Chapter.create(planChapter.code(), planChapter.title(), sequence));
+            for (PlanUnit planUnit : planChapter.units()) {
+                Set<String> prerequisites = previousCode == null ? Set.<String>of() : Set.of(previousCode);
+                units.add(LearnUnit.create(planUnit.code(), planUnit.title(), planUnit.objective(), "",
+                        sequence++, planChapter.code(), prerequisites));
+                previousCode = planUnit.code();
+            }
+        }
+        try {
+            return learningJourneyRepository.save(
+                    learningJourney.replan(chapters, units, Instant.now(clock)));
+        } catch (DomainRuleViolation error) {
+            throw LearningRequestException.badRequest("INVALID_LEARNING_ROUTE", error.getMessage());
         }
     }
 
@@ -249,6 +294,10 @@ public class JourneyApplicationService {
     }
 
     private List<PlanChapter> parsePlan(String plan) {
+        return parsePlan(plan, false);
+    }
+
+    private List<PlanChapter> parsePlan(String plan, boolean allowEmpty) {
         final JsonNode root;
         try {
             root = parseJsonObject(plan);
@@ -259,8 +308,10 @@ public class JourneyApplicationService {
             throw invalidPlan("规划必须包含 chapters 数组");
         }
         JsonNode chapterNodes = root.get("chapters");
-        if (chapterNodes.isEmpty() || chapterNodes.size() > 50) {
-            throw invalidPlan("chapters 数量必须在 1 到 50 之间");
+        if ((!allowEmpty && chapterNodes.isEmpty()) || chapterNodes.size() > 50) {
+            throw invalidPlan(allowEmpty
+                    ? "chapters 数量不能超过 50"
+                    : "chapters 数量必须在 1 到 50 之间");
         }
         HashSet<String> chapterCodes = new HashSet<String>();
         HashSet<String> unitCodes = new HashSet<String>();

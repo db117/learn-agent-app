@@ -1,6 +1,7 @@
 import http from "node:http";
 
 const port = 19090;
+const assessmentStages = new Map();
 const plan = JSON.stringify({
     chapters: [
         {
@@ -71,6 +72,28 @@ function responseContent(body) {
                 practice: "模型生成的 Practice：完成当前 LearnUnit 的编码练习。",
             }),
         })};
+    }
+    const assessmentAttemptId = [...prompt.matchAll(/不可变 attempt_id[：:]\s*(\d+)/g)].at(-1)?.[1];
+    if (assessmentAttemptId) {
+        const stage = assessmentStages.get(assessmentAttemptId) ?? 0;
+        if (stage === 0) {
+            assessmentStages.set(assessmentAttemptId, 1);
+            return {toolCall: toolCall("list_files", {})};
+        }
+        if (stage === 1) {
+            assessmentStages.set(assessmentAttemptId, 2);
+            return {toolCall: toolCall("read_file", {path: "src/index.ts"})};
+        }
+        if (stage === 2) {
+            assessmentStages.set(assessmentAttemptId, 3);
+            return {
+                toolCall: toolCall("record_practice_assessment", {
+                    attempt_id: Number(assessmentAttemptId),
+                    verdict: "READY",
+                    rationale: "代码已检查；你说明了变量类型标注的作用，并指出错误是故意用于验证编译器，因此我豁免本次运行失败。",
+                })
+            };
+        }
     }
     const current = prompt.match(/current-learn-unit:\s*([^\s<]+)/)?.[1] ?? "current";
     return {text: `已进入 ${current}。Concept、Example 和 Practice 已准备好，请完成当前练习后再继续。`};

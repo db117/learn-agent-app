@@ -1,10 +1,6 @@
 package com.db117.learnagent.persistence.sqlite;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.time.Instant;
 
 /** SQLite 适配器共用的边界工具；不把数据库细节泄漏到 Domain。 */
@@ -49,6 +45,19 @@ final class SqliteSupport {
 
     static boolean bool(ResultSet result, String column) throws SQLException {
         return result.getInt(column) != 0;
+    }
+
+    static Long nullableLong(ResultSet result, String column) throws SQLException {
+        long value = result.getLong(column);
+        return result.wasNull() ? null : value;
+    }
+
+    static void nullableLong(PreparedStatement statement, int index, Long value) throws SQLException {
+        if (value == null) {
+            statement.setNull(index, Types.INTEGER);
+        } else {
+            statement.setLong(index, value);
+        }
     }
 
     /** 更新聚合时必须恰好命中一行，避免静默丢失状态变化。 */

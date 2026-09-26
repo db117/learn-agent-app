@@ -5,12 +5,7 @@ import com.db117.learnagent.workspace.application.WorkspaceInitializationExcepti
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.Workspace;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.PUT;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 
 import java.io.IOException;
@@ -41,6 +36,14 @@ public class WorkspaceResource {
     @Path("/journeys/{journeyId}/workspace/files")
     public List<WorkspaceFileEntryResponse> listLearningFiles(@PathParam("journeyId") long journeyId) {
         return list(learningWorkspace(journeyId));
+    }
+
+    /** 返回归属校验后的本地 Workspace 路径，供桌面端打开 IDE 或复制路径。 */
+    @GET
+    @Path("/journeys/{journeyId}/workspace/path")
+    @Produces(MediaType.TEXT_PLAIN)
+    public String learningWorkspacePath(@PathParam("journeyId") long journeyId) {
+        return learningWorkspace(journeyId).root().toString();
     }
 
     @GET

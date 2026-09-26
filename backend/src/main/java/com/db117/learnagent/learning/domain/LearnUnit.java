@@ -101,4 +101,19 @@ public record LearnUnit(
                 chapterCode,
                 prerequisiteCodes);
     }
+
+    /** 只更新未完成单元的路线元数据；已生成教学内容和持久 ID 继续保留。 */
+    public LearnUnit withRoute(
+            String nextTitle,
+            String nextObjective,
+            int nextSequence,
+            String nextChapterCode,
+            Set<String> nextPrerequisiteCodes) {
+        return new LearnUnit(id, code, nextTitle, nextObjective, content,
+                nextSequence, nextChapterCode, nextPrerequisiteCodes);
+    }
+
+    public LearnUnit withSequence(int nextSequence) {
+        return new LearnUnit(id, code, title, objective, content, nextSequence, chapterCode, prerequisiteCodes);
+    }
 }

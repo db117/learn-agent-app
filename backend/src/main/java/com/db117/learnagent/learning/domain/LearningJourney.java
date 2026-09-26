@@ -4,12 +4,7 @@ import com.db117.learnagent.shared.domain.DomainChecks;
 import com.db117.learnagent.shared.domain.DomainRuleViolation;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 /** Learning Domain 的聚合根，统一拥有 Journey 内容快照和路径进度。 */
 public final class LearningJourney {
@@ -265,6 +260,157 @@ public final class LearningJourney {
         return nextItem.status() == LearningPathItemStatus.COMPLETED
                 ? advanceAfterClose(nextItems, at)
                 : copy(id, chapters, learnUnits, nextItems, status, completedAt);
+    }
+
+    /** 仅把学习者确认的 READY 评估作为完成依据；已有客观 PracticeEvidence 保持原样。 */
+    public LearningJourney acceptAssessment(
+            String learnUnitCode,
+            long assessmentId,
+            boolean objectivePracticeVerified,
+            Instant at) {
+        DomainChecks.time(at, "at");
+        LearningPathItem item = item(learnUnitCode);
+        if (item.status() == LearningPathItemStatus.COMPLETED && Objects.equals(item.assessmentId(), assessmentId)) {
+            return this;
+        }
+        LearningPathItem completedItem = item.acceptAssessment(assessmentId, objectivePracticeVerified, at);
+        List<LearningPathItem> nextItems = replaceItem(learnUnitCode, completedItem);
+        return advanceAfterClose(nextItems, at);
+    }
+
+    /** 应用已由学习者确认的未来路线；完成项保留原内容与身份，移除项留作 SKIPPED 历史。 */
+    public LearningJourney replan(
+            List<Chapter> proposedChapters,
+            List<LearnUnit> proposedUnits,
+            Instant at) {
+        DomainChecks.time(at, "at");
+        List<Chapter> requestedChapters = List.copyOf(proposedChapters == null ? List.of() : proposedChapters);
+        List<LearnUnit> requestedUnits = proposedUnits == null || proposedUnits.isEmpty()
+                ? List.of()
+                : orderUnits(proposedUnits);
+        HashMap<String, LearnUnit> currentUnits = new HashMap<String, LearnUnit>();
+        HashMap<String, LearningPathItem> currentItems = new HashMap<String, LearningPathItem>();
+        for (LearnUnit unit : learnUnits) {
+            currentUnits.put(unit.code(), unit);
+        }
+        for (LearningPathItem item : pathItems) {
+            currentItems.put(item.learnUnitCode(), item);
+        }
+        Set<String> completedCodes = pathItems.stream()
+                .filter(item -> item.status() == LearningPathItemStatus.COMPLETED)
+                .map(LearningPathItem::learnUnitCode)
+                .collect(java.util.stream.Collectors.toSet());
+        HashSet<String> requestedCodes = new HashSet<String>();
+        for (LearnUnit unit : requestedUnits) {
+            if (completedCodes.contains(unit.code())) {
+                throw new DomainRuleViolation("route proposal cannot change a completed LearnUnit: " + unit.code());
+            }
+            if (!requestedCodes.add(unit.code())) {
+                throw new DomainRuleViolation("route proposal LearnUnit codes must be unique: " + unit.code());
+            }
+        }
+
+        HashMap<String, Chapter> currentChapters = new HashMap<String, Chapter>();
+        HashMap<String, Chapter> requestedChapterByCode = new HashMap<String, Chapter>();
+        for (Chapter chapter : chapters) {
+            currentChapters.put(chapter.code(), chapter);
+        }
+        for (Chapter chapter : requestedChapters) {
+            if (requestedChapterByCode.put(chapter.code(), chapter) != null) {
+                throw new DomainRuleViolation("route proposal Chapter codes must be unique: " + chapter.code());
+            }
+        }
+        HashSet<String> availableChapterCodes = new HashSet<String>(currentChapters.keySet());
+        availableChapterCodes.addAll(requestedChapterByCode.keySet());
+
+        ArrayList<LearningPathItem> completedItems = pathItems.stream()
+                .filter(item -> item.status() == LearningPathItemStatus.COMPLETED)
+                .sorted(Comparator.comparingInt(LearningPathItem::sequence))
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        ArrayList<LearnUnit> nextUnits = new ArrayList<LearnUnit>();
+        ArrayList<LearningPathItem> nextItems = new ArrayList<LearningPathItem>();
+        int sequence = 0;
+        String previousCode = null;
+        for (LearningPathItem completedItem : completedItems) {
+            LearnUnit unit = currentUnits.get(completedItem.learnUnitCode());
+            nextUnits.add(unit.withRoute(unit.title(), unit.objective(), sequence,
+                    unit.chapterCode(), unit.prerequisiteCodes()));
+            nextItems.add(completedItem.withSequence(sequence));
+            previousCode = unit.code();
+            sequence++;
+        }
+
+        int proposedIndex = 0;
+        for (LearnUnit proposedUnit : requestedUnits) {
+            if (!availableChapterCodes.contains(proposedUnit.chapterCode())) {
+                throw new DomainRuleViolation("route proposal references an unknown Chapter: "
+                        + proposedUnit.chapterCode());
+            }
+            Set<String> prerequisites = previousCode == null ? Set.<String>of() : Set.of(previousCode);
+            LearnUnit currentUnit = currentUnits.get(proposedUnit.code());
+            LearnUnit routedUnit = currentUnit == null
+                    ? LearnUnit.create(proposedUnit.code(), proposedUnit.title(), proposedUnit.objective(), "",
+                    sequence, proposedUnit.chapterCode(), prerequisites)
+                    : currentUnit.withRoute(proposedUnit.title(), proposedUnit.objective(), sequence,
+                    proposedUnit.chapterCode(), prerequisites);
+            LearningPathItem currentItem = currentItems.get(proposedUnit.code());
+            LearningPathItemStatus nextStatus = proposedIndex == 0
+                    ? LearningPathItemStatus.CURRENT
+                    : LearningPathItemStatus.PENDING;
+            LearningPathItem routedItem = currentItem == null
+                    ? (nextStatus == LearningPathItemStatus.CURRENT
+                    ? LearningPathItem.current(proposedUnit.code(), sequence, at)
+                    : LearningPathItem.pending(proposedUnit.code(), sequence, at))
+                    : currentItem.replan(sequence, nextStatus, at);
+            nextUnits.add(routedUnit);
+            nextItems.add(routedItem);
+            previousCode = proposedUnit.code();
+            proposedIndex++;
+            sequence++;
+        }
+
+        List<LearningPathItem> removedItems = pathItems.stream()
+                .filter(item -> item.status() != LearningPathItemStatus.COMPLETED)
+                .filter(item -> !requestedCodes.contains(item.learnUnitCode()))
+                .sorted(Comparator.comparingInt(LearningPathItem::sequence))
+                .toList();
+        for (LearningPathItem removedItem : removedItems) {
+            LearnUnit unit = currentUnits.get(removedItem.learnUnitCode());
+            nextUnits.add(unit.withRoute(unit.title(), unit.objective(), sequence,
+                    unit.chapterCode(), unit.prerequisiteCodes()));
+            nextItems.add(removedItem.replan(sequence, LearningPathItemStatus.SKIPPED, at));
+            sequence++;
+        }
+
+        HashSet<String> completedChapterCodes = new HashSet<String>();
+        for (LearningPathItem completedItem : completedItems) {
+            LearnUnit unit = currentUnits.get(completedItem.learnUnitCode());
+            Chapter chapter = currentChapters.get(unit.chapterCode());
+            completedChapterCodes.add(chapter.code());
+        }
+        ArrayList<Chapter> nextChapters = new ArrayList<Chapter>();
+        HashSet<String> orderedChapterCodes = new HashSet<String>();
+        for (LearnUnit unit : nextUnits) {
+            if (!orderedChapterCodes.add(unit.chapterCode())) {
+                continue;
+            }
+            Chapter historical = currentChapters.get(unit.chapterCode());
+            Chapter requested = requestedChapterByCode.get(unit.chapterCode());
+            String chapterTitle = completedChapterCodes.contains(unit.chapterCode())
+                    ? historical.title()
+                    : requested == null ? historical.title() : requested.title();
+            nextChapters.add(new Chapter(
+                    historical == null ? null : historical.id(),
+                    unit.chapterCode(),
+                    chapterTitle,
+                    nextChapters.size()));
+        }
+
+        LearningJourneyStatus nextStatus = requestedUnits.isEmpty()
+                ? LearningJourneyStatus.COMPLETED
+                : LearningJourneyStatus.ACTIVE;
+        return copy(id, nextChapters, nextUnits, nextItems, nextStatus,
+                requestedUnits.isEmpty() ? at : null);
     }
 
     /** 只允许为当前学习项写入进入阶段后生成的教学内容。 */

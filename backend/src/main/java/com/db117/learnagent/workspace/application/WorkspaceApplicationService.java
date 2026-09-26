@@ -3,11 +3,7 @@ package com.db117.learnagent.workspace.application;
 import com.db117.learnagent.language.LanguagePack;
 import com.db117.learnagent.language.LanguagePackCatalog;
 import com.db117.learnagent.learning.application.LearningRequestException;
-import com.db117.learnagent.learning.domain.Journey;
-import com.db117.learnagent.learning.domain.JourneyRepository;
-import com.db117.learnagent.learning.domain.LearnerRepository;
-import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.learning.domain.LearningJourneyRepository;
+import com.db117.learnagent.learning.domain.*;
 import com.db117.learnagent.project.domain.ProjectRepository;
 import com.db117.learnagent.workspace.domain.LearningWorkspace;
 import com.db117.learnagent.workspace.domain.ProjectWorkspace;
@@ -17,7 +13,7 @@ import jakarta.inject.Inject;
 import java.io.IOException;
 import java.util.Optional;
 
-/** 按 Learning Domain 所有权解析 Workspace；不向 API 暴露本地路径。 */
+/** 按 Learning Domain 所有权解析 Workspace；只为本地 IDE 集成暴露受归属校验的目录路径。 */
 @ApplicationScoped
 public final class WorkspaceApplicationService {
     private final LearnerRepository learnerRepository;

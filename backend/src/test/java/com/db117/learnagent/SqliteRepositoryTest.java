@@ -4,24 +4,9 @@ import com.db117.learnagent.agent.runtime.TutorModel;
 import com.db117.learnagent.config.ModelConfiguration;
 import com.db117.learnagent.config.ModelConfigurationService;
 import com.db117.learnagent.config.OpenAIProtocol;
-import com.db117.learnagent.learning.domain.Chapter;
-import com.db117.learnagent.learning.domain.Journey;
-import com.db117.learnagent.learning.domain.LearnUnit;
-import com.db117.learnagent.learning.domain.Learner;
-import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.learning.domain.LearningPathItemStatus;
-import com.db117.learnagent.persistence.sqlite.SqliteJourneyRepository;
-import com.db117.learnagent.persistence.sqlite.SqliteLearnerRepository;
-import com.db117.learnagent.persistence.sqlite.SqliteLearningJourneyRepository;
-import com.db117.learnagent.persistence.sqlite.SqliteModelConfigurationRepository;
-import com.db117.learnagent.persistence.sqlite.SqlitePracticeTaskRepository;
-import com.db117.learnagent.persistence.sqlite.SqliteProjectRepository;
-import com.db117.learnagent.persistence.sqlite.SqliteSchemaInitializer;
-import com.db117.learnagent.practice.domain.PracticeAttempt;
-import com.db117.learnagent.practice.domain.PracticeEvidence;
-import com.db117.learnagent.practice.domain.PracticeTask;
-import com.db117.learnagent.practice.domain.RuntimeResult;
-import com.db117.learnagent.practice.domain.VerificationPolicy;
+import com.db117.learnagent.learning.domain.*;
+import com.db117.learnagent.persistence.sqlite.*;
+import com.db117.learnagent.practice.domain.*;
 import com.db117.learnagent.project.domain.Project;
 import com.db117.learnagent.project.domain.ProjectEvidence;
 import com.db117.learnagent.project.domain.ProjectMilestone;
@@ -34,12 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class SqliteRepositoryTest {
     private static final Instant T0 = Instant.parse("2026-02-01T00:00:00Z");
@@ -208,6 +188,110 @@ class SqliteRepositoryTest {
                     "local-model", OpenAIProtocol.CHAT_COMPLETIONS, "http://127.0.0.1:9000/v1", "", false);
             assertEquals("", repository.find().orElseThrow().apiKey());
             assertEquals("local-model", tutorModel.getModelName());
+        }
+    }
+
+    @Test
+    void v9PathMigrationPreservesCurrentItemAndAllowsAssessmentOnlyCompletion() throws SQLException {
+        SQLiteDataSource dataSource = dataSource();
+        SqliteLearnerRepository learners = new SqliteLearnerRepository(dataSource);
+        SqliteLearningJourneyRepository journeys = new SqliteLearningJourneyRepository(dataSource);
+        SqliteSchemaInitializer initializer = new SqliteSchemaInitializer(dataSource);
+        try (java.sql.Connection anchor = dataSource.getConnection()) {
+            initializer.initialize();
+            Learner learner = learners.save(Learner.create("Alice", "TypeScript learner", T0));
+            LearningJourney saved = journeys.save(outlineJourney(learner.id()));
+
+            try (java.sql.Connection connection = dataSource.getConnection();
+                 java.sql.Statement statement = connection.createStatement()) {
+                statement.execute("DROP VIEW mastery");
+                statement.execute("DROP INDEX uq_current_path_item");
+                statement.execute("ALTER TABLE learning_path_item RENAME TO learning_path_item_v10");
+                statement.execute("""
+                        CREATE TABLE learning_path_item (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            journey_id INTEGER NOT NULL REFERENCES learning_journey(id) ON DELETE CASCADE,
+                            learn_unit_id INTEGER NOT NULL,
+                            learn_unit_code TEXT NOT NULL,
+                            sequence INTEGER NOT NULL CHECK (sequence >= 0),
+                            status TEXT NOT NULL CHECK (status IN ('PENDING', 'CURRENT', 'COMPLETED', 'SKIPPED')),
+                            practice_verified INTEGER NOT NULL CHECK (practice_verified IN (0, 1)),
+                            pass_reason TEXT,
+                            started_at TEXT,
+                            completed_at TEXT,
+                            updated_at TEXT NOT NULL,
+                            CHECK (status <> 'COMPLETED' OR (practice_verified = 1 AND completed_at IS NOT NULL)),
+                            UNIQUE (journey_id, learn_unit_id),
+                            FOREIGN KEY (journey_id, learn_unit_id) REFERENCES learn_unit(journey_id, id)
+                        )
+                        """);
+                statement.execute("""
+                        INSERT INTO learning_path_item(
+                            id, journey_id, learn_unit_id, learn_unit_code, sequence, status, practice_verified,
+                            pass_reason, started_at, completed_at, updated_at)
+                        SELECT id, journey_id, learn_unit_id, learn_unit_code, sequence, status, practice_verified,
+                               pass_reason, started_at, completed_at, updated_at
+                        FROM learning_path_item_v10
+                        """);
+                statement.execute("DROP TABLE learning_path_item_v10");
+                statement.execute("""
+                        CREATE UNIQUE INDEX uq_current_path_item
+                        ON learning_path_item(journey_id)
+                        WHERE status = 'CURRENT'
+                        """);
+                statement.execute("""
+                        CREATE VIEW mastery AS
+                        SELECT journey_id, learn_unit_id,
+                               CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END AS mastered
+                        FROM learning_path_item
+                        """);
+                statement.execute("UPDATE schema_metadata SET schema_version = 9 WHERE id = 1");
+            }
+
+            initializer.initialize();
+            LearningJourney migrated = journeys.findById(saved.id()).orElseThrow();
+            assertEquals(saved.pathItems().getFirst().id(), migrated.pathItems().getFirst().id());
+            assertEquals(LearningPathItemStatus.CURRENT, migrated.currentItem().status());
+
+            LearnUnit unit = migrated.learnUnit("variables");
+            SqlitePracticeTaskRepository tasks = new SqlitePracticeTaskRepository(dataSource);
+            PracticeTask task = tasks.save(PracticeTask.create(
+                    saved.id(), unit.id(), "typescript", "CODE", "变量练习", "理解变量", 1, "",
+                    new VerificationPolicy(true, true, false, false), T0));
+            PracticeEvidence failedEvidence = new PracticeEvidence(
+                    false, false, 0, false, RuntimeResult.NOT_RUN, List.of(), null);
+            PracticeTask submitted = tasks.save(task.recordAttempt(PracticeAttempt.submit(failedEvidence, T0)));
+            PracticeAssessment assessment = new SqlitePracticeAssessmentRepository(dataSource).save(
+                    PracticeAssessment.create(saved.id(), unit.id(), task.id(), submitted.attempts().getFirst().id(),
+                            PracticeAssessmentVerdict.READY, "理解说明足以通过", "a".repeat(64), T0));
+
+            LearningJourney completed = journeys.save(
+                    migrated.acceptAssessment("variables", assessment.id(), false, T0.plusSeconds(1)));
+
+            assertEquals(LearningPathItemStatus.COMPLETED, completed.pathItems().getFirst().status());
+            assertFalse(completed.pathItems().getFirst().practiceVerified());
+            assertEquals(assessment.id(), completed.pathItems().getFirst().assessmentId());
+        }
+    }
+
+    @Test
+    void routeChangesRemoveChaptersThatNoLongerContainUnits() throws SQLException {
+        SQLiteDataSource dataSource = dataSource();
+        try (java.sql.Connection anchor = dataSource.getConnection()) {
+            new SqliteSchemaInitializer(dataSource).initialize();
+            SqliteLearnerRepository learners = new SqliteLearnerRepository(dataSource);
+            SqliteLearningJourneyRepository journeys = new SqliteLearningJourneyRepository(dataSource);
+            Learner learner = learners.save(Learner.create("Alice", "TypeScript learner", T0));
+            LearningJourney saved = journeys.save(outlineJourney(learner.id()));
+            LearningJourney revised = saved.replan(
+                    List.of(Chapter.create("foundation", "Foundation", 0)),
+                    List.of(LearnUnit.create(
+                            "variables", "Values", "Use values", "", 0, "foundation", Set.of())),
+                    T0.plusSeconds(1));
+
+            LearningJourney loaded = journeys.save(revised);
+
+            assertEquals(List.of("foundation"), loaded.chapters().stream().map(Chapter::code).toList());
         }
     }
 
