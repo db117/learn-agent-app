@@ -1,5 +1,6 @@
 import {useEffect, useMemo, useRef, useState} from "react";
 import {MarkdownMessage} from "./features/agent/MarkdownMessage";
+import {type LearningOutline, parseLearningOutline} from "./features/agent/learningOutline";
 import {type ModelConfig, ModelSettingsDialog} from "./features/model-config/ModelSettingsDialog";
 import {PracticeWorkspace} from "./features/practice/PracticeWorkspace";
 import type {PracticeCheckSummary} from "./features/practice/practiceTypes";
@@ -37,6 +38,7 @@ type RouteProposal = {
     json: string;
     messageIndex: number;
 };
+type PlanningDraftReply = { messageIndex: number; raw: string; outline: LearningOutline | null };
 
 const PATH_WIDTH_DEFAULT = 240;
 const TUTOR_WIDTH_DEFAULT = 340;
@@ -332,9 +334,18 @@ export default function App() {
         ? `${bootstrap.learner.id}:${currentJourney.id}:${currentJourney.learningJourneyId ?? "planning"}`
         : null;
     const visibleSessionMode = sessionMode ?? (currentJourney ? sessionModeFor(currentJourney) : null);
-    const planningDraftMessage = [...messages].reverse().find(
-        (message) => message.role === "assistant" && message.text.trim(),
-    );
+    const planningDraftReply = useMemo<PlanningDraftReply | null>(() => {
+        if (visibleSessionMode !== "PLANNING") return null;
+        for (let index = messages.length - 1; index >= 0; index--) {
+            const message = messages[index];
+            if (message.role !== "assistant" || !message.text.trim()) continue;
+            const outline = parseLearningOutline(message.text);
+            if (outline !== null || !sending) {
+                return {messageIndex: index, raw: message.text, outline};
+            }
+        }
+        return null;
+    }, [messages, sending, visibleSessionMode]);
     const routeProposal = useMemo(() => {
         for (let index = messages.length - 1; index >= 0; index--) {
             const message = messages[index];
@@ -472,7 +483,7 @@ export default function App() {
 
     const confirmPlanning = async () => {
         const journey = currentJourney;
-        const plan = planningDraftMessage?.text.trim();
+        const plan = planningDraftReply?.outline ? planningDraftReply.raw.trim() : null;
         if (!journey || visibleSessionMode !== "PLANNING" || !plan || confirmingPlan) return;
         setError(null);
         setConfirmingPlan(true);
@@ -1078,17 +1089,6 @@ export default function App() {
                                 LearnUnit 后，TutorAgent
                                 会生成本单元的讲解和 Practice。</p>
                         )}
-                        {visibleSessionMode === "PLANNING" && planningDraftMessage && (
-                            <div className="journey-actions">
-                                <button
-                                    type="button"
-                                    onClick={() => void confirmPlanning()}
-                                    disabled={confirmingPlan || loadingSession || sending}
-                                >
-                                    {confirmingPlan ? "保存中…" : "完成设计"}
-                                </button>
-                            </div>
-                        )}
                         {!learningLayout && (visibleSessionMode === "LEARNING" || learningCompleted)
                             && currentJourney.learningJourneyId != null && (
                                 <PracticeWorkspace
@@ -1117,22 +1117,89 @@ export default function App() {
                                             : "发送第一条消息，开始与 TutorAgent 对话。"}
                                 </p>
                             )}
-                            {messages.map((message, index) => (
-                                <div className={`message ${message.role}`}
-                                     key={`${message.timestamp ?? "message"}-${index}`}>
-                                    <span>{message.role === "user" ? "你" : "TutorAgent"}</span>
-                                    {message.role === "assistant" ? (
-                                        <MarkdownMessage text={(routeProposal?.messageIndex === index
-                                            ? message.text.replace(
-                                                /<learning-route-proposal>[\s\S]*?<\/learning-route-proposal>/,
-                                                "路线调整方案已显示在下方，确认后才会生效。",
-                                            )
-                                            : message.text) || (sending ? "正在组织回答…" : "")}/>
-                                    ) : (
-                                        <p>{message.text}</p>
-                                    )}
-                                </div>
-                            ))}
+                            {messages.map((message, index) => {
+                                const key = `${message.timestamp ?? "message"}-${index}`;
+                                if (visibleSessionMode === "PLANNING" && message.role === "assistant") {
+                                    if (index === planningDraftReply?.messageIndex && planningDraftReply.outline) {
+                                        const outline = planningDraftReply.outline;
+                                        return (
+                                            <aside className="route-proposal-card planning-outline-card"
+                                                   aria-labelledby={`planning-outline-title-${index}`} key={key}>
+                                                <div>
+                                                    <p className="mode-label">TutorAgent · 学习路径草稿</p>
+                                                    <h3 id={`planning-outline-title-${index}`}>学习路径草稿</h3>
+                                                    <p className="planning-outline-summary">
+                                                        {outline.chapters.length} 章 · {outline.unitCount} 个学习单元
+                                                    </p>
+                                                </div>
+                                                {outline.chapters.map((chapter, chapterIndex) => (
+                                                    <section key={`${chapterIndex}-${chapter.title}`}>
+                                                        <h4>第 {chapterIndex + 1} 章 · {chapter.title}</h4>
+                                                        <ol>
+                                                            {chapter.units.map((unit, unitIndex) => (
+                                                                <li key={`${unitIndex}-${unit.title}`}>
+                                                                    <strong>{unit.title}</strong>
+                                                                    <p className="planning-outline-objective">
+                                                                        学习目标：{unit.objective}
+                                                                    </p>
+                                                                </li>
+                                                            ))}
+                                                        </ol>
+                                                    </section>
+                                                ))}
+                                                <details className="planning-outline-details">
+                                                    <summary>查看原始 JSON</summary>
+                                                    <pre>{planningDraftReply.raw}</pre>
+                                                </details>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void confirmPlanning()}
+                                                    disabled={confirmingPlan || loadingSession || sending}
+                                                >
+                                                    {confirmingPlan ? "保存中…" : "确认并创建学习路径"}
+                                                </button>
+                                            </aside>
+                                        );
+                                    }
+                                    if (index === planningDraftReply?.messageIndex && planningDraftReply.outline === null) {
+                                        return (
+                                            <aside className="route-proposal-card planning-outline-card"
+                                                   role="status" key={key}>
+                                                <p className="mode-label">规划草稿暂不可用</p>
+                                                <p>无法识别这份学习路径草稿，请继续对话让 TutorAgent 重新生成。</p>
+                                                <details className="planning-outline-details">
+                                                    <summary>查看原始内容</summary>
+                                                    <pre>{planningDraftReply.raw}</pre>
+                                                </details>
+                                            </aside>
+                                        );
+                                    }
+                                    if (sending && index === messages.length - 1) {
+                                        return (
+                                            <div className="message assistant" key={key}>
+                                                <span>TutorAgent</span>
+                                                <p>正在整理学习路径草稿…</p>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                }
+                                return (
+                                    <div className={`message ${message.role}`} key={key}>
+                                        <span>{message.role === "user" ? "你" : "TutorAgent"}</span>
+                                        {message.role === "assistant" ? (
+                                            <MarkdownMessage text={(routeProposal?.messageIndex === index
+                                                ? message.text.replace(
+                                                    /<learning-route-proposal>[\s\S]*?<\/learning-route-proposal>/,
+                                                    "路线调整方案已显示在下方，确认后才会生效。",
+                                                )
+                                                : message.text) || (sending ? "正在组织回答…" : "")}/>
+                                        ) : (
+                                            <p>{message.text}</p>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                         {routeProposal && visibleSessionMode === "LEARNING" && (
                             <aside className="route-proposal-card" aria-labelledby="route-proposal-title">

@@ -184,6 +184,39 @@ h3 {
     margin-top: 0.3rem;
 }
 
+.planning-outline-card ol {
+    margin: 0;
+    padding-left: 1.35rem;
+}
+
+.planning-outline-card li + li {
+    margin-top: 0.65rem;
+}
+
+.planning-outline-summary,
+.planning-outline-objective {
+    color: #b6c1d3;
+}
+
+.planning-outline-details {
+    display: grid;
+    gap: 0.5rem;
+    border-top: 1px solid #455978;
+    padding-top: 0.65rem;
+}
+
+.planning-outline-details summary {
+    cursor: pointer;
+}
+
+.planning-outline-details pre {
+    max-height: 18rem;
+    overflow: auto;
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .practice-assessment {
     display: flex;
     align-items: flex-start;
@@ -223,6 +256,11 @@ h3 {
     border-color: var(--light-border-strong);
     background: var(--light-surface-soft);
     color: var(--light-text);
+}
+
+:root[data-theme="light"] .planning-outline-summary,
+:root[data-theme="light"] .planning-outline-objective {
+    color: var(--light-muted);
 }
 
 :root[data-theme="light"] .practice-assessment.ready {
