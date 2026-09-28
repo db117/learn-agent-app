@@ -1,13 +1,33 @@
-import {useEffect, useRef, useState} from "react";
+import {type FormEvent, useEffect, useRef, useState} from "react";
 import type {ModelConfig} from "../model-config/ModelSettingsDialog";
 
 const TRANSFER_URL = "http://127.0.0.1:10707/api/transfer";
 
 type Preview = {
+    journeyCount: number;
     additionCount: number;
     conflicts: Array<{ goalDescription: string }>;
+    learnerWillBeReplaced: boolean;
+    importedLearnerDisplayName: string | null;
+    importedCurrentJourneyGoal: string | null;
 };
 type ImportResult = { added: string[]; replaced: string[] };
+type ObjectStorageConfiguration = {
+    configured: boolean;
+    endpoint: string | null;
+    region: string | null;
+    bucketName: string | null;
+    accessKeyId: string | null;
+};
+type ObjectStorageStatus = { configured: boolean; remoteLastModified: string | null };
+
+const EMPTY_OBJECT_STORAGE_CONFIGURATION: ObjectStorageConfiguration = {
+    configured: false,
+    endpoint: null,
+    region: "auto",
+    bucketName: null,
+    accessKeyId: null,
+};
 
 async function errorMessage(response: Response, fallback: string) {
     try {
@@ -27,21 +47,74 @@ function downloadFile(content: BlobPart, name: string, type: string) {
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
+function formatLastModified(value: string | null) {
+    if (!value) return "远端尚无同步数据";
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function importConfirmation(preview: Preview, action = "导入") {
+    const learnerAction = preview.learnerWillBeReplaced ? "现有 Learner 资料将被覆盖" : "将导入 Learner 资料";
+    const learnerName = preview.importedLearnerDisplayName ?? "未命名 Learner";
+    const currentJourney = preview.importedCurrentJourneyGoal
+        ? `当前 Journey 将切换为「${preview.importedCurrentJourneyGoal}」。`
+        : "数据包未指定当前 Journey。";
+    const conflicts = preview.conflicts.length > 0
+        ? `同 portable_id 的 Journey 将整体替换（含学习进度和 Workspace）：\n`
+        + preview.conflicts.map((item) => `• ${item.goalDescription}`).join("\n")
+        : "没有同 portable_id 的 Journey 需要替换。";
+
+    return [
+        `将导入 ${preview.journeyCount} 个 Journey。`,
+        `${learnerAction}为「${learnerName}」。`,
+        currentJourney,
+        conflicts,
+        "本机独有的 Journey 会保留。",
+        `确认继续${action}？`,
+    ].join("\n\n");
+}
+
+async function previewJourneys(archive: ArrayBuffer) {
+    const response = await fetch(`${TRANSFER_URL}/journeys/preview`, {
+        method: "POST",
+        headers: {"Content-Type": "application/octet-stream"},
+        body: archive,
+    });
+    if (!response.ok) throw new Error(await errorMessage(response, "学习数据文件无效"));
+    return await response.json() as Preview;
+}
+
+async function importJourneysArchive(archive: ArrayBuffer, replaceConflicts: boolean) {
+    const response = await fetch(`${TRANSFER_URL}/journeys?replaceConflicts=${replaceConflicts}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/octet-stream"},
+        body: archive,
+    });
+    if (!response.ok) throw new Error(await errorMessage(response, "导入学习数据失败"));
+    return await response.json() as ImportResult;
+}
+
 export function DataTransferDialog({
                                        open,
                                        onClose,
                                        onModelConfigImported,
                                        onJourneysImported,
+                                       onBeforeSync,
                                    }: {
     open: boolean;
     onClose: () => void;
     onModelConfigImported: (config: ModelConfig) => void;
-    onJourneysImported: () => void;
+    onJourneysImported: () => Promise<void>;
+    onBeforeSync: (operation: "upload" | "download") => Promise<boolean>;
 }) {
     const dialogRef = useRef<HTMLDialogElement>(null);
     const [busy, setBusy] = useState(false);
     const [status, setStatus] = useState("");
     const [error, setError] = useState("");
+    const [r2Loading, setR2Loading] = useState(false);
+    const [r2Configuration, setR2Configuration] = useState(EMPTY_OBJECT_STORAGE_CONFIGURATION);
+    const [remoteLastModified, setRemoteLastModified] = useState<string | null>(null);
+    const [secretAccessKey, setSecretAccessKey] = useState("");
 
     useEffect(() => {
         const dialog = dialogRef.current;
@@ -55,8 +128,156 @@ export function DataTransferDialog({
             setBusy(false);
             setStatus("");
             setError("");
+            setSecretAccessKey("");
+            setR2Configuration(EMPTY_OBJECT_STORAGE_CONFIGURATION);
+            setRemoteLastModified(null);
+            setR2Loading(true);
+            const controller = new AbortController();
+            const loadR2State = async () => {
+                let loadedConfiguration: ObjectStorageConfiguration | null = null;
+                try {
+                    const configurationResponse = await fetch(`${TRANSFER_URL}/r2/config`, {signal: controller.signal});
+                    if (!configurationResponse.ok) {
+                        throw new Error(await errorMessage(configurationResponse, "无法读取对象存储配置"));
+                    }
+                    loadedConfiguration = await configurationResponse.json() as ObjectStorageConfiguration;
+                    if (controller.signal.aborted) return;
+                    setR2Configuration(loadedConfiguration);
+
+                    const statusResponse = await fetch(`${TRANSFER_URL}/r2/status`, {signal: controller.signal});
+                    if (!statusResponse.ok) {
+                        throw new Error(await errorMessage(statusResponse, "无法读取远端同步状态"));
+                    }
+                    const remoteStatus = await statusResponse.json() as ObjectStorageStatus;
+                    if (controller.signal.aborted) return;
+                    setR2Configuration({
+                        ...loadedConfiguration,
+                        configured: loadedConfiguration.configured && remoteStatus.configured,
+                    });
+                    setRemoteLastModified(remoteStatus.remoteLastModified);
+                } catch (cause) {
+                    if (!controller.signal.aborted) {
+                        if (loadedConfiguration === null) setR2Configuration(EMPTY_OBJECT_STORAGE_CONFIGURATION);
+                        setRemoteLastModified(null);
+                        setError(cause instanceof Error ? cause.message : "无法读取对象存储配置");
+                        setR2Loading(false);
+                    }
+                } finally {
+                    if (!controller.signal.aborted) setR2Loading(false);
+                }
+            };
+            void loadR2State();
+            return () => controller.abort();
         }
+        setSecretAccessKey("");
     }, [open]);
+
+    const close = () => {
+        if (busy) return;
+        setSecretAccessKey("");
+        onClose();
+    };
+
+    const saveR2Configuration = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        setBusy(true);
+        setError("");
+        setStatus("正在保存对象存储配置到本机…");
+        let configurationSaved = false;
+        try {
+            const response = await fetch(`${TRANSFER_URL}/r2/config`, {
+                method: "PUT",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    endpoint: r2Configuration.endpoint?.trim(),
+                    region: r2Configuration.region?.trim() || "auto",
+                    bucketName: r2Configuration.bucketName?.trim(),
+                    accessKeyId: r2Configuration.accessKeyId?.trim(),
+                    secretAccessKey,
+                }),
+            });
+            if (!response.ok) throw new Error(await errorMessage(response, "保存对象存储配置失败"));
+            setR2Configuration((current) => ({...current, configured: true}));
+            setSecretAccessKey("");
+            configurationSaved = true;
+            const statusResponse = await fetch(`${TRANSFER_URL}/r2/status`);
+            if (!statusResponse.ok) {
+                throw new Error(await errorMessage(statusResponse, "无法读取远端同步时间"));
+            }
+            const remoteStatus = await statusResponse.json() as ObjectStorageStatus;
+            setRemoteLastModified(remoteStatus.remoteLastModified);
+            setStatus("对象存储配置已保存在本机。");
+        } catch (cause) {
+            setStatus("");
+            const message = cause instanceof Error ? cause.message : "保存对象存储配置失败";
+            setError(configurationSaved ? `配置已保存，但${message}` : message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const uploadToR2 = async () => {
+        if (!window.confirm("上传会直接替换对象存储上的同步数据，远端只保留最新一份。确认继续？")) {
+            setStatus("已取消上传到对象存储");
+            return;
+        }
+        setBusy(true);
+        setError("");
+        setStatus("正在保存编辑并等待写入完成…");
+        try {
+            if (!await onBeforeSync("upload")) {
+                setStatus("已取消上传；请先保存编辑并等待写入完成。");
+                return;
+            }
+            setStatus("正在同步本机数据到对象存储…");
+            const response = await fetch(`${TRANSFER_URL}/r2/upload`, {method: "POST"});
+            if (!response.ok) throw new Error(await errorMessage(response, "同步到对象存储失败"));
+            const remoteStatus = await response.json() as ObjectStorageStatus;
+            setRemoteLastModified(remoteStatus.remoteLastModified);
+            setStatus(`同步到对象存储完成。远端最后修改：${formatLastModified(remoteStatus.remoteLastModified)}`);
+        } catch (cause) {
+            setStatus("");
+            setError(cause instanceof Error ? cause.message : "同步到对象存储失败");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const downloadFromR2 = async () => {
+        setBusy(true);
+        setStatus("正在下载并预览远端数据…");
+        setError("");
+        try {
+            const downloadResponse = await fetch(`${TRANSFER_URL}/r2/download`);
+            if (!downloadResponse.ok) {
+                throw new Error(await errorMessage(downloadResponse, "下载远端同步数据失败"));
+            }
+            const archive = await downloadResponse.arrayBuffer();
+            const preview = await previewJourneys(archive);
+            if (!window.confirm(importConfirmation(preview, "同步到本机"))) {
+                setStatus("已取消从对象存储同步");
+                return;
+            }
+            setStatus("正在保存编辑并等待写入完成…");
+            if (!await onBeforeSync("download")) {
+                setStatus("已取消同步；请先保存编辑并等待写入完成。");
+                return;
+            }
+            setStatus("正在同步 Learner、Journey、学习进度和 Workspace…");
+            const result = await importJourneysArchive(archive, true);
+            try {
+                await onJourneysImported();
+            } catch (cause) {
+                throw new Error(`数据已导入，但页面刷新失败：${cause instanceof Error ? cause.message : "请重新载入学习环境"}`);
+            }
+            setStatus(`从对象存储同步完成：新增 ${result.added.length} 个，覆盖 ${result.replaced.length} 个 Journey`);
+        } catch (cause) {
+            setStatus("");
+            setError(cause instanceof Error ? cause.message : "从对象存储同步失败");
+        } finally {
+            setBusy(false);
+        }
+    };
 
     const exportJourneys = async () => {
         setBusy(true);
@@ -78,32 +299,18 @@ export function DataTransferDialog({
         setError("");
         try {
             const archive = await file.arrayBuffer();
-            const previewResponse = await fetch(`${TRANSFER_URL}/journeys/preview`, {
-                method: "POST",
-                headers: {"Content-Type": "application/octet-stream"},
-                body: archive,
-            });
-            if (!previewResponse.ok) {
-                throw new Error(await errorMessage(previewResponse, "学习数据文件无效"));
-            }
-            const preview = await previewResponse.json() as Preview;
-            const confirmed = preview.conflicts.length === 0 || window.confirm(
-                `发现 ${preview.conflicts.length} 个相同标识的 Journey：\n`
-                + preview.conflicts.map((item) => `• ${item.goalDescription}`).join("\n")
-                + "\n确认后将覆盖这些 Journey 的学习数据和工作区。",
-            );
+            const preview = await previewJourneys(archive);
+            const confirmed = window.confirm(importConfirmation(preview));
             if (!confirmed) {
                 setStatus("已取消导入");
                 return;
             }
-            const response = await fetch(`${TRANSFER_URL}/journeys?replaceConflicts=${preview.conflicts.length > 0}`, {
-                method: "POST",
-                headers: {"Content-Type": "application/octet-stream"},
-                body: archive,
-            });
-            if (!response.ok) throw new Error(await errorMessage(response, "导入学习数据失败"));
-            const result = await response.json() as ImportResult;
-            onJourneysImported();
+            const result = await importJourneysArchive(archive, preview.conflicts.length > 0);
+            try {
+                await onJourneysImported();
+            } catch (cause) {
+                throw new Error(`数据已导入，但页面刷新失败：${cause instanceof Error ? cause.message : "请重新载入学习环境"}`);
+            }
             setStatus(`导入完成：新增 ${result.added.length} 个，覆盖 ${result.replaced.length} 个 Journey`);
         } catch (cause) {
             setStatus("");
@@ -156,26 +363,139 @@ export function DataTransferDialog({
             aria-labelledby="transfer-title"
             onCancel={(event) => {
                 event.preventDefault();
-                onClose();
+                close();
             }}
             onClick={(event) => {
-                if (event.target === event.currentTarget) onClose();
+                if (event.target === event.currentTarget) close();
             }}
         >
             <section className="model-settings-content">
                 <header className="model-settings-header">
                     <div>
-                        <h2 id="transfer-title">数据迁移</h2>
-                        <p>使用文件在设备间迁移学习进度和模型配置。</p>
+                        <h2 id="transfer-title">数据同步与迁移</h2>
+                        <p>可同步到 S3 兼容对象存储，也可用本地 ZIP 在设备间迁移学习数据；模型配置单独迁移。</p>
                     </div>
                     <button
                         className="secondary model-settings-close"
                         type="button"
                         aria-label="关闭数据迁移"
-                        onClick={onClose}
+                        onClick={close}
+                        disabled={busy}
                     >×
                     </button>
                 </header>
+                <h3>S3 兼容对象存储</h3>
+                <p className="model-settings-hint">
+                    远端仅保留一份全量学习数据；手动上传会覆盖远端内容。配置和密钥只保存在本机，不进入同步包。
+                </p>
+                <p className="model-settings-hint">
+                    同步前会保存 App 内未保存的编辑；在外部 IDE 修改的文件，请先在 IDE 保存。
+                </p>
+                <form className="model-settings-form" onSubmit={(event) => void saveR2Configuration(event)}>
+                    <label htmlFor="s3-endpoint">
+                        Endpoint
+                        <input
+                            id="s3-endpoint"
+                            type="url"
+                            value={r2Configuration.endpoint ?? ""}
+                            onChange={(event) => setR2Configuration((current) => ({
+                                ...current,
+                                endpoint: event.target.value
+                            }))}
+                            autoComplete="off"
+                            placeholder="https://s3.example.com"
+                            required
+                            disabled={busy || r2Loading}
+                        />
+                    </label>
+                    <label htmlFor="s3-region">
+                        签名 Region
+                        <input
+                            id="s3-region"
+                            value={r2Configuration.region ?? "auto"}
+                            onChange={(event) => setR2Configuration((current) => ({
+                                ...current,
+                                region: event.target.value
+                            }))}
+                            autoComplete="off"
+                            placeholder="auto"
+                            disabled={busy || r2Loading}
+                            aria-describedby="s3-region-hint"
+                        />
+                        <span className="model-settings-hint" id="s3-region-hint">
+                            Cloudflare R2 使用 auto；其他服务按其 S3 API 要求填写。
+                        </span>
+                    </label>
+                    <label htmlFor="s3-bucket-name">
+                        Bucket 名称
+                        <input
+                            id="s3-bucket-name"
+                            value={r2Configuration.bucketName ?? ""}
+                            onChange={(event) => setR2Configuration((current) => ({
+                                ...current,
+                                bucketName: event.target.value
+                            }))}
+                            autoComplete="off"
+                            required
+                            disabled={busy || r2Loading}
+                        />
+                    </label>
+                    <label htmlFor="s3-access-key-id">
+                        Access Key ID
+                        <input
+                            id="s3-access-key-id"
+                            value={r2Configuration.accessKeyId ?? ""}
+                            onChange={(event) => setR2Configuration((current) => ({
+                                ...current,
+                                accessKeyId: event.target.value
+                            }))}
+                            autoComplete="off"
+                            required
+                            disabled={busy || r2Loading}
+                        />
+                    </label>
+                    <label htmlFor="s3-secret-access-key">
+                        Secret Access Key
+                        <input
+                            id="s3-secret-access-key"
+                            type="password"
+                            value={secretAccessKey}
+                            onChange={(event) => setSecretAccessKey(event.target.value)}
+                            autoComplete="new-password"
+                            required
+                            disabled={busy || r2Loading}
+                            aria-describedby="s3-secret-hint"
+                        />
+                        <span className="model-settings-hint" id="s3-secret-hint">
+                            不会回填；每次保存都需要重新输入。此密钥需要目标 Bucket 的对象读写权限。
+                        </span>
+                    </label>
+                    <div className="model-settings-actions">
+                        <button type="submit" disabled={busy || r2Loading}>
+                            {busy && status.startsWith("正在保存对象存储") ? "保存中…" : "保存对象存储配置"}
+                        </button>
+                    </div>
+                </form>
+                <p className="model-settings-hint" role="status">
+                    {r2Loading
+                        ? "正在读取远端状态…"
+                        : r2Configuration.configured
+                            ? `远端最后修改：${formatLastModified(remoteLastModified)}`
+                            : "尚未配置对象存储"}
+                </p>
+                <div className="model-settings-actions">
+                    <button type="button" disabled={busy || r2Loading || !r2Configuration.configured}
+                            onClick={() => void uploadToR2()}>
+                        同步到对象存储
+                    </button>
+                    <button type="button" className="secondary"
+                            disabled={busy || r2Loading || !r2Configuration.configured}
+                            onClick={() => void downloadFromR2()}>
+                        从对象存储同步到本机
+                    </button>
+                </div>
+                <h3>本地文件迁移</h3>
+                <p className="model-settings-hint">ZIP 迁移 Journey 与学习进度；模型配置单独迁移。</p>
                 <div className="model-settings-actions">
                     <button type="button" disabled={busy} onClick={() => void exportJourneys()}>
                         导出学习数据

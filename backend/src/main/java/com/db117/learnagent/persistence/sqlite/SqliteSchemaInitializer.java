@@ -1,23 +1,25 @@
 package com.db117.learnagent.persistence.sqlite;
 
+import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import javax.sql.DataSource;
 
 /**
  * 创建并验证当前 clean-slate SQLite 结构。
  *
- * <p>数据库没有已知标记时不猜测旧结构，也不迁移旧表；这样可以避免把未知数据误当成 v2 事实。</p>
+ * <p>数据库版本不匹配时先保存本地副本，再按当前结构重新创建；不会迁移旧表。</p>
  */
 public final class SqliteSchemaInitializer {
     public static final String SCHEMA_MARKER = "learn-agent-app-v2";
-    public static final int SCHEMA_VERSION = 11;
-    private static final int SCHEMA_VERSION_WITHOUT_PORTABLE_JOURNEY_ID = 10;
-    private static final int SCHEMA_VERSION_BEFORE_ASSESSMENTS = 9;
-    private static final int SCHEMA_VERSION_WITH_MODEL_CONFIGURATION = 8;
-    private static final int SCHEMA_VERSION_BEFORE_MODEL_CONFIGURATION = 7;
+    public static final int SCHEMA_VERSION = 13;
     public static final String SCHEMA_SOURCE = "step-3-journey-bootstrap";
 
     private static final List<String> REQUIRED_TABLES = List.of(
@@ -34,7 +36,8 @@ public final class SqliteSchemaInitializer {
             "practice_assessment",
             "project",
             "project_milestone",
-            "project_evidence");
+            "project_evidence",
+            "r2_sync_configuration");
 
     private final DataSource dataSource;
 
@@ -46,25 +49,30 @@ public final class SqliteSchemaInitializer {
         try (Connection connection = dataSource.getConnection()) {
             // 外键约束是每条 SQLite 连接的开关，初始化连接也必须显式打开。
             SqliteSupport.enableForeignKeys(connection);
-            connection.setAutoCommit(false);
             if (!tableExists(connection, "schema_metadata")) {
                 if (hasBusinessTables(connection)) {
                     throw new IllegalStateException("database has no recognized v2 schema marker");
                 }
+                connection.setAutoCommit(false);
                 createSchema(connection);
+                connection.commit();
             } else {
-                verifySchema(connection);
+                int version = readSchemaVersion(connection);
+                if (version != SCHEMA_VERSION) {
+                    backupAndRecreateSchema(connection);
+                } else {
+                    connection.setAutoCommit(false);
+                    verifySchema(connection);
+                    connection.commit();
+                }
             }
-            connection.commit();
         } catch (SQLException error) {
             throw new IllegalStateException("Unable to initialize the v2 SQLite schema", error);
         }
     }
 
-    private void verifySchema(Connection connection) throws SQLException {
-        // 只接受本应用当前版本的标记；未知版本尽早失败，避免误读旧事实。
-        int version;
-        try (java.sql.PreparedStatement statement = connection.prepareStatement(
+    private int readSchemaVersion(Connection connection) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
                 "SELECT marker, schema_version, source FROM schema_metadata WHERE id = 1");
              ResultSet result = statement.executeQuery()) {
             if (!result.next()
@@ -72,51 +80,90 @@ public final class SqliteSchemaInitializer {
                     || !SCHEMA_SOURCE.equals(result.getString("source"))) {
                 throw new IllegalStateException("database schema marker is not recognized");
             }
-            version = result.getInt("schema_version");
+            return result.getInt("schema_version");
         }
-        if (version == SCHEMA_VERSION_BEFORE_MODEL_CONFIGURATION) {
-            verifyLegacyRequiredTables(connection);
-            migrateV7ToV9(connection);
-            migrateV9ToV10(connection);
-            migrateV10ToV11(connection);
-        } else if (version == SCHEMA_VERSION_WITH_MODEL_CONFIGURATION) {
-            verifyLegacyRequiredTables(connection);
-            if (!tableExists(connection, "model_configuration")) {
-                throw new IllegalStateException("recognized schema is missing table: model_configuration");
-            }
-            migrateV8ToV9(connection);
-            migrateV9ToV10(connection);
-            migrateV10ToV11(connection);
-        } else if (version == SCHEMA_VERSION_BEFORE_ASSESSMENTS) {
-            verifyLegacyRequiredTables(connection);
-            if (!tableExists(connection, "model_configuration")) {
-                throw new IllegalStateException("recognized schema is missing table: model_configuration");
-            }
-            migrateV9ToV10(connection);
-            migrateV10ToV11(connection);
-        } else if (version == SCHEMA_VERSION_WITHOUT_PORTABLE_JOURNEY_ID) {
-            verifyLegacyRequiredTables(connection);
-            migrateV10ToV11(connection);
-        } else if (version != SCHEMA_VERSION) {
-            throw new IllegalStateException("database schema marker is not recognized");
-        }
+    }
+
+    private void verifySchema(Connection connection) throws SQLException {
         verifyRequiredTables(connection);
         if (!tableExists(connection, "model_configuration")) {
             throw new IllegalStateException("recognized schema is missing table: model_configuration");
         }
     }
 
-    private void verifyRequiredTables(Connection connection) throws SQLException {
-        for (String table : REQUIRED_TABLES) {
-            if (!tableExists(connection, table)) {
-                throw new IllegalStateException("recognized schema is missing table: " + table);
+    private void backupAndRecreateSchema(Connection connection) throws SQLException {
+        backupDatabase(connection);
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("PRAGMA foreign_keys = OFF");
+        }
+        connection.setAutoCommit(false);
+        try {
+            dropExistingSchema(connection);
+            createSchema(connection);
+            connection.commit();
+        } catch (SQLException | RuntimeException error) {
+            try {
+                connection.rollback();
+            } catch (SQLException rollbackError) {
+                error.addSuppressed(rollbackError);
+            }
+            throw error;
+        } finally {
+            connection.setAutoCommit(true);
+            SqliteSupport.enableForeignKeys(connection);
+        }
+    }
+
+    private void backupDatabase(Connection connection) throws SQLException {
+        Path databasePath = mainDatabasePath(connection);
+        if (databasePath == null) {
+            return;
+        }
+
+        Path backupPath = databasePath.resolveSibling(
+                databasePath.getFileName() + ".backup-" + Instant.now().toEpochMilli() + ".db");
+        try (PreparedStatement statement = connection.prepareStatement("VACUUM INTO ?")) {
+            statement.setString(1, backupPath.toString());
+            statement.execute();
+        }
+    }
+
+    private Path mainDatabasePath(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("PRAGMA database_list")) {
+            while (result.next()) {
+                if ("main".equals(result.getString("name"))) {
+                    String file = result.getString("file");
+                    return file == null || file.isBlank() ? null : Path.of(file);
+                }
+            }
+        }
+        return null;
+    }
+
+    private void dropExistingSchema(Connection connection) throws SQLException {
+        List<String> drops = new ArrayList<>();
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery(
+                     "SELECT type, name FROM sqlite_master "
+                             + "WHERE type IN ('view', 'table') AND name NOT LIKE 'sqlite_%' "
+                             + "ORDER BY CASE type WHEN 'view' THEN 0 ELSE 1 END")) {
+            while (result.next()) {
+                String type = result.getString("type").toUpperCase(Locale.ROOT);
+                String name = result.getString("name").replace("\"", "\"\"");
+                drops.add("DROP " + type + " IF EXISTS \"" + name + "\"");
+            }
+        }
+        for (String drop : drops) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(drop);
             }
         }
     }
 
-    private void verifyLegacyRequiredTables(Connection connection) throws SQLException {
+    private void verifyRequiredTables(Connection connection) throws SQLException {
         for (String table : REQUIRED_TABLES) {
-            if (!"practice_assessment".equals(table) && !tableExists(connection, table)) {
+            if (!tableExists(connection, table)) {
                 throw new IllegalStateException("recognized schema is missing table: " + table);
             }
         }
@@ -303,6 +350,7 @@ public final class SqliteSchemaInitializer {
                 )
                 """);
         createModelConfigurationTable(connection);
+        createR2SyncConfigurationTable(connection);
         // Mastery 是 LearningPathItem 的只读投影，不另建可写的第二事实源。
         execute(connection, """
                 CREATE VIEW mastery AS
@@ -317,84 +365,6 @@ public final class SqliteSchemaInitializer {
             statement.setString(3, SCHEMA_SOURCE);
             statement.executeUpdate();
         }
-    }
-
-    private void migrateV7ToV9(Connection connection) throws SQLException {
-        // v7 新增模型设置表；保留原有学习事实与 Agent State 文件。
-        createModelConfigurationTable(connection);
-        updateSchemaVersion(9, connection);
-    }
-
-    private void migrateV8ToV9(Connection connection) throws SQLException {
-        // v8 已有模型设置；新增协议列并将现有配置明确设为 Chat Completions。
-        execute(connection, """
-                ALTER TABLE model_configuration
-                ADD COLUMN protocol TEXT NOT NULL DEFAULT 'CHAT_COMPLETIONS'
-                    CHECK (protocol IN ('CHAT_COMPLETIONS', 'RESPONSES'))
-                """);
-        updateSchemaVersion(9, connection);
-    }
-
-    private void migrateV9ToV10(Connection connection) throws SQLException {
-        createPracticeAssessmentTable(connection);
-        if (!columnExists(connection, "learning_path_item", "assessment_id")) {
-            rebuildLearningPathItemTable(connection);
-        }
-        if (!columnExists(connection, "practice_evidence", "workspace_digest")) {
-            execute(connection, "ALTER TABLE practice_evidence ADD COLUMN workspace_digest TEXT NOT NULL DEFAULT ''");
-        }
-        updateSchemaVersion(SCHEMA_VERSION_WITHOUT_PORTABLE_JOURNEY_ID, connection);
-    }
-
-    private void migrateV10ToV11(Connection connection) throws SQLException {
-        if (!columnExists(connection, "journey", "portable_id")) {
-            execute(connection, "ALTER TABLE journey ADD COLUMN portable_id TEXT");
-        }
-        java.util.ArrayList<Long> journeyIds = new java.util.ArrayList<Long>();
-        try (java.sql.PreparedStatement select = connection.prepareStatement(
-                "SELECT id FROM journey WHERE portable_id IS NULL");
-             ResultSet result = select.executeQuery()) {
-            while (result.next()) {
-                journeyIds.add(result.getLong("id"));
-            }
-        }
-        try (java.sql.PreparedStatement update = connection.prepareStatement(
-                "UPDATE journey SET portable_id = ? WHERE id = ?")) {
-            for (Long journeyId : journeyIds) {
-                update.setString(1, java.util.UUID.randomUUID().toString());
-                update.setLong(2, journeyId);
-                update.executeUpdate();
-            }
-        }
-        execute(connection, "CREATE UNIQUE INDEX IF NOT EXISTS uq_journey_portable_id ON journey(portable_id)");
-        updateSchemaVersion(SCHEMA_VERSION, connection);
-    }
-
-    private void rebuildLearningPathItemTable(Connection connection) throws SQLException {
-        execute(connection, "DROP VIEW IF EXISTS mastery");
-        execute(connection, "DROP INDEX IF EXISTS uq_current_path_item");
-        execute(connection, "ALTER TABLE learning_path_item RENAME TO learning_path_item_v9");
-        execute(connection, learningPathItemTableSql());
-        execute(connection, """
-                INSERT INTO learning_path_item(
-                    id, journey_id, learn_unit_id, learn_unit_code, sequence, status, practice_verified,
-                    assessment_id, pass_reason, started_at, completed_at, updated_at)
-                SELECT id, journey_id, learn_unit_id, learn_unit_code, sequence, status, practice_verified,
-                       NULL, pass_reason, started_at, completed_at, updated_at
-                FROM learning_path_item_v9
-                """);
-        execute(connection, "DROP TABLE learning_path_item_v9");
-        execute(connection, """
-                CREATE UNIQUE INDEX uq_current_path_item
-                ON learning_path_item(journey_id)
-                WHERE status = 'CURRENT'
-                """);
-        execute(connection, """
-                CREATE VIEW mastery AS
-                SELECT journey_id, learn_unit_id,
-                       CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END AS mastered
-                FROM learning_path_item
-                """);
     }
 
     private String learningPathItemTableSql() {
@@ -420,27 +390,6 @@ public final class SqliteSchemaInitializer {
                 """;
     }
 
-    private boolean columnExists(Connection connection, String table, String column) throws SQLException {
-        try (java.sql.PreparedStatement statement = connection.prepareStatement(
-                "PRAGMA table_info(" + table + ")");
-             ResultSet result = statement.executeQuery()) {
-            while (result.next()) {
-                if (column.equals(result.getString("name"))) {
-                    return true;
-                }
-            }
-            return false;
-        }
-    }
-
-    private void updateSchemaVersion(int version, Connection connection) throws SQLException {
-        try (java.sql.PreparedStatement statement = connection.prepareStatement(
-                "UPDATE schema_metadata SET schema_version = ? WHERE id = 1")) {
-            statement.setInt(1, version);
-            statement.executeUpdate();
-        }
-    }
-
     private void createModelConfigurationTable(Connection connection) throws SQLException {
         execute(connection, """
                 CREATE TABLE IF NOT EXISTS model_configuration (
@@ -449,6 +398,19 @@ public final class SqliteSchemaInitializer {
                     base_url TEXT NOT NULL,
                     api_key TEXT NOT NULL,
                     protocol TEXT NOT NULL CHECK (protocol IN ('CHAT_COMPLETIONS', 'RESPONSES'))
+                )
+                """);
+    }
+
+    private void createR2SyncConfigurationTable(Connection connection) throws SQLException {
+        execute(connection, """
+                CREATE TABLE IF NOT EXISTS r2_sync_configuration (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    endpoint TEXT NOT NULL,
+                    region TEXT NOT NULL DEFAULT 'auto',
+                    bucket_name TEXT NOT NULL,
+                    access_key_id TEXT NOT NULL,
+                    secret_access_key TEXT NOT NULL
                 )
                 """);
     }

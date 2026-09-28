@@ -4,22 +4,48 @@ import com.db117.learnagent.agent.runtime.TutorModel;
 import com.db117.learnagent.config.ModelConfiguration;
 import com.db117.learnagent.config.ModelConfigurationService;
 import com.db117.learnagent.config.OpenAIProtocol;
-import com.db117.learnagent.learning.domain.*;
-import com.db117.learnagent.persistence.sqlite.*;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.learning.domain.Chapter;
+import com.db117.learnagent.learning.domain.Journey;
+import com.db117.learnagent.learning.domain.LearnUnit;
+import com.db117.learnagent.learning.domain.Learner;
+import com.db117.learnagent.learning.domain.LearningJourney;
+import com.db117.learnagent.learning.domain.LearningPathItemStatus;
+import com.db117.learnagent.persistence.sqlite.SqliteJourneyRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteLearnerRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteLearningJourneyRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteModelConfigurationRepository;
+import com.db117.learnagent.persistence.sqlite.SqlitePracticeAssessmentRepository;
+import com.db117.learnagent.persistence.sqlite.SqlitePracticeTaskRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteProjectRepository;
+import com.db117.learnagent.persistence.sqlite.SqliteSchemaInitializer;
+import com.db117.learnagent.practice.domain.PracticeAssessment;
+import com.db117.learnagent.practice.domain.PracticeAssessmentVerdict;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.db117.learnagent.project.domain.Project;
 import com.db117.learnagent.project.domain.ProjectEvidence;
 import com.db117.learnagent.project.domain.ProjectMilestone;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.sqlite.SQLiteDataSource;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SqliteRepositoryTest {
     private static final Instant T0 = Instant.parse("2026-02-01T00:00:00Z");
@@ -155,20 +181,10 @@ class SqliteRepositoryTest {
     }
 
     @Test
-    void modelConfigurationUpgradePreservesLearningDataAndAppliesNewSettings() throws SQLException {
+    void modelConfigurationPersistsSettingsAndKeepsSecretsPrivate() throws SQLException {
         SQLiteDataSource dataSource = dataSource();
         try (java.sql.Connection anchor = dataSource.getConnection()) {
             new SqliteSchemaInitializer(dataSource).initialize();
-            SqliteLearnerRepository learnerRepository = new SqliteLearnerRepository(dataSource);
-            learnerRepository.save(Learner.create("Alice", "TypeScript learner", T0));
-
-            try (java.sql.Connection connection = dataSource.getConnection();
-                 java.sql.Statement statement = connection.createStatement()) {
-                statement.execute("DROP TABLE model_configuration");
-                statement.execute("UPDATE schema_metadata SET schema_version = 7 WHERE id = 1");
-            }
-            new SqliteSchemaInitializer(dataSource).initialize();
-            assertEquals("Alice", learnerRepository.findCurrent().orElseThrow().displayName());
 
             SqliteModelConfigurationRepository repository = new SqliteModelConfigurationRepository(dataSource);
             ModelConfiguration previous = new ModelConfiguration(
@@ -192,7 +208,53 @@ class SqliteRepositoryTest {
     }
 
     @Test
-    void v9PathMigrationPreservesCurrentItemAndAllowsAssessmentOnlyCompletion() throws SQLException {
+    void schemaVersionMismatchBacksUpDatabaseThenRecreatesCurrentSchema(@TempDir Path tempDirectory)
+            throws Exception {
+        Path databasePath = tempDirectory.resolve("learn-agent.db");
+        SQLiteDataSource dataSource = new SQLiteDataSource();
+        dataSource.setUrl("jdbc:sqlite:" + databasePath);
+        SqliteLearnerRepository learners = new SqliteLearnerRepository(dataSource);
+        try (java.sql.Connection anchor = dataSource.getConnection()) {
+            new SqliteSchemaInitializer(dataSource).initialize();
+            Learner learner = learners.save(Learner.create("Alice", "Java engineer", T0));
+            try (java.sql.Connection connection = dataSource.getConnection();
+                 java.sql.Statement statement = connection.createStatement()) {
+                statement.execute("UPDATE schema_metadata SET schema_version = 11 WHERE id = 1");
+            }
+
+            new SqliteSchemaInitializer(dataSource).initialize();
+            assertTrue(learners.findCurrent().isEmpty());
+            try (java.sql.Connection connection = dataSource.getConnection();
+                 java.sql.Statement statement = connection.createStatement();
+                 java.sql.ResultSet result = statement.executeQuery(
+                         "SELECT schema_version FROM schema_metadata WHERE id = 1")) {
+                assertTrue(result.next());
+                assertEquals(SqliteSchemaInitializer.SCHEMA_VERSION, result.getInt(1));
+            }
+
+            Path backupPath;
+            try (java.util.stream.Stream<Path> backups = Files.list(tempDirectory)) {
+                backupPath = backups.filter(path -> path.getFileName().toString()
+                                .startsWith("learn-agent.db.backup-"))
+                        .findFirst()
+                        .orElseThrow();
+            }
+            SQLiteDataSource backupDataSource = new SQLiteDataSource();
+            backupDataSource.setUrl("jdbc:sqlite:" + backupPath);
+            try (java.sql.Connection backupConnection = backupDataSource.getConnection();
+                 java.sql.PreparedStatement statement = backupConnection.prepareStatement(
+                         "SELECT display_name FROM learner WHERE id = ?")) {
+                statement.setLong(1, learner.id());
+                try (java.sql.ResultSet result = statement.executeQuery()) {
+                    assertTrue(result.next());
+                    assertEquals("Alice", result.getString(1));
+                }
+            }
+        }
+    }
+
+    @Test
+    void assessmentAllowsCompletionWithoutPracticeVerification() throws SQLException {
         SQLiteDataSource dataSource = dataSource();
         SqliteLearnerRepository learners = new SqliteLearnerRepository(dataSource);
         SqliteLearningJourneyRepository journeys = new SqliteLearningJourneyRepository(dataSource);
@@ -201,59 +263,11 @@ class SqliteRepositoryTest {
             initializer.initialize();
             Learner learner = learners.save(Learner.create("Alice", "TypeScript learner", T0));
             LearningJourney saved = journeys.save(outlineJourney(learner.id()));
+            LearningJourney loaded = journeys.findById(saved.id()).orElseThrow();
+            assertEquals(saved.pathItems().getFirst().id(), loaded.pathItems().getFirst().id());
+            assertEquals(LearningPathItemStatus.CURRENT, loaded.currentItem().status());
 
-            try (java.sql.Connection connection = dataSource.getConnection();
-                 java.sql.Statement statement = connection.createStatement()) {
-                statement.execute("DROP VIEW mastery");
-                statement.execute("DROP INDEX uq_current_path_item");
-                statement.execute("ALTER TABLE learning_path_item RENAME TO learning_path_item_v10");
-                statement.execute("""
-                        CREATE TABLE learning_path_item (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            journey_id INTEGER NOT NULL REFERENCES learning_journey(id) ON DELETE CASCADE,
-                            learn_unit_id INTEGER NOT NULL,
-                            learn_unit_code TEXT NOT NULL,
-                            sequence INTEGER NOT NULL CHECK (sequence >= 0),
-                            status TEXT NOT NULL CHECK (status IN ('PENDING', 'CURRENT', 'COMPLETED', 'SKIPPED')),
-                            practice_verified INTEGER NOT NULL CHECK (practice_verified IN (0, 1)),
-                            pass_reason TEXT,
-                            started_at TEXT,
-                            completed_at TEXT,
-                            updated_at TEXT NOT NULL,
-                            CHECK (status <> 'COMPLETED' OR (practice_verified = 1 AND completed_at IS NOT NULL)),
-                            UNIQUE (journey_id, learn_unit_id),
-                            FOREIGN KEY (journey_id, learn_unit_id) REFERENCES learn_unit(journey_id, id)
-                        )
-                        """);
-                statement.execute("""
-                        INSERT INTO learning_path_item(
-                            id, journey_id, learn_unit_id, learn_unit_code, sequence, status, practice_verified,
-                            pass_reason, started_at, completed_at, updated_at)
-                        SELECT id, journey_id, learn_unit_id, learn_unit_code, sequence, status, practice_verified,
-                               pass_reason, started_at, completed_at, updated_at
-                        FROM learning_path_item_v10
-                        """);
-                statement.execute("DROP TABLE learning_path_item_v10");
-                statement.execute("""
-                        CREATE UNIQUE INDEX uq_current_path_item
-                        ON learning_path_item(journey_id)
-                        WHERE status = 'CURRENT'
-                        """);
-                statement.execute("""
-                        CREATE VIEW mastery AS
-                        SELECT journey_id, learn_unit_id,
-                               CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END AS mastered
-                        FROM learning_path_item
-                        """);
-                statement.execute("UPDATE schema_metadata SET schema_version = 9 WHERE id = 1");
-            }
-
-            initializer.initialize();
-            LearningJourney migrated = journeys.findById(saved.id()).orElseThrow();
-            assertEquals(saved.pathItems().getFirst().id(), migrated.pathItems().getFirst().id());
-            assertEquals(LearningPathItemStatus.CURRENT, migrated.currentItem().status());
-
-            LearnUnit unit = migrated.learnUnit("variables");
+            LearnUnit unit = loaded.learnUnit("variables");
             SqlitePracticeTaskRepository tasks = new SqlitePracticeTaskRepository(dataSource);
             PracticeTask task = tasks.save(PracticeTask.create(
                     saved.id(), unit.id(), "typescript", "CODE", "变量练习", "理解变量", 1, "",
@@ -266,7 +280,7 @@ class SqliteRepositoryTest {
                             PracticeAssessmentVerdict.READY, "理解说明足以通过", "a".repeat(64), T0));
 
             LearningJourney completed = journeys.save(
-                    migrated.acceptAssessment("variables", assessment.id(), false, T0.plusSeconds(1)));
+                    loaded.acceptAssessment("variables", assessment.id(), false, T0.plusSeconds(1)));
 
             assertEquals(LearningPathItemStatus.COMPLETED, completed.pathItems().getFirst().status());
             assertFalse(completed.pathItems().getFirst().practiceVerified());

@@ -7,6 +7,9 @@ import com.db117.learnagent.config.OpenAIProtocol;
 import com.db117.learnagent.transfer.application.JourneyTransferService;
 import com.db117.learnagent.transfer.application.JourneyTransferService.ImportResult;
 import com.db117.learnagent.transfer.application.JourneyTransferService.OverwriteConfirmationRequired;
+import com.db117.learnagent.transfer.application.R2SyncService;
+import com.db117.learnagent.transfer.application.R2SyncService.ConfigurationRequest;
+import com.db117.learnagent.transfer.application.R2SyncService.RemoteObjectMissingException;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
@@ -25,22 +28,29 @@ import jakarta.ws.rs.core.Response;
 public class DataTransferResource {
     private final JourneyTransferService journeys;
     private final ModelConfigurationService modelConfiguration;
+    private final R2SyncService r2;
 
     public DataTransferResource(
             JourneyTransferService journeys,
-            ModelConfigurationService modelConfiguration) {
+            ModelConfigurationService modelConfiguration,
+            R2SyncService r2) {
         this.journeys = journeys;
         this.modelConfiguration = modelConfiguration;
+        this.r2 = r2;
     }
 
     @GET
     @Path("/journeys")
     @Produces("application/zip")
     public Response exportJourneys() {
-        return Response.ok(journeys.exportAll())
-                .header("Content-Disposition", "attachment; filename=learn-agent-journeys.zip")
-                .header("Cache-Control", "no-store")
-                .build();
+        try {
+            return Response.ok(journeys.exportAll())
+                    .header("Content-Disposition", "attachment; filename=learn-agent-journeys.zip")
+                    .header("Cache-Control", "no-store")
+                    .build();
+        } catch (IllegalArgumentException error) {
+            return invalid(error.getMessage());
+        }
     }
 
     @POST
@@ -98,9 +108,78 @@ public class DataTransferResource {
         }
     }
 
+    @GET
+    @Path("/r2/config")
+    public R2SyncService.ConfigurationView r2Configuration() {
+        return r2.configuration();
+    }
+
+    @PUT
+    @Path("/r2/config")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response saveR2Configuration(ConfigurationRequest request) {
+        try {
+            return Response.ok(r2.save(request)).header("Cache-Control", "no-store").build();
+        } catch (IllegalArgumentException error) {
+            return invalid(error.getMessage());
+        }
+    }
+
+    @GET
+    @Path("/r2/status")
+    public Response r2Status() {
+        try {
+            return Response.ok(r2.status()).header("Cache-Control", "no-store").build();
+        } catch (IllegalStateException error) {
+            return unavailable();
+        }
+    }
+
+    @POST
+    @Path("/r2/upload")
+    public Response uploadToR2() {
+        try {
+            return Response.ok(r2.upload(journeys.exportAll())).header("Cache-Control", "no-store").build();
+        } catch (IllegalArgumentException error) {
+            return invalid(error.getMessage());
+        } catch (IllegalStateException error) {
+            return unavailable();
+        }
+    }
+
+    @GET
+    @Path("/r2/download")
+    @Produces("application/zip")
+    public Response downloadFromR2() {
+        try {
+            return Response.ok(r2.download())
+                    .header("Content-Disposition", "attachment; filename=learn-agent-remote.zip")
+                    .header("Cache-Control", "no-store")
+                    .build();
+        } catch (RemoteObjectMissingException error) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(new TransferError("REMOTE_SYNC_MISSING", error.getMessage()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
+        } catch (IllegalArgumentException error) {
+            return invalid(error.getMessage());
+        } catch (IllegalStateException error) {
+            return unavailable();
+        }
+    }
+
     private static Response invalid(String message) {
         return Response.status(Response.Status.BAD_REQUEST)
                 .entity(new TransferError("INVALID_TRANSFER_FILE", message))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    private static Response unavailable() {
+        return Response.status(Response.Status.BAD_GATEWAY)
+                .entity(new TransferError(
+                        "S3_UNAVAILABLE", "连接 S3 兼容对象存储失败，请检查网络、Endpoint、Bucket 权限和凭据"))
+                .type(MediaType.APPLICATION_JSON)
                 .build();
     }
 

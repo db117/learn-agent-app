@@ -16,6 +16,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -32,7 +33,7 @@ import javax.sql.DataSource;
 /** 将 Learning Domain 和受管 Journey Workspace 打包为用户可控的本地文件。 */
 @ApplicationScoped
 public class JourneyTransferService {
-    private static final int FORMAT_VERSION = 1;
+    private static final int FORMAT_VERSION = 2;
     private static final long MAX_ARCHIVE_BYTES = 128L * 1024 * 1024;
     private static final long MAX_WORKSPACE_FILE_BYTES = 2L * 1024 * 1024;
     private static final int MAX_JOURNEYS = 1_000;
@@ -82,19 +83,33 @@ public class JourneyTransferService {
     public byte[] exportAll() {
         try (Connection connection = dataSource.getConnection()) {
             connection.setAutoCommit(false);
+            LearnerSnapshot learner = readCurrentLearner(connection);
+            long learnerId = currentLearnerId(connection);
             ArrayList<JourneySnapshot> snapshots = new ArrayList<JourneySnapshot>();
             LinkedHashMap<String, byte[]> files = new LinkedHashMap<String, byte[]>();
-            for (Map<String, Object> journey : readRows(connection, "journey", "1 = 1", 0)) {
+            List<Map<String, Object>> sourceJourneys = readRows(connection, "journey", "learner_id = ?", learnerId);
+            String currentJourneyPortableId = null;
+            for (Map<String, Object> journey : sourceJourneys) {
+                if (number(journey.get("is_current")) != 0) {
+                    if (currentJourneyPortableId != null) {
+                        throw new IllegalStateException("Learner 同时选择了多个当前 Journey");
+                    }
+                    currentJourneyPortableId = string(journey.get("portable_id"));
+                }
                 JourneySnapshot snapshot = exportJourney(connection, journey, files);
                 snapshots.add(snapshot);
             }
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             try (ZipOutputStream zip = new ZipOutputStream(output)) {
                 writeEntry(zip, MANIFEST_ENTRY,
-                        objectMapper.writeValueAsBytes(new TransferManifest(FORMAT_VERSION, snapshots)));
+                        objectMapper.writeValueAsBytes(new TransferManifest(
+                                FORMAT_VERSION, learner, currentJourneyPortableId, snapshots)));
                 for (Map.Entry<String, byte[]> file : files.entrySet()) {
                     writeEntry(zip, file.getKey(), file.getValue());
                 }
+            }
+            if (output.size() > MAX_ARCHIVE_BYTES) {
+                throw new IllegalArgumentException("导出文件超过 128 MB，同步包不能导入");
             }
             connection.commit();
             return output.toByteArray();
@@ -111,8 +126,15 @@ public class JourneyTransferService {
                 findTarget(connection, journey.portableId()).ifPresent(target -> conflicts.add(
                         new JourneyConflict(journey.portableId(), target.goalDescription())));
             }
+            String importedCurrentGoal = parsed.manifest().journeys().stream()
+                    .filter(journey -> samePortableId(
+                            journey.portableId(), parsed.manifest().currentJourneyPortableId()))
+                    .map(journey -> string(journey.journey().get("goal_description")))
+                    .findFirst().orElse(null);
             return new ImportPreview(parsed.manifest().journeys().size(),
-                    parsed.manifest().journeys().size() - conflicts.size(), conflicts);
+                    parsed.manifest().journeys().size() - conflicts.size(), conflicts,
+                    currentLearnerIdOrNull(connection) != null,
+                    parsed.manifest().learner().displayName(), importedCurrentGoal);
         } catch (SQLException error) {
             throw new IllegalStateException("无法检查 Journey 导入冲突", error);
         }
@@ -120,15 +142,17 @@ public class JourneyTransferService {
 
     public ImportResult importAll(byte[] archive, boolean replaceConflicts) {
         ParsedArchive parsed = parseArchive(archive);
-        if (parsed.manifest().journeys().isEmpty()) {
-            return new ImportResult(List.of(), List.of());
-        }
         try (Connection connection = dataSource.getConnection()) {
             connection.createStatement().execute("PRAGMA foreign_keys = ON");
             connection.setAutoCommit(false);
             ArrayList<WorkspaceReplacement> replacements = new ArrayList<WorkspaceReplacement>();
             try {
-                long learnerId = currentLearnerId(connection);
+                long learnerId = importLearner(connection, parsed.manifest().learner());
+                try (PreparedStatement statement = connection.prepareStatement(
+                        "UPDATE journey SET is_current = 0 WHERE learner_id = ?")) {
+                    statement.setLong(1, learnerId);
+                    statement.executeUpdate();
+                }
                 ArrayList<String> added = new ArrayList<String>();
                 ArrayList<String> replaced = new ArrayList<String>();
                 Map<String, JourneyTarget> targets = new HashMap<String, JourneyTarget>();
@@ -163,7 +187,7 @@ public class JourneyTransferService {
                         projectId = importTables(connection, learningJourneyId, snapshot.tables());
                     }
                     updateJourney(connection, journeyId, snapshot, learningJourneyId,
-                            target != null && target.current());
+                            samePortableId(snapshot.portableId(), parsed.manifest().currentJourneyPortableId()));
                     if (target == null) {
                         added.add(string(snapshot.journey().get("goal_description")));
                     } else {
@@ -260,6 +284,45 @@ public class JourneyTransferService {
                 projectFiles);
     }
 
+    private LearnerSnapshot readCurrentLearner(Connection connection) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT display_name, background_summary, created_at
+                FROM learner ORDER BY id LIMIT 1
+                """);
+             ResultSet result = statement.executeQuery()) {
+            if (!result.next()) {
+                throw new IllegalArgumentException("请先设置 Learner，再上传或导出学习数据");
+            }
+            return new LearnerSnapshot(result.getString("display_name"),
+                    result.getString("background_summary"), result.getString("created_at"));
+        }
+    }
+
+    private long importLearner(Connection connection, LearnerSnapshot learner) throws SQLException {
+        Long existingId = currentLearnerIdOrNull(connection);
+        if (existingId == null) {
+            try (PreparedStatement statement = connection.prepareStatement("""
+                    INSERT INTO learner(display_name, background_summary, created_at) VALUES (?, ?, ?)
+                    """)) {
+                statement.setString(1, learner.displayName());
+                statement.setString(2, learner.backgroundSummary());
+                statement.setString(3, learner.createdAt());
+                statement.executeUpdate();
+                return lastInsertedId(connection);
+            }
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE learner SET display_name = ?, background_summary = ?, created_at = ? WHERE id = ?
+                """)) {
+            statement.setString(1, learner.displayName());
+            statement.setString(2, learner.backgroundSummary());
+            statement.setString(3, learner.createdAt());
+            statement.setLong(4, existingId);
+            statement.executeUpdate();
+        }
+        return existingId;
+    }
+
     private List<String> archiveWorkspace(
             Map<String, byte[]> destination,
             String portableId,
@@ -321,8 +384,22 @@ public class JourneyTransferService {
 
     private void validateManifest(TransferManifest manifest, Map<String, byte[]> files) {
         if (manifest == null || manifest.formatVersion() != FORMAT_VERSION || manifest.journeys() == null
-                || manifest.journeys().size() > MAX_JOURNEYS) {
+                || manifest.journeys().size() > MAX_JOURNEYS || manifest.learner() == null) {
             throw new IllegalArgumentException("导入文件版本不受支持或内容无效");
+        }
+        if (manifest.learner().displayName() == null || manifest.learner().displayName().isBlank()
+                || manifest.learner().backgroundSummary() == null
+                || manifest.learner().backgroundSummary().isBlank()) {
+            throw new IllegalArgumentException("Learner 资料不完整");
+        }
+        try {
+            Instant.parse(manifest.learner().createdAt());
+        } catch (RuntimeException error) {
+            throw new IllegalArgumentException("Learner 创建时间无效", error);
+        }
+        String currentPortableId = manifest.currentJourneyPortableId();
+        if (currentPortableId != null && !isUuid(currentPortableId)) {
+            throw new IllegalArgumentException("当前 Journey 标识无效");
         }
         HashSet<String> portableIds = new HashSet<String>();
         HashSet<String> expectedFiles = new HashSet<String>();
@@ -346,6 +423,10 @@ public class JourneyTransferService {
             if (!"ACTIVE".equals(journey.journey().get("status"))
                     && !"ARCHIVED".equals(journey.journey().get("status"))) {
                 throw new IllegalArgumentException("Journey 状态无效");
+            }
+            if (samePortableId(currentPortableId, journey.portableId())
+                    && !"ACTIVE".equals(journey.journey().get("status"))) {
+                throw new IllegalArgumentException("已归档的 Journey 不能是当前 Journey");
             }
             if (!journey.tables().keySet().equals(Set.copyOf(TABLES))) {
                 throw new IllegalArgumentException("Journey 清单中的数据表不完整");
@@ -373,6 +454,10 @@ public class JourneyTransferService {
             if (journey.tables().get("project").isEmpty() && !journey.projectFiles().isEmpty()) {
                 throw new IllegalArgumentException("没有项目记录的 Journey 不能包含项目文件");
             }
+        }
+        if (currentPortableId != null && portableIds.stream()
+                .noneMatch(portableId -> samePortableId(portableId, currentPortableId))) {
+            throw new IllegalArgumentException("当前 Journey 不在传输包中");
         }
         if (!expectedFiles.equals(files.keySet())) {
             throw new IllegalArgumentException("导入文件中的 Workspace 文件与清单不匹配");
@@ -511,7 +596,7 @@ public class JourneyTransferService {
             long journeyId,
             JourneySnapshot snapshot,
             Long learningJourneyId,
-            boolean wasCurrent) throws SQLException {
+            boolean isCurrent) throws SQLException {
         Map<String, Object> journey = snapshot.journey();
         try (PreparedStatement statement = connection.prepareStatement("""
                 UPDATE journey SET goal_description = ?, status = ?, created_at = ?, archived_at = ?,
@@ -526,7 +611,7 @@ public class JourneyTransferService {
             } else {
                 statement.setLong(5, learningJourneyId);
             }
-            statement.setInt(6, wasCurrent && "ACTIVE".equals(journey.get("status")) ? 1 : 0);
+            statement.setInt(6, isCurrent && "ACTIVE".equals(journey.get("status")) ? 1 : 0);
             statement.setLong(7, journeyId);
             if (statement.executeUpdate() != 1) {
                 throw new IllegalArgumentException("目标 Journey 已不存在");
@@ -553,18 +638,23 @@ public class JourneyTransferService {
     }
 
     private long currentLearnerId(Connection connection) throws SQLException {
+        Long learnerId = currentLearnerIdOrNull(connection);
+        if (learnerId == null) {
+            throw new IllegalArgumentException("请先设置 Learner，再导入学习数据");
+        }
+        return learnerId;
+    }
+
+    private Long currentLearnerIdOrNull(Connection connection) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("SELECT id FROM learner ORDER BY id LIMIT 1");
              ResultSet result = statement.executeQuery()) {
-            if (!result.next()) {
-                throw new IllegalArgumentException("请先设置 Learner，再导入学习数据");
-            }
-            return result.getLong("id");
+            return result.next() ? result.getLong("id") : null;
         }
     }
 
     private java.util.Optional<JourneyTarget> findTarget(Connection connection, String portableId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT id, learning_journey_id, is_current, goal_description "
+                "SELECT id, learning_journey_id, goal_description "
                         + "FROM journey WHERE lower(portable_id) = ?")) {
             statement.setString(1, normalizedUuid(portableId));
             try (ResultSet result = statement.executeQuery()) {
@@ -575,7 +665,7 @@ public class JourneyTransferService {
                 boolean noLearningJourney = result.wasNull();
                 return java.util.Optional.of(new JourneyTarget(
                         result.getLong("id"), noLearningJourney ? null : learningJourneyId,
-                        result.getInt("is_current") != 0, result.getString("goal_description")));
+                        result.getString("goal_description")));
             }
         }
     }
@@ -694,6 +784,10 @@ public class JourneyTransferService {
         }
     }
 
+    private static boolean samePortableId(String first, String second) {
+        return first != null && second != null && first.equalsIgnoreCase(second);
+    }
+
     private static String normalizedUuid(String value) {
         return UUID.fromString(value).toString();
     }
@@ -748,14 +842,23 @@ public class JourneyTransferService {
         Map<String, Object> apply(Map<String, Object> row);
     }
 
-    /** Journey 导入前提示用户的冲突摘要。
+    /** Journey 导入前提示用户的覆盖范围。
      *
      * @param journeyCount 文件中的 Journey 总数
      * @param additionCount 目标设备上尚不存在、导入后会新增的 Journey 数
      * @param conflicts 具有相同 portable ID、需要用户确认覆盖的 Journey
+     * @param learnerWillBeReplaced 导入时是否会覆盖当前设备的 Learner 资料
+     * @param importedLearnerDisplayName 传输包中的 Learner 显示名称
+     * @param importedCurrentJourneyGoal 传输包中当前选中的 Journey 目标；没有选中值时为空
      */
     @RegisterForReflection
-    public record ImportPreview(int journeyCount, int additionCount, List<JourneyConflict> conflicts) {
+    public record ImportPreview(
+            int journeyCount,
+            int additionCount,
+            List<JourneyConflict> conflicts,
+            boolean learnerWillBeReplaced,
+            String importedLearnerDisplayName,
+            String importedCurrentJourneyGoal) {
         public ImportPreview {
             conflicts = List.copyOf(conflicts);
         }
@@ -786,10 +889,26 @@ public class JourneyTransferService {
     /** 压缩包顶层格式。
      *
      * @param formatVersion 迁移文件格式版本
+     * @param learner 导出设备的 Learner 资料
+     * @param currentJourneyPortableId 导出设备当前选中的 Journey 唯一标识；没有选择时为空
      * @param journeys 文件中包含的全部 Journey
      */
     @RegisterForReflection
-    public record TransferManifest(int formatVersion, List<JourneySnapshot> journeys) {
+    public record TransferManifest(
+            int formatVersion,
+            LearnerSnapshot learner,
+            String currentJourneyPortableId,
+            List<JourneySnapshot> journeys) {
+    }
+
+    /** 会随全部 Journey 一起传输的 Learner 资料。
+     *
+     * @param displayName Learner 显示名称
+     * @param backgroundSummary 学习者背景与能力描述
+     * @param createdAt Learner 首次创建时间
+     */
+    @RegisterForReflection
+    public record LearnerSnapshot(String displayName, String backgroundSummary, String createdAt) {
     }
 
     /** 一个 Journey 的 Domain State 行和两类工作区文件清单。
@@ -823,10 +942,9 @@ public class JourneyTransferService {
      *
      * @param id Journey 的本地 SQLite 主键
      * @param learningJourneyId 现有 LearningJourney 的本地 SQLite 主键；未规划时为空
-     * @param current 当前设备是否正在选择该 Journey
      * @param goalDescription 当前设备上的 Journey 目标
      */
-    private record JourneyTarget(long id, Long learningJourneyId, boolean current, String goalDescription) {
+    private record JourneyTarget(long id, Long learningJourneyId, String goalDescription) {
     }
 
     private static final class WorkspaceReplacement {

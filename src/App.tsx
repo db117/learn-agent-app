@@ -2,7 +2,7 @@ import {useEffect, useMemo, useRef, useState} from "react";
 import {MarkdownMessage} from "./features/agent/MarkdownMessage";
 import {type LearningOutline, parseLearningOutline} from "./features/agent/learningOutline";
 import {type ModelConfig, ModelSettingsDialog} from "./features/model-config/ModelSettingsDialog";
-import {PracticeWorkspace} from "./features/practice/PracticeWorkspace";
+import {PracticeWorkspace, type PracticeWorkspaceHandle} from "./features/practice/PracticeWorkspace";
 import type {PracticeCheckSummary} from "./features/practice/practiceTypes";
 import {DataTransferDialog} from "./features/transfer/DataTransferDialog";
 
@@ -179,6 +179,7 @@ export default function App() {
     const [pendingLearningPrompt, setPendingLearningPrompt] = useState(false);
     const [confirmingPlan, setConfirmingPlan] = useState(false);
     const [confirmingRouteProposal, setConfirmingRouteProposal] = useState(false);
+    const [sessionReloadVersion, setSessionReloadVersion] = useState(0);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [sessionMode, setSessionMode] = useState<SessionMode | null>(null);
     const [currentLearnUnit, setCurrentLearnUnit] = useState<string | null>(null);
@@ -196,6 +197,10 @@ export default function App() {
     const [resizeState, setResizeState] = useState<ResizeState | null>(null);
     const streamController = useRef<AbortController | null>(null);
     const sessionTargetRef = useRef<string | null>(null);
+    const practiceWorkspaceRef = useRef<PracticeWorkspaceHandle | null>(null);
+    const appWritesPendingRef = useRef(false);
+    appWritesPendingRef.current = bootstrapState === "loading" || savingLearner || journeyAction !== null
+        || confirmingPlan || confirmingRouteProposal || sending || requestingPracticeCheck || loadingSession;
 
     useEffect(() => {
         document.documentElement.dataset.theme = theme;
@@ -333,7 +338,7 @@ export default function App() {
         && (currentJourney.learningJourneyId != null || planningJourneyId === currentJourney.id);
     const sessionTargetKey = bootstrap?.learner && currentJourney && planningOpen && !learningCompleted
     && currentJourney.learningJourneyStatus !== "COMPLETED"
-        ? `${bootstrap.learner.id}:${currentJourney.id}:${currentJourney.learningJourneyId ?? "planning"}`
+        ? `${bootstrap.learner.id}:${currentJourney.id}:${currentJourney.learningJourneyId ?? "planning"}:${sessionReloadVersion}`
         : null;
     const visibleSessionMode = sessionMode ?? (currentJourney ? sessionModeFor(currentJourney) : null);
     const planningDraftReply = useMemo<PlanningDraftReply | null>(() => {
@@ -407,12 +412,11 @@ export default function App() {
         void createSession(currentJourney, bootstrap.learner.id, sessionTargetKey);
     }, [sessionTargetKey]);
 
-    const saveLearner = async (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
+    const persistLearnerDraft = async () => {
         const backgroundSummary = learnerDraft.trim();
         if (!backgroundSummary) {
             setError("请填写背景与能力描述");
-            return;
+            return false;
         }
         setError(null);
         setSavingLearner(true);
@@ -425,11 +429,56 @@ export default function App() {
             if (!response.ok) throw new Error(await readError(response));
             setEditingLearner(false);
             await loadBootstrap();
+            return true;
         } catch (requestError) {
             setError(requestError instanceof Error ? requestError.message : "无法保存 Learner 设置");
+            return false;
         } finally {
             setSavingLearner(false);
         }
+    };
+
+    const saveLearner = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        await persistLearnerDraft();
+    };
+
+    const waitForAppWrites = async () => {
+        while (appWritesPendingRef.current) {
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
+        }
+    };
+
+    const prepareForSync = async (operation: "upload" | "download") => {
+        await waitForAppWrites();
+        if (bootstrapState !== "ready" || bootstrap === null) {
+            setError("学习环境尚未就绪，请稍后重试同步。");
+            return false;
+        }
+
+        let hasLearner = bootstrap.learner !== null;
+        const draft = learnerDraft.trim();
+        const savedSummary = bootstrap.learner?.backgroundSummary.trim() ?? "";
+        if (draft && (!hasLearner || draft !== savedSummary)) {
+            if (!await persistLearnerDraft()) return false;
+            hasLearner = true;
+            await waitForAppWrites();
+        } else if (hasLearner && draft !== savedSummary) {
+            setError("Learner 背景不能为空；请先补全后再同步。");
+            return false;
+        }
+        if (operation === "upload" && !hasLearner) {
+            setError("请先设置 Learner 资料，再上传完整学习数据。");
+            return false;
+        }
+
+        const workspace = practiceWorkspaceRef.current;
+        if (workspace !== null) return workspace.prepareForSync();
+        if (workspaceDirty) {
+            setError("练习编辑器尚未就绪，无法确认并保存未保存内容。");
+            return false;
+        }
+        return true;
     };
 
     const createJourney = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -747,6 +796,19 @@ export default function App() {
         && currentJourney.learningJourneyStatus === "ACTIVE"
         && visibleSessionMode === "LEARNING"
         && showLearningCard;
+    const refreshAfterJourneyImport = async () => {
+        sessionTargetRef.current = null;
+        setSessionId(null);
+        setSessionMode(null);
+        setCurrentLearnUnit(null);
+        setMessages([]);
+        setDraft("");
+        await loadBootstrap();
+        setWorkspaceVersion((version) => version + 1);
+        setProgressVersion((version) => version + 1);
+        setContentVersion((version) => version + 1);
+        setSessionReloadVersion((version) => version + 1);
+    };
     const learningGridClassName = [
         "status-grid",
         learningLayout && "learning-mode-grid",
@@ -1057,6 +1119,8 @@ export default function App() {
                             {tutorCollapsed ? "‹" : "›"}
                         </button>
                         <PracticeWorkspace
+                            key={`${currentJourney.id}:${contentVersion}`}
+                            ref={practiceWorkspaceRef}
                             journeyId={currentJourney.id}
                             learningLayout
                             onDirtyChange={setWorkspaceDirty}
@@ -1103,6 +1167,8 @@ export default function App() {
                         {!learningLayout && (visibleSessionMode === "LEARNING" || learningCompleted)
                             && currentJourney.learningJourneyId != null && (
                                 <PracticeWorkspace
+                                    key={`${currentJourney.id}:${contentVersion}`}
+                                    ref={practiceWorkspaceRef}
                                     journeyId={currentJourney.id}
                                     onDirtyChange={setWorkspaceDirty}
                                     onProgressChanged={handleProgressChanged}
@@ -1286,12 +1352,8 @@ export default function App() {
             <DataTransferDialog
                 open={dataTransferOpen}
                 onClose={() => setDataTransferOpen(false)}
-                onJourneysImported={() => {
-                    setWorkspaceVersion((version) => version + 1);
-                    setProgressVersion((version) => version + 1);
-                    setContentVersion((version) => version + 1);
-                    void loadBootstrap();
-                }}
+                onJourneysImported={refreshAfterJourneyImport}
+                onBeforeSync={prepareForSync}
                 onModelConfigImported={(configuration) => {
                     setModelConfig(configuration);
                     setModelConfigState("ready");

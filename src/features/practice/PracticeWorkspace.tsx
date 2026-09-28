@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from "react";
+import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} from "react";
 import {LearningPathPanel, type LearningProgress, LearnModePanel} from "../learn/LearnModePanel";
 import {PracticePanel} from "./PracticePanel";
 import {LearningIdeActions} from "./LearningIdeActions";
@@ -20,6 +20,8 @@ type Props = {
     contentVersion?: number;
     learningLayout?: boolean;
 };
+
+export type PracticeWorkspaceHandle = { prepareForSync: () => Promise<boolean> };
 
 type CompileResponse = {
     success: boolean;
@@ -82,7 +84,7 @@ type ChoiceVerifyResponse = {
     advanced: boolean;
 };
 
-export function PracticeWorkspace({
+export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(function PracticeWorkspace({
                                       journeyId,
                                       onDirtyChange,
                                       onProgressChanged,
@@ -93,7 +95,7 @@ export function PracticeWorkspace({
                                       progressVersion = 0,
                                       contentVersion = 0,
                                       learningLayout = false,
-                                  }: Props) {
+                                                                                                       }: Props, ref) {
     const api = useMemo(() => createWorkspaceApi(fetch, BACKEND_URL), []);
     const [files, setFiles] = useState<WorkspaceFileEntry[]>([]);
     const [state, setState] = useState(initialSaveState);
@@ -119,6 +121,39 @@ export function PracticeWorkspace({
     const [selectedChoiceId, setSelectedChoiceId] = useState<string | null>(null);
     const [practiceFullscreen, setPracticeFullscreen] = useState(false);
     const [editorExpanded, setEditorExpanded] = useState(false);
+    const stateRef = useRef(state);
+    const activeOperationsRef = useRef(false);
+    stateRef.current = state;
+    activeOperationsRef.current = saving || creatingFile || compiling || testing || verifying
+        || acceptingAssessment || choiceSubmitting;
+
+    useImperativeHandle(ref, () => ({
+        prepareForSync: async () => {
+            // Sync 只能在当前 Journey 的写入完成后生成文件快照。
+            while (activeOperationsRef.current) {
+                await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
+            }
+            const pending = stateRef.current;
+            if (!pending.dirty) return true;
+            if (!pending.selectedPath) return false;
+            setSaving(true);
+            setState((current) => beginSave(current));
+            setFeedback(null);
+            try {
+                const saved = await api.writeFile("journey", journeyId, pending.selectedPath, pending.draftContent);
+                setState((current) => finishSave(current, saved.content));
+                setFiles((current) => current.map((file) => file.path === saved.path ? saved : file));
+                return true;
+            } catch (error: unknown) {
+                const message = error instanceof Error ? error.message : "无法保存练习文件";
+                setState((current) => failSave(current, message));
+                setFeedback(message);
+                return false;
+            } finally {
+                setSaving(false);
+            }
+        },
+    }), [api, journeyId]);
 
     useEffect(() => {
         onDirtyChange?.(state.dirty);
@@ -566,4 +601,4 @@ export function PracticeWorkspace({
         <div className="learning-practice-column">{practicePanel}</div>
         {completionMessage && <div className="learning-completion-column">{completionMessage}</div>}
     </>;
-}
+});
