@@ -10,7 +10,15 @@ import com.db117.learnagent.learning.domain.Chapter;
 import com.db117.learnagent.learning.domain.LearnUnit;
 import com.db117.learnagent.learning.domain.LearningJourney;
 import com.db117.learnagent.learning.domain.LearningPathItem;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.practice.domain.PracticeAssessment;
+import com.db117.learnagent.practice.domain.PracticeAssessmentRepository;
+import com.db117.learnagent.practice.domain.PracticeAssessmentVerdict;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.LearningWorkspace;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -25,7 +33,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TutorProgressToolsTest {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -87,7 +97,8 @@ class TutorProgressToolsTest {
     private static TutorContext context(LearningJourney journey) {
         LearnUnit unit = journey.learnUnit("variables");
         return new TutorContext(
-                1L, "学习者", "TypeScript 初学者", 7L, journey.title(), "掌握 TypeScript 基础",
+                1L, "学习者", "TypeScript 初学者", 7L,
+                java.time.Instant.parse("2026-01-01T00:00:00Z"), journey.title(), "掌握 TypeScript 基础",
                 journey.languagePackId(), unit.code(), unit.title(), unit.objective(), unit.content(),
                 journey.currentItem().status(), false, 0, 1, TutorSessionMode.LEARNING,
                 WorkspaceBinding.learning(7L));

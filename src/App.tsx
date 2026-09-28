@@ -4,6 +4,7 @@ import {type LearningOutline, parseLearningOutline} from "./features/agent/learn
 import {type ModelConfig, ModelSettingsDialog} from "./features/model-config/ModelSettingsDialog";
 import {PracticeWorkspace} from "./features/practice/PracticeWorkspace";
 import type {PracticeCheckSummary} from "./features/practice/practiceTypes";
+import {DataTransferDialog} from "./features/transfer/DataTransferDialog";
 
 const BACKEND_URL = "http://127.0.0.1:10707";
 const MODEL_CONFIG_URL = `${BACKEND_URL}/api/model-config`;
@@ -158,6 +159,7 @@ export default function App() {
     const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
     const [modelConfigState, setModelConfigState] = useState<"loading" | "ready" | "error">("loading");
     const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
+    const [dataTransferOpen, setDataTransferOpen] = useState(false);
     const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
     const [bootstrapState, setBootstrapState] = useState<"loading" | "ready" | "error">("loading");
     const [bootstrapError, setBootstrapError] = useState<string | null>(null);
@@ -806,6 +808,15 @@ export default function App() {
                 <button
                     type="button"
                     className="theme-toggle"
+                    aria-haspopup="dialog"
+                    aria-expanded={dataTransferOpen}
+                    onClick={() => setDataTransferOpen(true)}
+                >
+                    数据迁移
+                </button>
+                <button
+                    type="button"
+                    className="theme-toggle"
                     aria-pressed={theme === "light"}
                     aria-label={theme === "light" ? "切换深色模式" : "切换浅色模式"}
                     onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}
@@ -1268,6 +1279,20 @@ export default function App() {
                 config={modelConfig}
                 onClose={() => setModelSettingsOpen(false)}
                 onSaved={(configuration) => {
+                    setModelConfig(configuration);
+                    setModelConfigState("ready");
+                }}
+            />
+            <DataTransferDialog
+                open={dataTransferOpen}
+                onClose={() => setDataTransferOpen(false)}
+                onJourneysImported={() => {
+                    setWorkspaceVersion((version) => version + 1);
+                    setProgressVersion((version) => version + 1);
+                    setContentVersion((version) => version + 1);
+                    void loadBootstrap();
+                }}
+                onModelConfigImported={(configuration) => {
                     setModelConfig(configuration);
                     setModelConfigState("ready");
                 }}

@@ -26,6 +26,12 @@ import jakarta.enterprise.context.ApplicationScoped;
 import reactor.core.publisher.Flux;
 
 import java.nio.charset.StandardCharsets;
+import java.time.DateTimeException;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -50,6 +56,8 @@ public class TutorSessionService {
     private static final String FAILED = "FAILED";
     private static final String CANCELLED = "CANCELLED";
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final DateTimeFormatter MESSAGE_TIMESTAMP_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
     private static final JsonNode PLANNING_OUTPUT_SCHEMA = planningOutputSchema();
 
     private final TutorContextAssembler contextAssembler;
@@ -69,6 +77,12 @@ public class TutorSessionService {
         TutorContext context = contextAssembler.assemble(ids.learnerId(), ids.journeyId(), ids.mode());
         String sessionId = sessionId(context);
         String userId = Long.toString(context.learnerId());
+        Optional<AgentState> state = runtime.loadState(userId, sessionId);
+        // AgentScope 状态目录独立于 SQLite；数据库重建后复用数字 ID 会误命中早于新 Journey 的旧对话。
+        if (state.filter(value -> hasMessageBeforeJourney(value, context.journeyCreatedAt())).isPresent()) {
+            sessionId = sessionId(context, context.journeyCreatedAt());
+            state = runtime.loadState(userId, sessionId);
+        }
         TutorSessionService.SessionBinding binding = new SessionBinding(
                 sessionId,
                 userId,
@@ -77,7 +91,6 @@ public class TutorSessionService {
                 context.mode(),
                 context.currentLearnUnitCode());
         sessions.put(sessionId, binding);
-        Optional<AgentState> state = runtime.loadState(userId, sessionId);
         return new TutorSessionResponse(
                 sessionId,
                 state.isPresent(),
@@ -480,9 +493,41 @@ public class TutorSessionService {
     }
 
     private String sessionId(TutorContext context) {
+        return sessionId(context, null);
+    }
+
+    private String sessionId(TutorContext context, Instant journeyCreatedAt) {
         String seed = context.learnerId() + "|" + context.journeyId() + "|"
                 + context.mode() + "|" + Objects.toString(context.currentLearnUnitCode(), "planning");
+        if (journeyCreatedAt != null) {
+            seed += "|" + journeyCreatedAt;
+        }
         return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
+    private boolean hasMessageBeforeJourney(AgentState state, Instant journeyCreatedAt) {
+        // ponytail: 仅识别新建时间晚于旧消息的 ID 复用；跨库导入需改用持久化 Journey portable_id。
+        Instant createdAtAtMessagePrecision = journeyCreatedAt.truncatedTo(ChronoUnit.MILLIS);
+        for (Msg message : state.getContext()) {
+            if (message.getRole() != MsgRole.USER && message.getRole() != MsgRole.ASSISTANT) {
+                continue;
+            }
+            String timestamp = message.getTimestamp();
+            if (timestamp == null) {
+                continue;
+            }
+            try {
+                Instant messageAt = LocalDateTime.parse(timestamp, MESSAGE_TIMESTAMP_FORMAT)
+                        .atZone(ZoneId.systemDefault())
+                        .toInstant();
+                if (messageAt.isBefore(createdAtAtMessagePrecision)) {
+                    return true;
+                }
+            } catch (DateTimeException ignored) {
+                // AgentScope 的非 ISO 时间戳不用于判定状态归属，保持已有恢复行为。
+            }
+        }
+        return false;
     }
 
     /**

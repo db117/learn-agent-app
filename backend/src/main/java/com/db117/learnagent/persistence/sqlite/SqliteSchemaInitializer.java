@@ -1,10 +1,10 @@
 package com.db117.learnagent.persistence.sqlite;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import javax.sql.DataSource;
 
 /**
  * 创建并验证当前 clean-slate SQLite 结构。
@@ -13,7 +13,8 @@ import java.util.List;
  */
 public final class SqliteSchemaInitializer {
     public static final String SCHEMA_MARKER = "learn-agent-app-v2";
-    public static final int SCHEMA_VERSION = 10;
+    public static final int SCHEMA_VERSION = 11;
+    private static final int SCHEMA_VERSION_WITHOUT_PORTABLE_JOURNEY_ID = 10;
     private static final int SCHEMA_VERSION_BEFORE_ASSESSMENTS = 9;
     private static final int SCHEMA_VERSION_WITH_MODEL_CONFIGURATION = 8;
     private static final int SCHEMA_VERSION_BEFORE_MODEL_CONFIGURATION = 7;
@@ -77,6 +78,7 @@ public final class SqliteSchemaInitializer {
             verifyLegacyRequiredTables(connection);
             migrateV7ToV9(connection);
             migrateV9ToV10(connection);
+            migrateV10ToV11(connection);
         } else if (version == SCHEMA_VERSION_WITH_MODEL_CONFIGURATION) {
             verifyLegacyRequiredTables(connection);
             if (!tableExists(connection, "model_configuration")) {
@@ -84,12 +86,17 @@ public final class SqliteSchemaInitializer {
             }
             migrateV8ToV9(connection);
             migrateV9ToV10(connection);
+            migrateV10ToV11(connection);
         } else if (version == SCHEMA_VERSION_BEFORE_ASSESSMENTS) {
             verifyLegacyRequiredTables(connection);
             if (!tableExists(connection, "model_configuration")) {
                 throw new IllegalStateException("recognized schema is missing table: model_configuration");
             }
             migrateV9ToV10(connection);
+            migrateV10ToV11(connection);
+        } else if (version == SCHEMA_VERSION_WITHOUT_PORTABLE_JOURNEY_ID) {
+            verifyLegacyRequiredTables(connection);
+            migrateV10ToV11(connection);
         } else if (version != SCHEMA_VERSION) {
             throw new IllegalStateException("database schema marker is not recognized");
         }
@@ -169,6 +176,7 @@ public final class SqliteSchemaInitializer {
         execute(connection, """
                 CREATE TABLE journey (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    portable_id TEXT NOT NULL,
                     learner_id INTEGER NOT NULL REFERENCES learner(id) ON DELETE CASCADE,
                     goal_description TEXT NOT NULL,
                     status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'ARCHIVED')),
@@ -181,6 +189,7 @@ public final class SqliteSchemaInitializer {
                     CHECK (is_current = 0 OR status = 'ACTIVE')
                 )
                 """);
+        execute(connection, "CREATE UNIQUE INDEX uq_journey_portable_id ON journey(portable_id)");
         execute(connection, """
                 CREATE UNIQUE INDEX uq_current_goal_journey
                 ON journey(learner_id)
@@ -334,6 +343,30 @@ public final class SqliteSchemaInitializer {
         if (!columnExists(connection, "practice_evidence", "workspace_digest")) {
             execute(connection, "ALTER TABLE practice_evidence ADD COLUMN workspace_digest TEXT NOT NULL DEFAULT ''");
         }
+        updateSchemaVersion(SCHEMA_VERSION_WITHOUT_PORTABLE_JOURNEY_ID, connection);
+    }
+
+    private void migrateV10ToV11(Connection connection) throws SQLException {
+        if (!columnExists(connection, "journey", "portable_id")) {
+            execute(connection, "ALTER TABLE journey ADD COLUMN portable_id TEXT");
+        }
+        java.util.ArrayList<Long> journeyIds = new java.util.ArrayList<Long>();
+        try (java.sql.PreparedStatement select = connection.prepareStatement(
+                "SELECT id FROM journey WHERE portable_id IS NULL");
+             ResultSet result = select.executeQuery()) {
+            while (result.next()) {
+                journeyIds.add(result.getLong("id"));
+            }
+        }
+        try (java.sql.PreparedStatement update = connection.prepareStatement(
+                "UPDATE journey SET portable_id = ? WHERE id = ?")) {
+            for (Long journeyId : journeyIds) {
+                update.setString(1, java.util.UUID.randomUUID().toString());
+                update.setLong(2, journeyId);
+                update.executeUpdate();
+            }
+        }
+        execute(connection, "CREATE UNIQUE INDEX IF NOT EXISTS uq_journey_portable_id ON journey(portable_id)");
         updateSchemaVersion(SCHEMA_VERSION, connection);
     }
 

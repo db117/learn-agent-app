@@ -85,11 +85,19 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    void hidesPackageManagerFilesFromTheWorkspaceFileList() throws IOException {
+    void hidesDependenciesAndCachesFromTheWorkspaceFileList() throws IOException {
         WorkspaceManager manager = manager();
         com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(12, new TypeScriptLanguagePack());
         Files.createDirectories(workspace.root().resolve("node_modules/.bin"));
         Files.writeString(workspace.root().resolve("node_modules/.bin/tool"), "tool");
+        Files.createDirectories(workspace.root().resolve("src/.cache"));
+        Files.writeString(workspace.root().resolve("src/.cache/generated.json"), "{}");
+        Files.createDirectories(workspace.root().resolve(".next/cache"));
+        Files.writeString(workspace.root().resolve(".next/cache/build.json"), "{}");
+        Files.createDirectories(workspace.root().resolve(".turbo"));
+        Files.writeString(workspace.root().resolve(".turbo/cache"), "cache");
+        Files.createDirectories(workspace.root().resolve(".venv/bin"));
+        Files.writeString(workspace.root().resolve(".venv/bin/python"), "binary");
         Files.writeString(workspace.root().resolve("pnpm-lock.yaml"), "lockfileVersion: '9.0'");
         manager.writeFile(workspace, "src/index.ts", "export {};");
 

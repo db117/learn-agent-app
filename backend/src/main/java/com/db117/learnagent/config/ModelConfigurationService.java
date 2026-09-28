@@ -45,6 +45,11 @@ public class ModelConfigurationService {
         return view(currentConfiguration());
     }
 
+    /** 用户明确导出配置时返回完整密钥；普通配置查询仍只返回是否已设置。 */
+    public synchronized ModelConfiguration exportForTransfer() {
+        return currentConfiguration();
+    }
+
     public synchronized ConfigurationView save(
             String modelName,
             OpenAIProtocol protocol,

@@ -61,6 +61,7 @@ class TutorLearningToolsTest {
                 "学习者",
                 "TypeScript 初学者",
                 7L,
+                java.time.Instant.parse("2026-01-01T00:00:00Z"),
                 journey.title(),
                 "掌握 TypeScript 基础",
                 journey.languagePackId(),

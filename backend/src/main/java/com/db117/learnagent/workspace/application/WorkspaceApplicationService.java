@@ -3,7 +3,11 @@ package com.db117.learnagent.workspace.application;
 import com.db117.learnagent.language.LanguagePack;
 import com.db117.learnagent.language.LanguagePackCatalog;
 import com.db117.learnagent.learning.application.LearningRequestException;
-import com.db117.learnagent.learning.domain.*;
+import com.db117.learnagent.learning.domain.Journey;
+import com.db117.learnagent.learning.domain.JourneyRepository;
+import com.db117.learnagent.learning.domain.LearnerRepository;
+import com.db117.learnagent.learning.domain.LearningJourney;
+import com.db117.learnagent.learning.domain.LearningJourneyRepository;
 import com.db117.learnagent.project.domain.ProjectRepository;
 import com.db117.learnagent.workspace.domain.LearningWorkspace;
 import com.db117.learnagent.workspace.domain.ProjectWorkspace;
@@ -67,7 +71,7 @@ public final class WorkspaceApplicationService {
     public ProjectWorkspace projectWorkspace(long projectId) {
         long learnerId = currentLearnerId();
         com.db117.learnagent.project.domain.Project project = projectRepository.findById(projectId)
-                .filter(value -> ownsJourney(value.journeyId(), learnerId))
+                .filter(value -> ownsLearningJourney(value.journeyId(), learnerId))
                 .orElseThrow(() -> LearningRequestException.notFound(
                         "PROJECT_NOT_FOUND", "Project 不存在"));
         try {
@@ -105,8 +109,8 @@ public final class WorkspaceApplicationService {
                         "JOURNEY_NOT_FOUND", "学习 Journey 不存在"));
     }
 
-    private boolean ownsJourney(long journeyId, long learnerId) {
-        return journeyRepository.findById(journeyId)
+    private boolean ownsLearningJourney(long learningJourneyId, long learnerId) {
+        return learningJourneyRepository.findById(learningJourneyId)
                 .map(value -> value.learnerId() == learnerId)
                 .orElse(false);
     }

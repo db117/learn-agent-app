@@ -4,6 +4,7 @@ import com.db117.learnagent.agent.api.TutorSessionMode;
 import com.db117.learnagent.agent.domain.WorkspaceBinding;
 import com.db117.learnagent.learning.domain.LearningPathItemStatus;
 
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -13,6 +14,7 @@ import java.util.Objects;
  * @param learnerDisplayName Learner 展示名称
  * @param learnerBackgroundSummary Learner 自己确认的背景能力描述
  * @param journeyId Journey 的 Domain ID
+ * @param journeyCreatedAt Journey 创建时间，用于识别误命中的旧 Session 状态
  * @param journeyTitle LearningJourney 标题；规划模式尚未生成时为空
  * @param journeyGoalDescription 用户确认的 Journey 目标原文
  * @param languagePackId 当前学习路径使用的 Language Pack；规划模式尚未选择时为空
@@ -32,6 +34,7 @@ public record TutorContext(
         String learnerDisplayName,
         String learnerBackgroundSummary,
         long journeyId,
+        Instant journeyCreatedAt,
         String journeyTitle,
         String journeyGoalDescription,
         String languagePackId,
@@ -53,6 +56,7 @@ public record TutorContext(
         learnerDisplayName = requireText(learnerDisplayName, "learnerDisplayName");
         learnerBackgroundSummary = requireText(learnerBackgroundSummary, "learnerBackgroundSummary");
         journeyGoalDescription = requireText(journeyGoalDescription, "journeyGoalDescription");
+        journeyCreatedAt = Objects.requireNonNull(journeyCreatedAt, "journeyCreatedAt must not be null");
         mode = Objects.requireNonNull(mode, "mode must not be null");
         currentContent = currentContent == null ? "" : currentContent.strip();
         if (mode == TutorSessionMode.LEARNING) {

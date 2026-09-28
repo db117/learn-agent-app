@@ -135,20 +135,21 @@ public class SqliteJourneyRepository implements JourneyRepository {
 
     private Journey insert(Connection connection, Journey journey) throws SQLException {
         try (java.sql.PreparedStatement statement = connection.prepareStatement(
-                "INSERT INTO journey(learner_id, goal_description, status, created_at, archived_at, "
-                        + "learning_journey_id, is_current) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO journey(portable_id, learner_id, goal_description, status, created_at, archived_at, "
+                        + "learning_journey_id, is_current) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
-            statement.setLong(1, journey.learnerId());
-            statement.setString(2, journey.goalDescription());
-            statement.setString(3, journey.status().name());
-            statement.setString(4, journey.createdAt().toString());
-            statement.setString(5, SqliteSupport.instant(journey.archivedAt()));
+            statement.setString(1, java.util.UUID.randomUUID().toString());
+            statement.setLong(2, journey.learnerId());
+            statement.setString(3, journey.goalDescription());
+            statement.setString(4, journey.status().name());
+            statement.setString(5, journey.createdAt().toString());
+            statement.setString(6, SqliteSupport.instant(journey.archivedAt()));
             if (journey.learningJourneyId() == null) {
-                statement.setObject(6, null);
+                statement.setObject(7, null);
             } else {
-                statement.setLong(6, journey.learningJourneyId());
+                statement.setLong(7, journey.learningJourneyId());
             }
-            statement.setInt(7, SqliteSupport.bool(journey.current()));
+            statement.setInt(8, SqliteSupport.bool(journey.current()));
             statement.executeUpdate();
             return withId(journey, SqliteSupport.generatedId(connection, statement));
         }

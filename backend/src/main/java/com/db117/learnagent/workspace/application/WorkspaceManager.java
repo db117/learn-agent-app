@@ -4,7 +4,12 @@ import com.db117.learnagent.config.RuntimeConfig;
 import com.db117.learnagent.language.LanguagePack;
 import com.db117.learnagent.language.WorkspaceTemplate;
 import com.db117.learnagent.language.WorkspaceTemplateProvider;
-import com.db117.learnagent.workspace.domain.*;
+import com.db117.learnagent.workspace.domain.LearningWorkspace;
+import com.db117.learnagent.workspace.domain.ProjectWorkspace;
+import com.db117.learnagent.workspace.domain.Workspace;
+import com.db117.learnagent.workspace.domain.WorkspaceFile;
+import com.db117.learnagent.workspace.domain.WorkspaceFileEntry;
+import com.db117.learnagent.workspace.domain.WorkspaceKind;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.io.IOException;
@@ -18,12 +23,18 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 /** 管理 LearningWorkspace 和 ProjectWorkspace 的目录及文本文件。 */
 @ApplicationScoped
 public final class WorkspaceManager {
     private static final long MAX_FILE_BYTES = 2L * 1024 * 1024;
+    private static final Set<String> REBUILDABLE_DIRECTORIES = Set.of(
+            "node_modules", ".venv", ".cache", ".vite", ".next", ".turbo", ".parcel-cache",
+            ".pytest_cache", "__pycache__");
     private final RuntimeConfig config;
 
     public WorkspaceManager(RuntimeConfig config) {
@@ -102,6 +113,56 @@ public final class WorkspaceManager {
         return file(workspace, path, Files.readString(path, StandardCharsets.UTF_8));
     }
 
+    public byte[] readBytes(Workspace workspace, String relativePath) throws IOException {
+        return Files.readAllBytes(resolveFile(workspace, relativePath));
+    }
+
+    /** 在同一受管目录内准备完整的新 Workspace，再切换目录，避免导入中断留下半套文件。 */
+    public void replaceFiles(Workspace workspace, Map<String, byte[]> files) throws IOException {
+        requireWorkspace(workspace);
+        if (files == null) {
+            throw new IllegalArgumentException("files must not be null");
+        }
+        for (Map.Entry<String, byte[]> entry : files.entrySet()) {
+            if (entry.getValue() == null) {
+                throw new IllegalArgumentException("file content must not be null");
+            }
+            resolve(workspace, entry.getKey());
+            ensureSize(entry.getValue().length);
+        }
+
+        Path root = workspace.root();
+        ensureManagedRootHasNoSymlink(root);
+        Files.createDirectories(root.getParent());
+        ensureManagedRootHasNoSymlink(root);
+        Path staging = Files.createTempDirectory(root.getParent(), ".workspace-transfer-");
+        Path backup = root.getParent().resolve(".workspace-backup-" + UUID.randomUUID());
+        Workspace stagedWorkspace = new Workspace(workspace.reference(), staging);
+        boolean movedOld = false;
+        try {
+            for (Map.Entry<String, byte[]> entry : files.entrySet()) {
+                writeBytes(stagedWorkspace, entry.getKey(), entry.getValue());
+            }
+            if (Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
+                movePath(root, backup);
+                movedOld = true;
+            }
+            movePath(staging, root);
+        } catch (IOException | RuntimeException error) {
+            if (movedOld) {
+                movePath(backup, root);
+            }
+            throw error;
+        } finally {
+            if (Files.exists(staging, LinkOption.NOFOLLOW_LINKS)) {
+                deleteTree(staging);
+            }
+        }
+        if (movedOld) {
+            deleteTree(backup);
+        }
+    }
+
     /** 用已列出的受管源码和内容标识一次提交；目录外文件及依赖目录不会参与判断。 */
     public String contentDigest(Workspace workspace) throws IOException {
         try {
@@ -139,6 +200,53 @@ public final class WorkspaceManager {
         ensureSize(content.getBytes(StandardCharsets.UTF_8).length);
         writeAtomically(path, content);
         return file(workspace, path, content);
+    }
+
+    private void writeBytes(Workspace workspace, String relativePath, byte[] content) throws IOException {
+        Path path = resolve(workspace, relativePath);
+        ensureRoot(workspace.root());
+        ensureNoSymlinkPath(workspace.root(), path);
+        Files.createDirectories(path.getParent());
+        ensureNoSymlinkPath(workspace.root(), path);
+        Path temporary = Files.createTempFile(path.getParent(), ".workspace-", ".tmp");
+        try {
+            Files.write(temporary, content);
+            movePath(temporary, path);
+        } finally {
+            Files.deleteIfExists(temporary);
+        }
+    }
+
+    private static void movePath(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+            Files.move(source, target);
+        }
+    }
+
+    private static void deleteTree(Path root) throws IOException {
+        if (Files.notExists(root, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        Files.walkFileTree(root, new java.nio.file.SimpleFileVisitor<Path>() {
+            @Override
+            public java.nio.file.FileVisitResult visitFile(Path file, java.nio.file.attribute.BasicFileAttributes attrs)
+                    throws IOException {
+                Files.delete(file);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public java.nio.file.FileVisitResult postVisitDirectory(Path directory, IOException error)
+                    throws IOException {
+                if (error != null) {
+                    throw error;
+                }
+                Files.delete(directory);
+                return java.nio.file.FileVisitResult.CONTINUE;
+            }
+        });
     }
 
     private Path root(String category, long ownerId) {
@@ -245,7 +353,7 @@ public final class WorkspaceManager {
             return false;
         }
         for (Path part : relative) {
-            if (part.toString().equals("node_modules")) {
+            if (REBUILDABLE_DIRECTORIES.contains(part.toString())) {
                 return true;
             }
         }

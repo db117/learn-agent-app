@@ -27,15 +27,18 @@ import com.db117.learnagent.practice.domain.PracticeTaskRepository;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.agentscope.core.message.AssistantMessage;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ThinkingBlock;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.message.ToolUseBlock;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.state.AgentState;
 import io.agentscope.core.tool.ToolCallParam;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
@@ -215,6 +218,45 @@ class AgentScopeRuntimeTest {
             assertEquals(com.db117.learnagent.agent.api.TutorSessionMode.PLANNING, session.mode());
             assertNull(session.currentLearnUnitCode());
             assertFalse(session.restored());
+        } finally {
+            runtime.close();
+        }
+    }
+
+    @Test
+    void newJourneyDoesNotRestoreMessagesFromAReusedDatabaseId() throws Exception {
+        Path root = Files.createTempDirectory("tutor-reused-journey-id");
+        TutorAgentRuntime runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(null), root.resolve("agent"));
+        Instant now = Instant.now();
+        Instant newJourneyCreatedAt = now.plusSeconds(1);
+        FakeParentJourneyRepository previousJourney = new FakeParentJourneyRepository(
+                1L, "Previous goal", now.minusSeconds(120));
+        TutorSessionService previousService = new TutorSessionService(
+                contextAssembler(new FakeLearnerRepository(), previousJourney, new FakeJourneyRepository()), runtime);
+        TutorSessionService newService = new TutorSessionService(
+                contextAssembler(
+                        new FakeLearnerRepository(),
+                        new FakeParentJourneyRepository(1L, "New goal", newJourneyCreatedAt),
+                        new FakeJourneyRepository()),
+                runtime);
+        try {
+            com.db117.learnagent.agent.api.TutorSessionResponse previous = previousService.createSession(
+                    new CreateTutorSessionRequest(1L, 1L, com.db117.learnagent.agent.api.TutorSessionMode.PLANNING));
+            List<Msg> previousMessages = List.of(
+                    UserMessage.builder().textContent("Previous journey conversation").build(),
+                    AssistantMessage.builder().textContent("Previous journey response").build());
+            runtime.stateStore().save("1", previous.sessionId(), "agent_state", AgentState.builder()
+                    .sessionId(previous.sessionId())
+                    .userId("1")
+                    .context(previousMessages)
+                    .build());
+
+            com.db117.learnagent.agent.api.TutorSessionResponse fresh = newService.createSession(
+                    new CreateTutorSessionRequest(1L, 1L, com.db117.learnagent.agent.api.TutorSessionMode.PLANNING));
+
+            assertFalse(fresh.restored());
+            assertTrue(fresh.messages().isEmpty());
+            assertNotEquals(previous.sessionId(), fresh.sessionId());
         } finally {
             runtime.close();
         }
@@ -652,6 +694,10 @@ class AgentScopeRuntimeTest {
             Journey created = Journey.create(
                     1L, "Build a Java service", Instant.parse("2026-01-01T00:00:00Z")).withId(journeyId);
             journey = journeyId == 1L ? created.attachLearningJourney(1L) : created;
+        }
+
+        private FakeParentJourneyRepository(long journeyId, String goal, Instant createdAt) {
+            journey = Journey.create(1L, goal, createdAt).withId(journeyId);
         }
 
         @Override
