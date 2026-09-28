@@ -554,6 +554,38 @@ dd {
     line-height: 1.5;
 }
 
+.tutor-activity {
+    margin-top: 0.65rem;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid #293858;
+    border-radius: 0.65rem;
+    color: #c5d3e8;
+    font-size: 0.82rem;
+}
+
+.tutor-activity summary {
+    cursor: pointer;
+}
+
+.tutor-turn {
+    margin-top: 0.6rem;
+    padding-left: 0.65rem;
+    border-left: 2px solid #48648e;
+}
+
+.tutor-turn p,
+.tutor-turn ol {
+    margin: 0.45rem 0;
+}
+
+.tutor-turn ol {
+    padding-left: 1.35rem;
+}
+
+.tutor-turn code {
+    overflow-wrap: anywhere;
+}
+
 .profile-summary {
     margin-top: 1rem;
     color: #d7e0ee;
@@ -1628,6 +1660,15 @@ button.secondary {
 :root[data-theme="light"] .learn-objective,
 :root[data-theme="light"] .workspace-path {
     color: var(--light-muted);
+}
+
+:root[data-theme="light"] .tutor-activity {
+    border-color: var(--light-border);
+    color: var(--light-text);
+}
+
+:root[data-theme="light"] .tutor-turn {
+    border-color: var(--light-border-strong);
 }
 
 :root[data-theme="light"] .profile-summary,

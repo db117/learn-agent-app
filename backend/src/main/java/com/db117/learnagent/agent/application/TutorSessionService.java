@@ -1,13 +1,6 @@
 package com.db117.learnagent.agent.application;
 
-import com.db117.learnagent.agent.api.CreateTutorSessionRequest;
-import com.db117.learnagent.agent.api.SendTutorMessageRequest;
-import com.db117.learnagent.agent.api.TutorCancelResponse;
-import com.db117.learnagent.agent.api.TutorEvent;
-import com.db117.learnagent.agent.api.TutorEventType;
-import com.db117.learnagent.agent.api.TutorMessage;
-import com.db117.learnagent.agent.api.TutorSessionMode;
-import com.db117.learnagent.agent.api.TutorSessionResponse;
+import com.db117.learnagent.agent.api.*;
 import com.db117.learnagent.agent.runtime.TutorAgentRuntime;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -16,13 +9,10 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.message.AssistantMessage;
-import io.agentscope.core.message.Msg;
-import io.agentscope.core.message.MsgRole;
-import io.agentscope.core.message.TextBlock;
-import io.agentscope.core.message.UserMessage;
+import io.agentscope.core.message.*;
 import io.agentscope.core.state.AgentState;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.jboss.logging.Logger;
 import reactor.core.publisher.Flux;
 
 import java.nio.charset.StandardCharsets;
@@ -32,13 +22,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -59,6 +43,7 @@ public class TutorSessionService {
     private static final DateTimeFormatter MESSAGE_TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
     private static final JsonNode PLANNING_OUTPUT_SCHEMA = planningOutputSchema();
+    private static final Logger LOG = Logger.getLogger(TutorSessionService.class);
 
     private final TutorContextAssembler contextAssembler;
     private final TutorAgentRuntime runtime;
@@ -188,6 +173,8 @@ public class TutorSessionService {
                     .onErrorResume(error -> fail(active, error))
                     .doFinally(signal -> cleanup(active, lock, signal));
         } catch (RuntimeException error) {
+            LOG.errorf(error, "Tutor turn failed before streaming; turnId=%s sessionId=%s",
+                    active.turnId, active.binding.sessionId());
             try {
                 if (active.terminal.compareAndSet(false, true)) {
                     persistTerminal(active, FAILED);
@@ -307,6 +294,9 @@ public class TutorSessionService {
             persistTerminal(active, CANCELLED);
             return Flux.just(active.event(TutorEventType.TURN_CANCELLED, null, "TURN_CANCELLED"));
         }
+        // 日志按 Turn ID 定位完整异常；公开事件仍只返回稳定错误码。
+        LOG.errorf(error, "Tutor turn failed; turnId=%s sessionId=%s",
+                active.turnId, active.binding.sessionId());
         persistTerminal(active, FAILED);
         return Flux.just(active.event(TutorEventType.TURN_FAILED, null, "MODEL_REQUEST_FAILED"));
     }

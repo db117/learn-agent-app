@@ -1,5 +1,13 @@
 import {useEffect, useMemo, useRef, useState} from "react";
 import {MarkdownMessage} from "./features/agent/MarkdownMessage";
+import {
+    beginTutorTrace,
+    cancelTutorTrace,
+    failTutorTransport,
+    recordTutorEvent,
+    type TutorEvent,
+    type TutorTrace
+} from "./features/agent/tutorActivity";
 import {type LearningOutline, parseLearningOutline} from "./features/agent/learningOutline";
 import {type ModelConfig, ModelSettingsDialog} from "./features/model-config/ModelSettingsDialog";
 import {PracticeWorkspace, type PracticeWorkspaceHandle} from "./features/practice/PracticeWorkspace";
@@ -14,7 +22,6 @@ const LEARNING_PROMPT = "请开始当前 LearnUnit。";
 type Health = Record<string, unknown>;
 type SessionMode = "PLANNING" | "LEARNING";
 type TutorMessage = { role: "user" | "assistant"; text: string; timestamp?: string };
-type TutorEvent = { type: string; text?: string; errorCode?: string };
 type TutorError = { code?: string; message?: string };
 type Theme = "dark" | "light";
 type Learner = { id: number; displayName: string; backgroundSummary: string };
@@ -111,6 +118,15 @@ async function readError(response: Response) {
     }
 }
 
+async function readTutorFailure(response: Response) {
+    try {
+        const error = await response.json() as TutorError;
+        return {code: error.code, message: error.message ?? `请求失败（${response.status}）`};
+    } catch {
+        return {code: undefined, message: `请求失败（${response.status}）`};
+    }
+}
+
 async function fetchBootstrap(signal?: AbortSignal) {
     const response = await fetch(`${BACKEND_URL}/api/bootstrap`, {signal});
     if (!response.ok) throw new Error(await readError(response));
@@ -186,6 +202,8 @@ export default function App() {
     const [messages, setMessages] = useState<TutorMessage[]>([]);
     const [draft, setDraft] = useState("");
     const [activity, setActivity] = useState("等待进入 Tutor Session");
+    const [tutorTraces, setTutorTraces] = useState<TutorTrace[]>([]);
+    const [traceNow, setTraceNow] = useState(Date.now);
     const [error, setError] = useState<string | null>(null);
     const [loadingSession, setLoadingSession] = useState(false);
     const [sending, setSending] = useState(false);
@@ -210,6 +228,12 @@ export default function App() {
             // 本地存储不可用时仍保留当前页面的主题切换。
         }
     }, [theme]);
+
+    useEffect(() => {
+        if (!sending) return;
+        const timer = window.setInterval(() => setTraceNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, [sending]);
 
     const adjustPanelWidth = (side: ResizablePanel, boundaryDelta: number) => {
         if (side === "path") {
@@ -370,6 +394,7 @@ export default function App() {
         setSessionMode(null);
         setCurrentLearnUnit(null);
         setMessages([]);
+        setTutorTraces([]);
         setDraft("");
         setActivity("正在准备 Tutor Session");
         setLearningCompleted(false);
@@ -573,6 +598,8 @@ export default function App() {
             return;
         }
         if (!sessionId || !text || sending || confirmingPlan) return;
+        const turnId = crypto.randomUUID();
+        const startedAt = Date.now();
         setError(null);
         setDraft("");
         setMessages((current) => [
@@ -581,6 +608,8 @@ export default function App() {
             {role: "assistant", text: ""},
         ]);
         setSending(true);
+        setTraceNow(startedAt);
+        setTutorTraces((current) => [...current, beginTutorTrace(turnId, startedAt)]);
         setActivity("正在连接 TutorAgent");
         const controller = new AbortController();
         streamController.current = controller;
@@ -588,11 +617,19 @@ export default function App() {
             const response = await fetch(`${BACKEND_URL}/api/tutor/sessions/${sessionId}/messages`, {
                 method: "POST",
                 headers: {"Content-Type": "application/json", Accept: "text/event-stream"},
-                body: JSON.stringify({turnId: crypto.randomUUID(), text}),
+                body: JSON.stringify({turnId, text}),
                 signal: controller.signal,
             });
-            if (!response.ok) throw new Error(await readError(response));
+            if (!response.ok) {
+                const failure = await readTutorFailure(response);
+                const requestError = new Error(failure.message) as Error & { code?: string };
+                requestError.code = failure.code;
+                throw requestError;
+            }
             await readSse(response, (event) => {
+                if (event.turnId && event.turnId !== turnId) return;
+                setTutorTraces((current) => current.map((trace) =>
+                    trace.turnId === turnId ? recordTutorEvent(trace, event, Date.now()) : trace));
                 if (event.type === "turn.started") setActivity("TutorAgent 已开始处理");
                 if (event.type === "activity") setActivity(event.text ?? "TutorAgent 正在工作");
                 if (event.type === "workspace.changed") {
@@ -624,13 +661,22 @@ export default function App() {
                 }
                 if (event.type === "turn.failed") {
                     removePendingAssistant();
-                    setError(event.errorCode ?? "TutorAgent 暂时不可用");
+                    setActivity("Tutor 请求失败");
+                    setError(`${event.errorCode ?? "TutorAgent 暂时不可用"}（定位编号：${turnId}）`);
                 }
             });
         } catch (requestError) {
             if (requestError instanceof Error && requestError.name !== "AbortError") {
                 removePendingAssistant();
-                setError(requestError.message);
+                setTutorTraces((current) => current.map((trace) =>
+                    trace.turnId === turnId ? failTutorTransport(
+                        trace,
+                        Date.now(),
+                        (requestError as Error & { code?: string }).code,
+                    ) : trace));
+                const errorCode = (requestError as Error & { code?: string }).code;
+                setActivity("Tutor 请求失败");
+                setError(`${errorCode ?? requestError.message}（定位编号：${turnId}）`);
             }
         } finally {
             streamController.current = null;
@@ -667,6 +713,8 @@ export default function App() {
             setError(requestError instanceof Error ? requestError.message : "无法取消 Tutor Turn");
         } finally {
             streamController.current?.abort();
+            setTutorTraces((current) => current.map((trace) => trace.status === "running"
+                ? cancelTutorTrace(trace, Date.now()) : trace));
             removePendingAssistant();
             setActivity("Tutor Turn 已取消");
         }
@@ -1182,7 +1230,35 @@ export default function App() {
                         )}
                         <p className="session-status" role="status" aria-live="polite">
                             {loadingSession ? "正在恢复消息…" : activity}
+                            {sending && tutorTraces.length > 0 && ` · 已等待 ${Math.floor((traceNow - tutorTraces[tutorTraces.length - 1].startedAt) / 1000)} 秒`}
                         </p>
+                        {tutorTraces.length > 0 && (
+                            <details className="tutor-activity">
+                                <summary>本 Session 请求过程与诊断（{tutorTraces.length} 次）</summary>
+                                {[...tutorTraces].reverse().map((trace) => (
+                                    <details className="tutor-turn" key={trace.turnId}>
+                                        <summary>
+                                            {trace.status === "running" ? "处理中" : trace.status === "completed" ? "已完成"
+                                                : trace.status === "cancelled" ? "已取消" : "失败"}
+                                            {` · ${Math.floor(((trace.endedAt ?? traceNow) - trace.startedAt) / 1000)} 秒`}
+                                        </summary>
+                                        <p>定位编号：<code>{trace.turnId}</code></p>
+                                        <ol>
+                                            {trace.items.map((item, index) => (
+                                                <li key={`${item.type}-${index}`}>
+                                                    {`+${Math.floor(item.elapsedMs / 1000)} 秒 · ${item.text}`}
+                                                </li>
+                                            ))}
+                                        </ol>
+                                        {trace.errorCode && <p>错误码：{trace.errorCode}</p>}
+                                        {trace.errorCode === "MODEL_REQUEST_FAILED" && (
+                                            <p>完整异常：本机 <code>~/.learn-agent/logs/backend.log</code>，按定位编号查找。
+                                            </p>
+                                        )}
+                                    </details>
+                                ))}
+                            </details>
+                        )}
                         {currentLearnUnit && <p className="unit-label">当前 LearnUnit：{currentLearnUnit}</p>}
                         <div className="chat-log" aria-live="polite" aria-label="Tutor 对话记录">
                             {messages.length === 0 && (
