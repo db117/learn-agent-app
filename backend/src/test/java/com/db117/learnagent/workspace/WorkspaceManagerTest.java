@@ -29,16 +29,16 @@ class WorkspaceManagerTest {
     Path dataDir;
 
     @Test
-    void createsBothKindsOfRoot() throws IOException {
+    void createsLearningWorkspaceRootsByJourney() throws IOException {
         WorkspaceManager manager = manager();
 
         com.db117.learnagent.workspace.domain.LearningWorkspace learning = manager.ensureLearningWorkspace(7, new TypeScriptLanguagePack());
-        com.db117.learnagent.workspace.domain.ProjectWorkspace project = manager.ensureProjectWorkspace(8);
+        com.db117.learnagent.workspace.domain.LearningWorkspace second = manager.ensureLearningWorkspace(8, new TypeScriptLanguagePack());
 
         assertEquals(dataDir.resolve("journeys/7/workspace"), learning.root());
-        assertEquals(dataDir.resolve("projects/8/workspace"), project.root());
+        assertEquals(dataDir.resolve("journeys/8/workspace"), second.root());
         assertTrue(Files.isDirectory(learning.root()));
-        assertTrue(Files.isDirectory(project.root()));
+        assertTrue(Files.isDirectory(second.root()));
     }
 
     @Test
@@ -46,9 +46,7 @@ class WorkspaceManagerTest {
         WorkspaceManager manager = manager();
 
         assertEquals(dataDir.resolve("journeys/9/workspace"), manager.learningWorkspace(9).root());
-        assertEquals(dataDir.resolve("projects/10/workspace"), manager.projectWorkspace(10).root());
         assertFalse(Files.exists(dataDir.resolve("journeys/9")));
-        assertFalse(Files.exists(dataDir.resolve("projects/10")));
     }
 
     @Test
@@ -66,7 +64,7 @@ class WorkspaceManagerTest {
     @Test
     void listReadWriteRoundTripIncludesHiddenFilesAndSortsPosixPaths() throws IOException {
         WorkspaceManager manager = manager();
-        com.db117.learnagent.workspace.domain.ProjectWorkspace workspace = manager.ensureProjectWorkspace(2);
+        com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(2, new TypeScriptLanguagePack());
         manager.writeFile(workspace, "z.txt", "z");
         manager.writeFile(workspace, ".env", "secret");
         manager.writeFile(workspace, "a/b.txt", "中文");
@@ -113,7 +111,7 @@ class WorkspaceManagerTest {
     @Test
     void hidesNestedNodeModulesFromTheWorkspaceFileList() throws IOException {
         WorkspaceManager manager = manager();
-        com.db117.learnagent.workspace.domain.ProjectWorkspace workspace = manager.ensureProjectWorkspace(13);
+        com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(13, new TypeScriptLanguagePack());
         Files.createDirectories(workspace.root().resolve("ts-runtime-practice/node_modules/.bin"));
         Files.writeString(workspace.root().resolve("ts-runtime-practice/node_modules/.bin/tsc"), "binary");
         manager.writeFile(workspace, "ts-runtime-practice/src/index.ts", "export {};");
@@ -126,7 +124,7 @@ class WorkspaceManagerTest {
     @Test
     void rejectsUnsafePathsAndMissingFiles() throws IOException {
         WorkspaceManager manager = manager();
-        com.db117.learnagent.workspace.domain.ProjectWorkspace workspace = manager.ensureProjectWorkspace(3);
+        com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(3, new TypeScriptLanguagePack());
 
         for (String path : List.of("", "/tmp/file", "../file", "a/../file", "a\\b")) {
             assertThrows(IllegalArgumentException.class, () -> manager.readFile(workspace, path));
@@ -138,7 +136,7 @@ class WorkspaceManagerTest {
     @Test
     void rejectsFilesOverTwoMiB() throws IOException {
         WorkspaceManager manager = manager();
-        com.db117.learnagent.workspace.domain.ProjectWorkspace workspace = manager.ensureProjectWorkspace(4);
+        com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(4, new TypeScriptLanguagePack());
         String content = "x".repeat(2 * 1024 * 1024 + 1);
 
         assertThrows(IllegalArgumentException.class,
@@ -148,7 +146,7 @@ class WorkspaceManagerTest {
     @Test
     void rejectsSymlinkEscapeWhenSupported() throws IOException {
         WorkspaceManager manager = manager();
-        com.db117.learnagent.workspace.domain.ProjectWorkspace workspace = manager.ensureProjectWorkspace(5);
+        com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(5, new TypeScriptLanguagePack());
         Path outside = dataDir.resolve("outside");
         Files.writeString(outside, "outside");
         Path link = workspace.root().resolve("link.txt");
@@ -166,16 +164,17 @@ class WorkspaceManagerTest {
     @Test
     void rejectsManagedAncestorSymlinkWhenSupported() throws IOException {
         WorkspaceManager manager = manager();
-        Path outside = dataDir.resolve("outside-projects");
+        Path outside = dataDir.resolve("outside-journeys");
         Files.createDirectories(outside);
-        Path projects = dataDir.resolve("projects");
+        Path journeys = dataDir.resolve("journeys");
         try {
-            Files.createSymbolicLink(projects, outside);
+            Files.createSymbolicLink(journeys, outside);
         } catch (UnsupportedOperationException | FileSystemException ignored) {
             return;
         }
 
-        assertThrows(IllegalArgumentException.class, () -> manager.ensureProjectWorkspace(11));
+        assertThrows(IllegalArgumentException.class,
+                () -> manager.ensureLearningWorkspace(11, new TypeScriptLanguagePack()));
         assertFalse(Files.exists(outside.resolve("11/workspace")));
     }
 

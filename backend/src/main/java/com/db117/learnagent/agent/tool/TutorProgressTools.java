@@ -5,7 +5,12 @@ import com.db117.learnagent.agent.application.TutorContext;
 import com.db117.learnagent.learning.application.JourneyApplicationService;
 import com.db117.learnagent.learning.application.LearningRequestException;
 import com.db117.learnagent.learning.domain.LearningJourney;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.practice.domain.PracticeAssessment;
+import com.db117.learnagent.practice.domain.PracticeAssessmentRepository;
+import com.db117.learnagent.practice.domain.PracticeAssessmentVerdict;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskRepository;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,8 +28,6 @@ import java.util.Objects;
 /** Tutor 对当前代码提交的评估工具；只追加评估候选，不写入学习进度。 */
 @Dependent
 public final class TutorProgressTools {
-    private static final String CODE_TASK_TYPE = "CODE";
-
     private final JourneyApplicationService journeys;
     private final PracticeTaskRepository practiceTasks;
     private final PracticeAssessmentRepository assessments;
@@ -56,7 +59,6 @@ public final class TutorProgressTools {
         long learnUnitId = Objects.requireNonNull(
                 journey.learnUnit(currentItem.learnUnitCode()).id(), "persisted LearnUnit id must not be null");
         PracticeSubmission latest = practiceTasks.findByLearnUnit(journey.id(), learnUnitId).stream()
-                .filter(task -> CODE_TASK_TYPE.equals(task.type()))
                 .flatMap(task -> task.attempts().stream().map(attempt -> new PracticeSubmission(task, attempt)))
                 .max(Comparator.comparing((PracticeSubmission value) -> value.attempt().submittedAt())
                         .thenComparing(value -> value.attempt().id() == null ? 0L : value.attempt().id()))

@@ -23,9 +23,6 @@ class TutorToolCdiTest {
     TutorWorkspaceTools workspaceTools;
 
     @Inject
-    TutorPracticeTools practiceTools;
-
-    @Inject
     TutorProgressTools progressTools;
 
     @Test
@@ -37,11 +34,6 @@ class TutorToolCdiTest {
         workspaceToolkit.registerTool(workspaceTools);
 
         assertEquals(java.util.Set.of("save_learning_content"), learningToolkit.getToolNames());
-        Toolkit practiceToolkit = new Toolkit();
-        practiceToolkit.registerTool(practiceTools);
-        assertEquals(
-                java.util.Set.of("save_practice_test", "verify_practice_test"),
-                practiceToolkit.getToolNames());
         Toolkit progressToolkit = new Toolkit();
         progressToolkit.registerTool(progressTools);
         assertEquals(java.util.Set.of("record_practice_assessment"), progressToolkit.getToolNames());

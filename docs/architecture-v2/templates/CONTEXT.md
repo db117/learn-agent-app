@@ -8,7 +8,6 @@ Agentic Programming Learning Environment.
 
 - Learn: learn a concept.
 - Practice: write and verify real code.
-- Project: complete a real project.
 
 ## Core Concepts
 
@@ -18,6 +17,5 @@ Agentic Programming Learning Environment.
 - LanguagePack: product-level support for a programming language.
 - Domain State: authoritative learning facts.
 - Agent State: runtime context, session, memory, plan and tool state.
-- LearningWorkspace: code workspace for practice.
-- ProjectWorkspace: code workspace for project mode.
+- LearningWorkspace: code workspace for practice, including TypeScript project directories.
 - TutorAgent: single primary user-facing orchestrator.

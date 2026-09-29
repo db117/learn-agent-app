@@ -16,7 +16,6 @@ import com.db117.learnagent.persistence.sqlite.SqliteLearningJourneyRepository;
 import com.db117.learnagent.persistence.sqlite.SqliteModelConfigurationRepository;
 import com.db117.learnagent.persistence.sqlite.SqlitePracticeAssessmentRepository;
 import com.db117.learnagent.persistence.sqlite.SqlitePracticeTaskRepository;
-import com.db117.learnagent.persistence.sqlite.SqliteProjectRepository;
 import com.db117.learnagent.persistence.sqlite.SqliteSchemaInitializer;
 import com.db117.learnagent.practice.domain.PracticeAssessment;
 import com.db117.learnagent.practice.domain.PracticeAssessmentVerdict;
@@ -25,9 +24,6 @@ import com.db117.learnagent.practice.domain.PracticeEvidence;
 import com.db117.learnagent.practice.domain.PracticeTask;
 import com.db117.learnagent.practice.domain.RuntimeResult;
 import com.db117.learnagent.practice.domain.VerificationPolicy;
-import com.db117.learnagent.project.domain.Project;
-import com.db117.learnagent.project.domain.ProjectEvidence;
-import com.db117.learnagent.project.domain.ProjectMilestone;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.sqlite.SQLiteDataSource;
@@ -58,7 +54,6 @@ class SqliteRepositoryTest {
             SqliteLearnerRepository learnerRepository = new SqliteLearnerRepository(dataSource);
             SqliteLearningJourneyRepository journeyRepository = new SqliteLearningJourneyRepository(dataSource);
             SqlitePracticeTaskRepository practiceRepository = new SqlitePracticeTaskRepository(dataSource);
-            SqliteProjectRepository projectRepository = new SqliteProjectRepository(dataSource);
 
             Learner learner = learnerRepository.save(Learner.create("Alice", "Java engineer with ten years of experience", T0));
             assertNotNull(learner.id());
@@ -80,7 +75,6 @@ class SqliteRepositoryTest {
                     savedJourney.id(),
                     learnUnitId,
                     "java",
-                    "CODE",
                     "Fix variables",
                     "Make it compile",
                     1,
@@ -95,28 +89,8 @@ class SqliteRepositoryTest {
             PracticeTask taskRoundTrip = practiceRepository.findById(savedTask.id()).orElseThrow();
             assertEquals(1, taskRoundTrip.attempts().size());
 
-            Project project = Project.create(
-                    savedJourney.id(),
-                    "Todo app",
-                    List.of(ProjectMilestone.create("m1", "First milestone", 0)),
-                    T0);
-            Project savedProject = projectRepository.save(project);
-            Project activeProject = projectRepository.save(savedProject.activate().startMilestone("m1"));
-            Project completedProject = projectRepository.save(activeProject.recordEvidence(
-                    "m1",
-                    new ProjectEvidence("workspace://todo", "verified", true, T0.plusSeconds(3))));
-            Project projectRoundTrip = projectRepository.findByJourneyId(savedJourney.id()).orElseThrow();
-            assertEquals(completedProject.id(), projectRoundTrip.id());
-            assertEquals(1, projectRoundTrip.milestones().get(0).evidence().size());
-
             LearningJourney sameLanguageJourney = journeyRepository.save(journey(learner.id()));
             assertNotEquals(savedJourney.id(), sameLanguageJourney.id());
-            assertThrows(IllegalStateException.class,
-                    () -> projectRepository.save(Project.create(
-                            savedJourney.id(),
-                            "Second project",
-                            List.of(ProjectMilestone.create("m1", "Duplicate", 0)),
-                            T0)));
             assertTrue(journeyRepository.findById(savedJourney.id()).isPresent());
         }
     }
@@ -208,7 +182,7 @@ class SqliteRepositoryTest {
     }
 
     @Test
-    void schemaVersionMismatchBacksUpDatabaseThenRecreatesCurrentSchema(@TempDir Path tempDirectory)
+    void unsupportedSchemaVersionFailsWithoutChangingDatabase(@TempDir Path tempDirectory)
             throws Exception {
         Path databasePath = tempDirectory.resolve("learn-agent.db");
         SQLiteDataSource dataSource = new SQLiteDataSource();
@@ -222,33 +196,18 @@ class SqliteRepositoryTest {
                 statement.execute("UPDATE schema_metadata SET schema_version = 11 WHERE id = 1");
             }
 
-            new SqliteSchemaInitializer(dataSource).initialize();
-            assertTrue(learners.findCurrent().isEmpty());
+            assertThrows(IllegalStateException.class, () -> new SqliteSchemaInitializer(dataSource).initialize());
+            assertEquals(learner.id(), learners.findCurrent().orElseThrow().id());
             try (java.sql.Connection connection = dataSource.getConnection();
                  java.sql.Statement statement = connection.createStatement();
                  java.sql.ResultSet result = statement.executeQuery(
                          "SELECT schema_version FROM schema_metadata WHERE id = 1")) {
                 assertTrue(result.next());
-                assertEquals(SqliteSchemaInitializer.SCHEMA_VERSION, result.getInt(1));
+                assertEquals(11, result.getInt(1));
             }
-
-            Path backupPath;
-            try (java.util.stream.Stream<Path> backups = Files.list(tempDirectory)) {
-                backupPath = backups.filter(path -> path.getFileName().toString()
-                                .startsWith("learn-agent.db.backup-"))
-                        .findFirst()
-                        .orElseThrow();
-            }
-            SQLiteDataSource backupDataSource = new SQLiteDataSource();
-            backupDataSource.setUrl("jdbc:sqlite:" + backupPath);
-            try (java.sql.Connection backupConnection = backupDataSource.getConnection();
-                 java.sql.PreparedStatement statement = backupConnection.prepareStatement(
-                         "SELECT display_name FROM learner WHERE id = ?")) {
-                statement.setLong(1, learner.id());
-                try (java.sql.ResultSet result = statement.executeQuery()) {
-                    assertTrue(result.next());
-                    assertEquals("Alice", result.getString(1));
-                }
+            try (java.util.stream.Stream<Path> files = Files.list(tempDirectory)) {
+                assertFalse(files.anyMatch(path -> path.getFileName().toString()
+                        .startsWith("learn-agent.db.backup-")));
             }
         }
     }
@@ -270,7 +229,7 @@ class SqliteRepositoryTest {
             LearnUnit unit = loaded.learnUnit("variables");
             SqlitePracticeTaskRepository tasks = new SqlitePracticeTaskRepository(dataSource);
             PracticeTask task = tasks.save(PracticeTask.create(
-                    saved.id(), unit.id(), "typescript", "CODE", "变量练习", "理解变量", 1, "",
+                    saved.id(), unit.id(), "typescript", "变量练习", "理解变量", 1, "",
                     new VerificationPolicy(true, true, false, false), T0));
             PracticeEvidence failedEvidence = new PracticeEvidence(
                     false, false, 0, false, RuntimeResult.NOT_RUN, List.of(), null);

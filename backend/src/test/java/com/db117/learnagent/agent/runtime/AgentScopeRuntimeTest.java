@@ -315,7 +315,6 @@ class AgentScopeRuntimeTest {
                 new FakeLearnerRepository(),
                 new FakeParentJourneyRepository(),
                 learningJourneys,
-                null,
                 typeScriptCatalog(),
                 workspaces);
         LocalExecutionEnvironment environment = new LocalExecutionEnvironment();

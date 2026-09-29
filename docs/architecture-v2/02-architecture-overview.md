@@ -6,7 +6,7 @@
 ┌──────────────────────────────────────────────────┐
 │ Desktop: Tauri 2                                │
 │ React + TypeScript + Monaco                     │
-│ Learn / Practice / Project / Agent Activity     │
+│ Learn / Practice / Agent Activity               │
 └─────────────────────┬────────────────────────────┘
                       │ HTTP + SSE
                       ▼
@@ -15,7 +15,6 @@
 │                                                  │
 │ Learning Domain                                 │
 │ Practice Domain                                 │
-│ Project Domain                                  │
 │                                                  │
 │ Agent Application Layer                         │
 │   TutorAgent / TutorContext / Tools / Events    │
@@ -46,12 +45,6 @@ learning/
   api/
 
 practice/
-  domain/
-  application/
-  infrastructure/
-  api/
-
-project/
   domain/
   application/
   infrastructure/

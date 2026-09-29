@@ -2,7 +2,6 @@ package com.db117.learnagent.agent.runtime;
 
 import com.db117.learnagent.agent.application.TutorContext;
 import com.db117.learnagent.agent.tool.TutorLearningTools;
-import com.db117.learnagent.agent.tool.TutorPracticeTools;
 import com.db117.learnagent.agent.tool.TutorProgressTools;
 import com.db117.learnagent.agent.tool.TutorWorkspaceTools;
 import com.db117.learnagent.config.RuntimeConfig;
@@ -38,8 +37,7 @@ public class TutorAgentRuntime {
             "review-code",
             "java-to-typescript",
             "learning-outline-generation",
-            "learning-content-generation",
-            "practice-test-generation");
+            "learning-content-generation");
     private static final Set<String> MEMORY_TOOLS = Set.of(
             "memory_search", "memory_get", "memory_save", "session_search");
     private static final String SKILL_LOAD_TOOL = "load_skill_through_path";
@@ -65,7 +63,6 @@ public class TutorAgentRuntime {
             讲解代码问题前，先读取相关文件或运行 compile；需要验证时运行 run_tests，并根据真实诊断给出下一步提示。
             学习者点击 App 的“提交检查”后，消息会附带本次不可变 attempt_id 和编译/测试真实结果。评估前读取当前相关代码，并结合对话判断理解情况；不确定时先问一个具体问题，暂不记录评估。你可以综合判断并豁免某项运行结果或理解证据，但不得把失败或未运行说成通过，必须在面向学习者的依据中说明豁免原因。
             已有足够证据时调用 record_practice_assessment，结论使用 READY 或 CONTINUE，并提供简洁可读的判断依据。该工具只保存候选，不推进路径；只有学习者点击确认后 App 才会进入下一单元。每次评估都必须引用消息给出的 attempt_id。
-            选择题只是可选补充，不得要求每个 LearnUnit 都必须有选择题。
             路线学习中如需跳过、重排、增加或移除未来单元，先向学习者提出并解释调整；在最终回复中附带如下机器可读区块，等待学习者在 App 确认后才会生效：<learning-route-proposal>{"reason":"...","chapters":[{"code":"...","title":"...","units":[{"code":"...","title":"...","objective":"..."}]}]}</learning-route-proposal>。区块中的 chapters 描述未完成的目标路线；不要包含已完成单元，服务端会保留已完成历史。
             Tutor 可以为当前练习准备骨架文件；学习者尚未明确要求修改时，只读取代码并给提示，不得覆盖已有文件。只有学习者明确要求“帮我修改”等操作时，才可改写已有代码。
             可用 Skill 是只读内置能力；需要专门方法时先加载对应 Skill，再使用其已激活的工具。
@@ -74,7 +71,6 @@ public class TutorAgentRuntime {
     private final TutorModel tutorModel;
     private final TutorWorkspaceTools workspaceTools;
     private final TutorLearningTools learningTools;
-    private final TutorPracticeTools practiceTools;
     private final TutorProgressTools progressTools;
     private final Path agentWorkspace;
     private final JsonFileAgentStateStore stateStore;
@@ -88,18 +84,8 @@ public class TutorAgentRuntime {
             TutorModel tutorModel,
             TutorWorkspaceTools workspaceTools,
             TutorLearningTools learningTools,
-            TutorPracticeTools practiceTools,
             TutorProgressTools progressTools) {
-        this(config, tutorModel, null, workspaceTools, learningTools, practiceTools, progressTools);
-    }
-
-    TutorAgentRuntime(
-            RuntimeConfig config,
-            TutorModel tutorModel,
-            TutorWorkspaceTools workspaceTools,
-            TutorLearningTools learningTools,
-            TutorPracticeTools practiceTools) {
-        this(config, tutorModel, null, workspaceTools, learningTools, practiceTools, null);
+        this(config, tutorModel, null, workspaceTools, learningTools, progressTools);
     }
 
     TutorAgentRuntime(RuntimeConfig config, TutorModel tutorModel, Path workspaceOverride) {
@@ -120,22 +106,10 @@ public class TutorAgentRuntime {
             Path workspaceOverride,
             TutorWorkspaceTools workspaceTools,
             TutorLearningTools learningTools,
-            TutorPracticeTools practiceTools) {
-        this(config, tutorModel, workspaceOverride, workspaceTools, learningTools, practiceTools, null);
-    }
-
-    TutorAgentRuntime(
-            RuntimeConfig config,
-            TutorModel tutorModel,
-            Path workspaceOverride,
-            TutorWorkspaceTools workspaceTools,
-            TutorLearningTools learningTools,
-            TutorPracticeTools practiceTools,
             TutorProgressTools progressTools) {
         this.tutorModel = tutorModel;
         this.workspaceTools = workspaceTools;
         this.learningTools = learningTools;
-        this.practiceTools = practiceTools;
         this.progressTools = progressTools;
         this.memoryEnabled = config.memoryEnabled();
         this.agentWorkspace = workspaceOverride == null
@@ -206,10 +180,6 @@ public class TutorAgentRuntime {
         if (learningTools != null) {
             toolkit.registerTool(learningTools);
             registerLearningToolGroup(toolkit);
-        }
-        if (practiceTools != null) {
-            toolkit.registerTool(practiceTools);
-            registerPracticeToolGroup(toolkit);
         }
         if (progressTools != null) {
             toolkit.registerTool(progressTools);
@@ -285,15 +255,6 @@ public class TutorAgentRuntime {
                 "学习内容持久化工具；只校验并保存当前 LearnUnit 内容快照。",
                 true);
         toolkit.addToolToGroup("learning_content_tools", "save_learning_content");
-    }
-
-    private void registerPracticeToolGroup(Toolkit toolkit) {
-        toolkit.createToolGroup(
-                "practice_test_generation_tools",
-                "测试工具；只校验并保存当前 LearnUnit 题目，验证答案时追加 PracticeEvidence。",
-                true);
-        toolkit.addToolToGroup("practice_test_generation_tools", "save_practice_test");
-        toolkit.addToolToGroup("practice_test_generation_tools", "verify_practice_test");
     }
 
     private void registerProgressToolGroup(Toolkit toolkit) {

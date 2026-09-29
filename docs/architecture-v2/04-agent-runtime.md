@@ -11,7 +11,6 @@ LearnerContext
 JourneyContext
 CurrentLearnUnit
 PracticeContext
-ProjectContext
 DomainProgress
 LongTermMemory
 WorkspaceContext

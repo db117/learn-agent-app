@@ -14,9 +14,6 @@ mastery
 practice_task
 practice_attempt
 practice_evidence
-project
-project_milestone
-project_evidence
 language_pack_config
 ```
 
@@ -54,18 +51,33 @@ LearningPathItem，再把新 LearningJourney 的 ID 挂回 Journey。进入当�
 生成 Concept、Example、Practice，再由数据库工具将内容快照写回对应 LearnUnit。后续 Bootstrap 通过该 ID 初始化
 Workspace，并创建/恢复 LEARNING Tutor Session；Session 只读取当前 LearnUnit。
 
-PracticeAttempt 和 PracticeEvidence 是不可变历史记录；重试产生新记录。Learning Domain 根据通过的
-PracticeEvidence 更新当前项的 completion/mastery，并推进下一个 `PENDING` 项；没有下一个项时将 LearningJourney 置为
-`COMPLETED`。
+PracticeAttempt 和 PracticeEvidence 是不可变历史记录；重试产生新记录。编译和测试结果以 PracticeEvidence 保存，交给 Tutor
+诊断和评估。Tutor 判断学习者已准备好继续并由学习者确认后，Learning Domain 才更新当前项的 completion/mastery 并推进路径；
+客观检查通过本身不自动完成 LearnUnit。
 
 当前单用户流程不引入并发控制或通用跨聚合事务。确认规划的写入顺序是“保存 LearningJourney，再挂回 Journey”；
 若挂接失败，应用层清理本次新建的 LearningJourney，Journey 保持未挂接状态并允许重试。这里的清理是本流程的
 失败补偿，不构成通用事务框架。
 
-文件系统：源码、Workspace 文件、Artifact、大日志、生成项目。
+文件系统：源码、Workspace 文件、Artifact 和大日志。
 
 完整 stdout/stderr 不默认长期塞 SQLite，只保存摘要、exit code、duration 等。
 
-## Clean-slate
+## 当前数据库定向迁移
 
-v2 不提供旧数据库迁移，不做 dual-write、fallback query 或 legacy schema compatibility。
+针对已有 SQLite schema v13 做一次性 v13 → v14 定向迁移，不提供通用旧版本兼容，也不是 v1 compatibility。迁移开始前备份完整数据库；
+只接受识别为 schema v13 的数据库，在单个事务中执行，全部成功后写入 schema v14，失败时回滚并保留备份。
+
+迁移只删除已移除能力的数据和结构：
+
+- 按外键依赖顺序删除并移除 `project_evidence`、`project_milestone`、`project`。
+- 删除 `type = 'CHOICE'` 的 PracticeTask 及其关联 PracticeAttempt、PracticeEvidence；保留编码 PracticeTask 及其历史。
+- 从 `practice_task` 和 `practice_evidence` 移除选择题专属的 `choice_question`、`choice_correct` 字段。
+- 清理保留的 `verification_policy` JSON 中选择题专属的 `requireChoice` 配置。
+- 保留非选择题的学习记录；LearningPathItem 的完成状态原样保留，包括曾由选择题证据支持的状态，不因证据删除而重算。
+- 数据库迁移执行前，由主代理核实并登记与待删除 Project 记录对应的 app-managed
+  `~/.learn-agent/projects/{projectId}/workspace` 和 `~/.learn-agent/projects/{projectId}/artifacts` 目录及 Project
+  ID；数据库迁移成功后再移除这些目录，不扫描或删除其他文件目录。
+- 保留其他 Learner、Journey、LearningJourney、LearnUnit、LearningPathItem、Mastery、编码练习、配置和文件数据。
+
+应用不得将这次迁移扩展为任意旧 schema 修复；schema 版本不是 v13 时应停止并报告不支持。

@@ -5,11 +5,9 @@ import com.db117.learnagent.language.LanguagePack;
 import com.db117.learnagent.language.WorkspaceTemplate;
 import com.db117.learnagent.language.WorkspaceTemplateProvider;
 import com.db117.learnagent.workspace.domain.LearningWorkspace;
-import com.db117.learnagent.workspace.domain.ProjectWorkspace;
 import com.db117.learnagent.workspace.domain.Workspace;
 import com.db117.learnagent.workspace.domain.WorkspaceFile;
 import com.db117.learnagent.workspace.domain.WorkspaceFileEntry;
-import com.db117.learnagent.workspace.domain.WorkspaceKind;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.io.IOException;
@@ -28,7 +26,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 
-/** 管理 LearningWorkspace 和 ProjectWorkspace 的目录及文本文件。 */
+/** 管理学习 Workspace 的目录及文本文件。 */
 @ApplicationScoped
 public final class WorkspaceManager {
     private static final long MAX_FILE_BYTES = 2L * 1024 * 1024;
@@ -80,18 +78,8 @@ public final class WorkspaceManager {
         return workspace;
     }
 
-    public ProjectWorkspace ensureProjectWorkspace(long projectId) throws IOException {
-        ProjectWorkspace workspace = projectWorkspace(projectId);
-        ensureRoot(workspace.root());
-        return workspace;
-    }
-
     public LearningWorkspace learningWorkspace(long journeyId) {
         return new LearningWorkspace(journeyId, root("journeys", journeyId));
-    }
-
-    public ProjectWorkspace projectWorkspace(long projectId) {
-        return new ProjectWorkspace(projectId, root("projects", projectId));
     }
 
     public List<WorkspaceFileEntry> listFiles(Workspace workspace) throws IOException {
@@ -358,8 +346,7 @@ public final class WorkspaceManager {
             }
         }
         String first = relative.getName(0).toString();
-        return workspace.reference().kind() == WorkspaceKind.LEARNING
-                && relative.getNameCount() == 1
+        return relative.getNameCount() == 1
                 && first.equals("pnpm-lock.yaml");
     }
 

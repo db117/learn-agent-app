@@ -1,10 +1,10 @@
 package com.db117.learnagent.persistence.sqlite;
 
-import com.db117.learnagent.practice.domain.ChoiceQuestion;
 import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.List;
 import java.util.Set;
@@ -46,14 +46,13 @@ final class SqliteJson {
         }
     }
 
-    static ChoiceQuestion choiceQuestion(String value) {
-        if (value == null) {
-            return null;
-        }
+    static String withoutChoiceRequirement(String value) {
         try {
-            return MAPPER.readValue(value, ChoiceQuestion.class);
+            ObjectNode policy = MAPPER.readValue(value, ObjectNode.class);
+            policy.remove("requireChoice");
+            return MAPPER.writeValueAsString(policy);
         } catch (JsonProcessingException error) {
-            throw new IllegalStateException("Unable to decode choice question", error);
+            throw new IllegalStateException("Unable to migrate verification policy", error);
         }
     }
 }

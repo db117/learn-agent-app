@@ -35,7 +35,7 @@ import javax.sql.DataSource;
 /** 将 Learning Domain 和受管 Journey Workspace 打包为用户可控的本地文件。 */
 @ApplicationScoped
 public class JourneyTransferService {
-    private static final int FORMAT_VERSION = 2;
+    private static final int FORMAT_VERSION = 3;
     private static final long MAX_ARCHIVE_BYTES = 128L * 1024 * 1024;
     private static final long MAX_WORKSPACE_FILE_BYTES = 2L * 1024 * 1024;
     private static final int MAX_JOURNEYS = 1_000;
@@ -45,7 +45,7 @@ public class JourneyTransferService {
     private static final String MANIFEST_ENTRY = "manifest.json";
     private static final List<String> TABLES = List.of(
             "chapter", "learn_unit", "practice_task", "practice_attempt", "practice_evidence",
-            "practice_assessment", "learning_path_item", "project", "project_milestone", "project_evidence");
+            "practice_assessment", "learning_path_item");
     private static final Map<String, List<String>> TABLE_COLUMNS = Map.ofEntries(
             Map.entry("chapter", List.of("id", "journey_id", "code", "title", "sequence")),
             Map.entry("learn_unit", List.of("id", "journey_id", "chapter_id", "code", "title", "objective",
@@ -53,19 +53,15 @@ public class JourneyTransferService {
             Map.entry("learning_path_item", List.of("id", "journey_id", "learn_unit_id", "learn_unit_code",
                     "sequence", "status", "practice_verified", "assessment_id", "pass_reason", "started_at",
                     "completed_at", "updated_at")),
-            Map.entry("practice_task", List.of("id", "journey_id", "learn_unit_id", "language_pack_id", "type",
-                    "title", "description", "difficulty", "starter_template", "choice_question",
+            Map.entry("practice_task", List.of("id", "journey_id", "learn_unit_id", "language_pack_id",
+                    "title", "description", "difficulty", "starter_template",
                     "verification_policy", "status", "created_at")),
             Map.entry("practice_attempt", List.of("id", "practice_task_id", "submitted_at")),
             Map.entry("practice_evidence", List.of("id", "attempt_id", "compile_passed", "tests_passed",
                     "test_count", "lint_passed", "runtime_result", "submitted_files", "verified_at",
-                    "choice_correct", "workspace_digest")),
+                    "workspace_digest")),
             Map.entry("practice_assessment", List.of("id", "journey_id", "learn_unit_id", "practice_task_id",
-                    "practice_attempt_id", "verdict", "rationale", "workspace_digest", "created_at")),
-            Map.entry("project", List.of("id", "journey_id", "title", "status", "created_at", "completed_at")),
-            Map.entry("project_milestone", List.of("id", "project_id", "code", "title", "sequence", "status")),
-            Map.entry("project_evidence", List.of("id", "milestone_id", "artifact_reference",
-                    "verification_summary", "passed", "verified_at")));
+                    "practice_attempt_id", "verdict", "rationale", "workspace_digest", "created_at")));
     private static final List<String> LEARNING_JOURNEY_COLUMNS = List.of(
             "id", "language_pack_id", "title", "status", "created_at", "completed_at");
 
@@ -167,10 +163,6 @@ public class JourneyTransferService {
                     JourneyTarget target = existing.orElse(null);
                     if (target != null) {
                         queueWorkspace(replacements, workspaces.learningWorkspace(target.id()), Map.of());
-                        if (target.learningJourneyId() != null) {
-                            projectId(connection, target.learningJourneyId()).ifPresent(projectId ->
-                                    queueWorkspace(replacements, workspaces.projectWorkspace(projectId), Map.of()));
-                        }
                     }
                     targets.put(snapshot.portableId(), target);
                 }
@@ -180,13 +172,12 @@ public class JourneyTransferService {
                             ? insertJourney(connection, learnerId, snapshot)
                             : target.id();
                     Long learningJourneyId = null;
-                    Long projectId = null;
                     if (target != null && target.learningJourneyId() != null) {
                         deleteLearningData(connection, target.learningJourneyId());
                     }
                     if (snapshot.learningJourney() != null) {
                         learningJourneyId = importLearningJourney(connection, learnerId, snapshot);
-                        projectId = importTables(connection, learningJourneyId, snapshot.tables());
+                        importTables(connection, learningJourneyId, snapshot.tables());
                     }
                     updateJourney(connection, journeyId, snapshot, learningJourneyId,
                             samePortableId(snapshot.portableId(), parsed.manifest().currentJourneyPortableId()));
@@ -197,11 +188,7 @@ public class JourneyTransferService {
                     }
 
                     queueWorkspace(replacements, workspaces.learningWorkspace(journeyId),
-                            archiveWorkspaceFiles(parsed, snapshot, "learning"));
-                    if (projectId != null) {
-                        queueWorkspace(replacements, workspaces.projectWorkspace(projectId),
-                                archiveWorkspaceFiles(parsed, snapshot, "project"));
-                    }
+                            archiveWorkspaceFiles(parsed, snapshot));
                 }
 
                 for (WorkspaceReplacement replacement : replacements) {
@@ -260,30 +247,17 @@ public class JourneyTransferService {
                     "attempt_id IN (SELECT a.id FROM practice_attempt a JOIN practice_task t "
                             + "ON t.id = a.practice_task_id WHERE t.journey_id = ?)", learningId));
             tables.put("practice_assessment", readRows(connection, "practice_assessment", "journey_id = ?", learningId));
-            tables.put("project", readRows(connection, "project", "journey_id = ?", learningId));
-            tables.put("project_milestone", readRows(connection, "project_milestone",
-                    "project_id IN (SELECT id FROM project WHERE journey_id = ?)", learningId));
-            tables.put("project_evidence", readRows(connection, "project_evidence",
-                    "milestone_id IN (SELECT m.id FROM project_milestone m JOIN project p "
-                            + "ON p.id = m.project_id WHERE p.journey_id = ?)", learningId));
         }
 
         long targetId = journeyId;
         Workspace learningWorkspace = workspaces.learningWorkspace(targetId);
-        List<String> learningFiles = archiveWorkspace(files, portableId, "learning", learningWorkspace);
-        List<Map<String, Object>> projects = tables.get("project");
-        List<String> projectFiles = List.of();
-        if (!projects.isEmpty()) {
-            projectFiles = archiveWorkspace(files, portableId, "project",
-                    workspaces.projectWorkspace(number(projects.getFirst().get("id"))));
-        }
+        List<String> learningFiles = archiveWorkspace(files, portableId, learningWorkspace);
         return new JourneySnapshot(
                 portableId,
                 strip(sourceJourney, Set.of("id", "portable_id", "learner_id", "learning_journey_id", "is_current")),
                 strip(learningJourney, Set.of("learner_id")),
                 tables,
-                learningFiles,
-                projectFiles);
+                learningFiles);
     }
 
     private LearnerSnapshot readCurrentLearner(Connection connection) throws SQLException {
@@ -328,7 +302,6 @@ public class JourneyTransferService {
     private List<String> archiveWorkspace(
             Map<String, byte[]> destination,
             String portableId,
-            String kind,
             Workspace workspace) throws IOException {
         Path root = workspace.root();
         if (Files.notExists(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
@@ -337,7 +310,7 @@ public class JourneyTransferService {
         List<WorkspaceFileEntry> workspaceFiles = WorkspaceIgnoreRules.filter(root, workspaces.listFiles(workspace));
         ArrayList<String> paths = new ArrayList<String>();
         for (WorkspaceFileEntry entry : workspaceFiles) {
-            String archivePath = workspaceEntry(portableId, kind, entry.path());
+            String archivePath = workspaceEntry(portableId, entry.path());
             if (destination.putIfAbsent(archivePath, workspaces.readBytes(workspace, entry.path())) != null) {
                 throw new IllegalArgumentException("Workspace 中存在重复的迁移路径");
             }
@@ -411,7 +384,7 @@ public class JourneyTransferService {
             if (journey == null || !isUuid(journey.portableId())
                     || !portableIds.add(normalizedUuid(journey.portableId()))
                     || journey.journey() == null || journey.tables() == null
-                    || journey.learningFiles() == null || journey.projectFiles() == null) {
+                    || journey.learningFiles() == null) {
                 throw new IllegalArgumentException("Journey 清单包含无效或重复的唯一标识");
             }
             requireKeys(journey.journey(), Set.of("goal_description", "status", "created_at", "archived_at"));
@@ -449,14 +422,7 @@ public class JourneyTransferService {
                     }
                 }
             }
-            validatePaths(journey.portableId(), "learning", journey.learningFiles(), expectedFiles);
-            validatePaths(journey.portableId(), "project", journey.projectFiles(), expectedFiles);
-            if (journey.learningJourney() == null && !journey.projectFiles().isEmpty()) {
-                throw new IllegalArgumentException("没有项目的 Journey 不能包含项目文件");
-            }
-            if (journey.tables().get("project").isEmpty() && !journey.projectFiles().isEmpty()) {
-                throw new IllegalArgumentException("没有项目记录的 Journey 不能包含项目文件");
-            }
+            validatePaths(journey.portableId(), journey.learningFiles(), expectedFiles);
         }
         if (currentPortableId != null && portableIds.stream()
                 .noneMatch(portableId -> samePortableId(portableId, currentPortableId))) {
@@ -467,21 +433,21 @@ public class JourneyTransferService {
         }
     }
 
-    private void validatePaths(String portableId, String kind, List<String> paths, Set<String> expectedFiles) {
+    private void validatePaths(String portableId, List<String> paths, Set<String> expectedFiles) {
         HashSet<String> unique = new HashSet<String>();
         for (String path : paths) {
             if (!isSafeRelativePath(path) || !unique.add(path)
-                    || !expectedFiles.add(workspaceEntry(portableId, kind, path))) {
+                    || !expectedFiles.add(workspaceEntry(portableId, path))) {
                 throw new IllegalArgumentException("Workspace 路径无效或重复");
             }
         }
     }
 
-    private Map<String, byte[]> archiveWorkspaceFiles(ParsedArchive archive, JourneySnapshot snapshot, String kind) {
-        List<String> paths = "learning".equals(kind) ? snapshot.learningFiles() : snapshot.projectFiles();
+    private Map<String, byte[]> archiveWorkspaceFiles(ParsedArchive archive, JourneySnapshot snapshot) {
+        List<String> paths = snapshot.learningFiles();
         LinkedHashMap<String, byte[]> result = new LinkedHashMap<String, byte[]>();
         for (String path : paths) {
-            result.put(path, archive.files().get(workspaceEntry(snapshot.portableId(), kind, path)));
+            result.put(path, archive.files().get(workspaceEntry(snapshot.portableId(), path)));
         }
         return result;
     }
@@ -515,7 +481,7 @@ public class JourneyTransferService {
                 row, Map.of());
     }
 
-    private Long importTables(
+    private void importTables(
             Connection connection,
             long learningJourneyId,
             Map<String, List<Map<String, Object>>> tables) throws SQLException {
@@ -546,19 +512,6 @@ public class JourneyTransferService {
                             : mapped(assessments, row.get("assessment_id"), "PracticeAssessment"));
                     return values;
                 });
-        Map<Long, Long> projects = insertRows(connection, "project", tables.get("project"),
-                row -> Map.of("journey_id", learningJourneyId));
-        Map<Long, Long> milestones = insertRows(connection, "project_milestone", tables.get("project_milestone"),
-                row -> Map.of("project_id", mapped(projects, row.get("project_id"), "Project")));
-        insertRows(connection, "project_evidence", tables.get("project_evidence"),
-                row -> Map.of("milestone_id", mapped(milestones, row.get("milestone_id"), "Project milestone")));
-        if (tables.get("project").size() > 1) {
-            throw new IllegalArgumentException("每个 LearningJourney 最多只能有一个 Project");
-        }
-        if (tables.get("project").isEmpty()) {
-            return null;
-        }
-        return projects.get(number(tables.get("project").getFirst().get("id")));
     }
 
     private Map<Long, Long> insertRows(
@@ -625,7 +578,6 @@ public class JourneyTransferService {
     private void deleteLearningData(Connection connection, long learningJourneyId) throws SQLException {
         delete(connection, "learning_path_item", "journey_id", learningJourneyId);
         delete(connection, "practice_assessment", "journey_id", learningJourneyId);
-        delete(connection, "project", "journey_id", learningJourneyId);
         delete(connection, "practice_task", "journey_id", learningJourneyId);
         delete(connection, "learn_unit", "journey_id", learningJourneyId);
         delete(connection, "chapter", "journey_id", learningJourneyId);
@@ -669,16 +621,6 @@ public class JourneyTransferService {
                 return java.util.Optional.of(new JourneyTarget(
                         result.getLong("id"), noLearningJourney ? null : learningJourneyId,
                         result.getString("goal_description")));
-            }
-        }
-    }
-
-    private java.util.Optional<Long> projectId(Connection connection, long learningJourneyId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(
-                "SELECT id FROM project WHERE journey_id = ?")) {
-            statement.setLong(1, learningJourneyId);
-            try (ResultSet result = statement.executeQuery()) {
-                return result.next() ? java.util.Optional.of(result.getLong("id")) : java.util.Optional.empty();
             }
         }
     }
@@ -807,8 +749,8 @@ public class JourneyTransferService {
         return true;
     }
 
-    private static String workspaceEntry(String portableId, String kind, String relativePath) {
-        return "workspaces/" + portableId + "/" + kind + "/" + relativePath;
+    private static String workspaceEntry(String portableId, String relativePath) {
+        return "workspaces/" + portableId + "/learning/" + relativePath;
     }
 
     private static void requireKeys(Map<String, Object> value, Set<String> expected) {
@@ -914,14 +856,13 @@ public class JourneyTransferService {
     public record LearnerSnapshot(String displayName, String backgroundSummary, String createdAt) {
     }
 
-    /** 一个 Journey 的 Domain State 行和两类工作区文件清单。
+    /** 一个 Journey 的 Domain State 行和学习工作区文件清单。
      *
      * @param portableId 设备间匹配 Journey 使用的 UUID
      * @param journey Journey 自身的目标与生命周期字段
      * @param learningJourney LearningJourney 元数据；未生成学习路径时为空
-     * @param tables LearningPathItem、Practice 与 Project 等 Domain 表记录
+     * @param tables LearningPathItem 与 Practice Domain 表记录
      * @param learningFiles LearningWorkspace 中随文件包传输的相对路径
-     * @param projectFiles Project Workspace 中随文件包传输的相对路径
      */
     @RegisterForReflection
     public record JourneySnapshot(
@@ -929,8 +870,7 @@ public class JourneyTransferService {
             Map<String, Object> journey,
             Map<String, Object> learningJourney,
             Map<String, List<Map<String, Object>>> tables,
-            List<String> learningFiles,
-            List<String> projectFiles) {
+            List<String> learningFiles) {
     }
 
     /** 已完成格式与文件路径验证的导入包。

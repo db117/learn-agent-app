@@ -1,8 +1,20 @@
 package com.db117.learnagent.practice.application;
 
-import com.db117.learnagent.execution.*;
+import com.db117.learnagent.execution.ExecutionEnvironment;
+import com.db117.learnagent.execution.ExecutionOperation;
+import com.db117.learnagent.execution.ExecutionRequest;
+import com.db117.learnagent.execution.ExecutionResult;
+import com.db117.learnagent.execution.TypeScriptCompileResult;
+import com.db117.learnagent.execution.TypeScriptCompiler;
+import com.db117.learnagent.execution.TypeScriptTestResult;
+import com.db117.learnagent.execution.TypeScriptTestRunner;
 import com.db117.learnagent.learning.application.LearningRequestException;
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.practice.domain.RuntimeResult;
+import com.db117.learnagent.practice.domain.VerificationPolicy;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.Workspace;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -99,7 +111,6 @@ public final class PracticeRuntimeService {
                 RuntimeResult.NOT_RUN,
                 submittedFiles,
                 null,
-                false,
                 workspaceDigest);
         Instant verifiedAt = currentTask.verificationPolicy().accepts(candidate)
                 && changedFromStarter(currentTask, currentWorkspace)
@@ -113,7 +124,6 @@ public final class PracticeRuntimeService {
                 candidate.runtimeResult(),
                 candidate.submittedFiles(),
                 verifiedAt,
-                false,
                 workspaceDigest);
         PracticeTask saved = practiceTasks.save(currentTask.recordAttempt(
                 PracticeAttempt.submit(evidence, Instant.now())));

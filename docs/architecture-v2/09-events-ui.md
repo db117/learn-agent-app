@@ -43,22 +43,20 @@ POST /api/journeys/{journeyId}/practice/verify
 → React PracticeWorkspace
 ```
 
-选择题由 `practice-test-generation` Skill 驱动，题目由 TutorAgent 主模型根据当前 LearnUnit 生成；数据库工具只负责
-校验、保存题目快照和判定答案：
+Practice UI 在一个练习面板中展示当前任务、文件和 Tutor 对话。Monaco 保持可编辑；学习者可以新建和保存文件。
+面板不提供手动“编译”或“测试”按钮。学习者提交练习时，应用自动运行固定编译和测试检查：
 
 ```text
-TutorAgent → save_practice_test → PracticeTask（只返回题干和选项）
-→ 学习者回答 → verify_practice_test → PracticeEvidence → Learning Domain
+学习者提交 → 编译/测试 → VerifyResponse 与 PracticeEvidence → Tutor 诊断和评估
+→ Tutor 判断 READY/CONTINUE → 学习者确认 → Learning Domain 更新学习进度
 ```
 
-工具结果不返回正确选项；选择题和编码题都通过 PracticeEvidence 回写 Learning Domain。
-
-`VerifyResponse` 只包含验证摘要、相对提交文件和 Learning Domain 推进结果；验证
-成功时才会写入 `PracticeEvidence` 并推动领域状态，失败时不会推进领域状态。当前
+`VerifyResponse` 只包含验证摘要、相对提交文件和新建的 `PracticeEvidence`；验证通过时记录客观编译/测试结果，
+失败时记录失败结果。验证响应本身不判定学习掌握，也不推进 Learning Domain。当前
 没有把这条 REST 链路复制到 Tutor Session 的 SSE 总线：这样既没有稳定的 SSE 消费者，
 也会产生重复状态来源。
 
-因此 UI 对 Practice 完成状态消费 `VerifyResponse`，对 Tutor 运行活动消费安全的
+因此 UI 对 Practice 检查结果消费 `VerifyResponse`，对 Tutor 运行活动消费安全的
 `TutorEvent`。只有在出现明确的跨组件 SSE 消费场景后，才将 `practice.verified`
 加入 `TutorEventType`，并通过同一安全投影提供；不得直接暴露 AgentScope raw event、
 宿主路径、完整日志、提示词、答案、secret 或私有推理。
@@ -90,7 +88,6 @@ features/
   journey/
   learn/
   practice/
-  project/
   workspace/
     editor/
     files/

@@ -67,38 +67,9 @@ public class WorkspaceResource {
         return write(learningWorkspace(journeyId), path, request);
     }
 
-    @GET
-    @Path("/projects/{projectId}/workspace/files")
-    public List<WorkspaceFileEntryResponse> listProjectFiles(@PathParam("projectId") long projectId) {
-        return list(projectWorkspace(projectId));
-    }
-
-    @GET
-    @Path("/projects/{projectId}/workspace/files/{path: .+}")
-    public WorkspaceFileResponse readProjectFile(@PathParam("projectId") long projectId,
-                                                 @PathParam("path") String path) {
-        return read(projectWorkspace(projectId), path);
-    }
-
-    @PUT
-    @Path("/projects/{projectId}/workspace/files/{path: .+}")
-    public WorkspaceFileResponse writeProjectFile(@PathParam("projectId") long projectId,
-                                                  @PathParam("path") String path,
-                                                  WorkspaceContentRequest request) {
-        return write(projectWorkspace(projectId), path, request);
-    }
-
     private Workspace learningWorkspace(long journeyId) {
         try {
             return access == null ? workspaces.learningWorkspace(journeyId) : access.learningWorkspace(journeyId);
-        } catch (WorkspaceInitializationException error) {
-            throw WorkspaceRequestException.internal(error);
-        }
-    }
-
-    private Workspace projectWorkspace(long projectId) {
-        try {
-            return access == null ? workspaces.projectWorkspace(projectId) : access.projectWorkspace(projectId);
         } catch (WorkspaceInitializationException error) {
             throw WorkspaceRequestException.internal(error);
         }

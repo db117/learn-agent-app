@@ -14,4 +14,4 @@
 接入第一个外部 MCP，推荐 GitHub。用途：查 repo、issue、源码和参考实现。内部 LearningEngine/SQLite/Workspace/compile/test 不做
 MCP 化。
 
-**DoD：**Project Mode 中 Tutor 能判断何时需要外部信息并通过 MCP 取回结果继续教学。
+**DoD：**Tutor 在多步学习或编码练习中能判断何时需要外部信息，并通过 MCP 取回结果继续教学。

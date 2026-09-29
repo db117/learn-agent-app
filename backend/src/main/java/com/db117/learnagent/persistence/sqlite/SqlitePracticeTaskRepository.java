@@ -1,9 +1,13 @@
 package com.db117.learnagent.persistence.sqlite;
 
-import com.db117.learnagent.practice.domain.*;
+import com.db117.learnagent.practice.domain.PracticeAttempt;
+import com.db117.learnagent.practice.domain.PracticeEvidence;
+import com.db117.learnagent.practice.domain.PracticeTask;
+import com.db117.learnagent.practice.domain.PracticeTaskRepository;
+import com.db117.learnagent.practice.domain.PracticeTaskStatus;
+import com.db117.learnagent.practice.domain.RuntimeResult;
 import jakarta.enterprise.context.ApplicationScoped;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -12,6 +16,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import javax.sql.DataSource;
 
 /** PracticeTask 聚合的 SQLite 适配器；Attempt/Evidence 只追加不覆盖。 */
 @ApplicationScoped
@@ -44,8 +49,8 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
     public Optional<PracticeTask> findById(long id) {
         try (Connection connection = dataSource.getConnection();
              java.sql.PreparedStatement statement = connection.prepareStatement(
-                     "SELECT id, journey_id, learn_unit_id, language_pack_id, type, title, description, difficulty, "
-                             + "starter_template, choice_question, verification_policy, status, created_at "
+                     "SELECT id, journey_id, learn_unit_id, language_pack_id, title, description, difficulty, "
+                             + "starter_template, verification_policy, status, created_at "
                              + "FROM practice_task WHERE id = ?")) {
             statement.setLong(1, id);
             try (ResultSet result = statement.executeQuery()) {
@@ -60,8 +65,8 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
     public List<PracticeTask> findByLearnUnit(long journeyId, long learnUnitId) {
         try (Connection connection = dataSource.getConnection();
              java.sql.PreparedStatement statement = connection.prepareStatement(
-                     "SELECT id, journey_id, learn_unit_id, language_pack_id, type, title, description, difficulty, "
-                             + "starter_template, choice_question, verification_policy, status, created_at "
+                     "SELECT id, journey_id, learn_unit_id, language_pack_id, title, description, difficulty, "
+                             + "starter_template, verification_policy, status, created_at "
                              + "FROM practice_task "
                              + "WHERE journey_id = ? AND learn_unit_id = ? ORDER BY id")) {
             statement.setLong(1, journeyId);
@@ -82,9 +87,9 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
         // 先保存任务根，再按提交顺序追加客观证据。
         long taskId;
         try (java.sql.PreparedStatement statement = connection.prepareStatement(
-                "INSERT INTO practice_task(journey_id, learn_unit_id, language_pack_id, type, title, description, "
-                        + "difficulty, starter_template, choice_question, verification_policy, status, created_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO practice_task(journey_id, learn_unit_id, language_pack_id, title, description, "
+                        + "difficulty, starter_template, verification_policy, status, created_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 Statement.RETURN_GENERATED_KEYS)) {
             bindTask(statement, task);
             statement.executeUpdate();
@@ -96,12 +101,10 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
                 task.journeyId(),
                 task.learnUnitId(),
                 task.languagePackId(),
-                task.type(),
                 task.title(),
                 task.description(),
                 task.difficulty(),
                 task.starterTemplate(),
-                task.choiceQuestion(),
                 task.verificationPolicy(),
                 task.status(),
                 task.createdAt(),
@@ -110,21 +113,19 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
 
     private PracticeTask updateExisting(Connection connection, PracticeTask task) throws SQLException {
         try (java.sql.PreparedStatement statement = connection.prepareStatement(
-                "UPDATE practice_task SET type = ?, title = ?, description = ?, difficulty = ?, starter_template = ?, "
-                        + "choice_question = ?, verification_policy = ?, status = ? WHERE id = ? AND journey_id = ? "
+                "UPDATE practice_task SET title = ?, description = ?, difficulty = ?, starter_template = ?, "
+                        + "verification_policy = ?, status = ? WHERE id = ? AND journey_id = ? "
                         + "AND learn_unit_id = ? AND language_pack_id = ?")) {
-            statement.setString(1, task.type());
-            statement.setString(2, task.title());
-            statement.setString(3, task.description());
-            statement.setInt(4, task.difficulty());
-            statement.setString(5, task.starterTemplate());
-            statement.setString(6, task.choiceQuestion() == null ? null : SqliteJson.write(task.choiceQuestion()));
-            statement.setString(7, SqliteJson.write(task.verificationPolicy()));
-            statement.setString(8, task.status().name());
-            statement.setLong(9, task.id());
-            statement.setLong(10, task.journeyId());
-            statement.setLong(11, task.learnUnitId());
-            statement.setString(12, task.languagePackId());
+            statement.setString(1, task.title());
+            statement.setString(2, task.description());
+            statement.setInt(3, task.difficulty());
+            statement.setString(4, task.starterTemplate());
+            statement.setString(5, SqliteJson.write(task.verificationPolicy()));
+            statement.setString(6, task.status().name());
+            statement.setLong(7, task.id());
+            statement.setLong(8, task.journeyId());
+            statement.setLong(9, task.learnUnitId());
+            statement.setString(10, task.languagePackId());
             SqliteSupport.requireUpdated(statement.executeUpdate(), "practice task", task.id());
         }
         List<PracticeAttempt> persistedAttempts = insertAttempts(connection, task.id(), task.attempts());
@@ -133,12 +134,10 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
                 task.journeyId(),
                 task.learnUnitId(),
                 task.languagePackId(),
-                task.type(),
                 task.title(),
                 task.description(),
                 task.difficulty(),
                 task.starterTemplate(),
-                task.choiceQuestion(),
                 task.verificationPolicy(),
                 task.status(),
                 task.createdAt(),
@@ -149,15 +148,13 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
         statement.setLong(1, task.journeyId());
         statement.setLong(2, task.learnUnitId());
         statement.setString(3, task.languagePackId());
-        statement.setString(4, task.type());
-        statement.setString(5, task.title());
-        statement.setString(6, task.description());
-        statement.setInt(7, task.difficulty());
-        statement.setString(8, task.starterTemplate());
-        statement.setString(9, task.choiceQuestion() == null ? null : SqliteJson.write(task.choiceQuestion()));
-        statement.setString(10, SqliteJson.write(task.verificationPolicy()));
-        statement.setString(11, task.status().name());
-        statement.setString(12, task.createdAt().toString());
+        statement.setString(4, task.title());
+        statement.setString(5, task.description());
+        statement.setInt(6, task.difficulty());
+        statement.setString(7, task.starterTemplate());
+        statement.setString(8, SqliteJson.write(task.verificationPolicy()));
+        statement.setString(9, task.status().name());
+        statement.setString(10, task.createdAt().toString());
     }
 
     private List<PracticeAttempt> insertAttempts(
@@ -168,8 +165,8 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
                 Statement.RETURN_GENERATED_KEYS);
              java.sql.PreparedStatement evidenceStatement = connection.prepareStatement(
                      "INSERT INTO practice_evidence(attempt_id, compile_passed, tests_passed, test_count, lint_passed, "
-                             + "runtime_result, submitted_files, verified_at, choice_correct, workspace_digest) "
-                             + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                             + "runtime_result, submitted_files, verified_at, workspace_digest) "
+                             + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             for (PracticeAttempt attempt : attempts) {
                 if (attempt.id() != null) {
                     // 已持久化 Attempt 是不可变历史，不能因再次保存聚合而复制。
@@ -189,8 +186,7 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
                 evidenceStatement.setString(6, evidence.runtimeResult().name());
                 evidenceStatement.setString(7, SqliteJson.write(evidence.submittedFiles()));
                 evidenceStatement.setString(8, SqliteSupport.instant(evidence.verifiedAt()));
-                evidenceStatement.setInt(9, SqliteSupport.bool(evidence.choiceCorrect()));
-                evidenceStatement.setString(10, evidence.workspaceDigest());
+                evidenceStatement.setString(9, evidence.workspaceDigest());
                 evidenceStatement.executeUpdate();
                 persisted.add(attempt.withId(attemptId));
             }
@@ -203,7 +199,7 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
         ArrayList<PracticeAttempt> attempts = new ArrayList<PracticeAttempt>();
         try (java.sql.PreparedStatement statement = connection.prepareStatement(
                 "SELECT pa.id, pa.submitted_at, pe.compile_passed, pe.tests_passed, pe.test_count, pe.lint_passed, "
-                        + "pe.runtime_result, pe.submitted_files, pe.verified_at, pe.choice_correct, pe.workspace_digest "
+                        + "pe.runtime_result, pe.submitted_files, pe.verified_at, pe.workspace_digest "
                         + "FROM practice_attempt pa JOIN practice_evidence pe ON pe.attempt_id = pa.id "
                         + "WHERE pa.practice_task_id = ? ORDER BY pa.id")) {
             statement.setLong(1, taskId);
@@ -217,7 +213,6 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
                             RuntimeResult.valueOf(evidenceResult.getString("runtime_result")),
                             SqliteJson.strings(evidenceResult.getString("submitted_files")),
                             SqliteSupport.parseInstant(evidenceResult, "verified_at"),
-                            SqliteSupport.bool(evidenceResult, "choice_correct"),
                             evidenceResult.getString("workspace_digest"));
                     attempts.add(new PracticeAttempt(
                             evidenceResult.getLong("id"),
@@ -231,12 +226,10 @@ public class SqlitePracticeTaskRepository implements PracticeTaskRepository {
                 result.getLong("journey_id"),
                 result.getLong("learn_unit_id"),
                 result.getString("language_pack_id"),
-                result.getString("type"),
                 result.getString("title"),
                 result.getString("description"),
                 result.getInt("difficulty"),
                 result.getString("starter_template"),
-                SqliteJson.choiceQuestion(result.getString("choice_question")),
                 SqliteJson.verificationPolicy(result.getString("verification_policy")),
                 PracticeTaskStatus.valueOf(result.getString("status")),
                 Instant.parse(result.getString("created_at")),

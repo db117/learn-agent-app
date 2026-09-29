@@ -75,7 +75,6 @@ class PracticeRuntimeServiceTest {
                 1,
                 2,
                 "typescript",
-                "CODE",
                 "Practice",
                 "Practice task",
                 1,

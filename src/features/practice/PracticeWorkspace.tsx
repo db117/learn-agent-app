@@ -2,7 +2,7 @@ import {forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState} f
 import {LearningPathPanel, type LearningProgress, LearnModePanel} from "../learn/LearnModePanel";
 import {PracticePanel} from "./PracticePanel";
 import {LearningIdeActions} from "./LearningIdeActions";
-import type {ChoiceQuestion, PracticeCheckSummary, PracticeDiagnostic} from "./practiceTypes";
+import type {PracticeCheckSummary} from "./practiceTypes";
 import {createWorkspaceApi, type WorkspaceFileEntry} from "../workspace/workspaceApi";
 import {beginSave, editDraft, failSave, finishSave, initialSaveState, selectFile} from "../workspace/saveState";
 
@@ -22,19 +22,6 @@ type Props = {
 };
 
 export type PracticeWorkspaceHandle = { prepareForSync: () => Promise<boolean> };
-
-type CompileResponse = {
-    success: boolean;
-    summary: string;
-    diagnostics: PracticeDiagnostic[];
-};
-
-type TestResponse = {
-    success: boolean;
-    summary: string;
-    passed: boolean;
-    testCount: number;
-};
 
 type VerifyResponse = {
     verified: boolean;
@@ -65,25 +52,6 @@ type AssessmentAcceptedResponse = {
     accepted: boolean;
 };
 
-type ChoiceResponse = {
-    available: boolean;
-    codeVerified: boolean;
-    taskId: number | null;
-    title: string | null;
-    prompt: string | null;
-    options: ChoiceQuestion["options"];
-};
-
-type ChoiceVerifyResponse = {
-    taskId: number;
-    status: string;
-    verified: boolean;
-    choiceCorrect: boolean;
-    learningJourneyStatus: string;
-    currentLearnUnitCode: string | null;
-    advanced: boolean;
-};
-
 export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(function PracticeWorkspace({
                                       journeyId,
                                       onDirtyChange,
@@ -103,29 +71,18 @@ export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(func
     const [loadingContent, setLoadingContent] = useState(false);
     const [creatingFile, setCreatingFile] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [compiling, setCompiling] = useState(false);
-    const [testing, setTesting] = useState(false);
     const [verifying, setVerifying] = useState(false);
-    const [diagnostics, setDiagnostics] = useState<PracticeDiagnostic[]>([]);
-    const [runtimeSummary, setRuntimeSummary] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<string | null>(null);
     const [progress, setProgress] = useState<LearningProgress | null>(null);
     const [progressLoading, setProgressLoading] = useState(true);
-    const [choiceQuestion, setChoiceQuestion] = useState<ChoiceQuestion | null>(null);
-    const [choiceLoading, setChoiceLoading] = useState(true);
-    const [codeVerified, setCodeVerified] = useState(false);
     const [assessment, setAssessment] = useState<AssessmentResponse | null>(null);
     const [acceptingAssessment, setAcceptingAssessment] = useState(false);
-    const [choiceSubmitting, setChoiceSubmitting] = useState(false);
-    const [choiceFeedback, setChoiceFeedback] = useState<string | null>(null);
-    const [selectedChoiceId, setSelectedChoiceId] = useState<string | null>(null);
     const [practiceFullscreen, setPracticeFullscreen] = useState(false);
     const [editorExpanded, setEditorExpanded] = useState(false);
     const stateRef = useRef(state);
     const activeOperationsRef = useRef(false);
     stateRef.current = state;
-    activeOperationsRef.current = saving || creatingFile || compiling || testing || verifying
-        || acceptingAssessment || choiceSubmitting;
+    activeOperationsRef.current = saving || creatingFile || verifying || acceptingAssessment;
 
     useImperativeHandle(ref, () => ({
         prepareForSync: async () => {
@@ -204,35 +161,6 @@ export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(func
         }
     };
 
-    const loadChoiceQuestion = async (signal?: AbortSignal) => {
-        setChoiceLoading(true);
-        try {
-            const response = await fetch(`${BACKEND_URL}/api/journeys/${journeyId}/practice/choice`, {signal});
-            if (!response.ok) throw new Error("无法读取已保存选择题");
-            const next = await response.json() as ChoiceResponse;
-            if (!signal?.aborted) {
-                setCodeVerified(next.codeVerified);
-                setChoiceQuestion(next.available && next.taskId !== null && next.title !== null && next.prompt !== null
-                    ? {
-                        taskId: next.taskId,
-                        title: next.title,
-                        prompt: next.prompt,
-                        options: next.options,
-                    }
-                    : null);
-                setSelectedChoiceId(null);
-                setChoiceFeedback(null);
-            }
-        } catch (error: unknown) {
-            if (!signal?.aborted) {
-                setChoiceQuestion(null);
-                setFeedback(error instanceof Error ? error.message : "无法读取已保存选择题");
-            }
-        } finally {
-            if (!signal?.aborted) setChoiceLoading(false);
-        }
-    };
-
     const loadAssessment = async (signal?: AbortSignal) => {
         try {
             const response = await fetch(`${BACKEND_URL}/api/journeys/${journeyId}/practice/assessment`, {signal});
@@ -248,20 +176,11 @@ export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(func
         const controller = new AbortController();
         setState(initialSaveState());
         setFiles([]);
-        setDiagnostics([]);
-        setRuntimeSummary(null);
         setFeedback(null);
-        setChoiceQuestion(null);
-        setChoiceLoading(true);
-        setCodeVerified(false);
         setAssessment(null);
-        setChoiceSubmitting(false);
-        setChoiceFeedback(null);
-        setSelectedChoiceId(null);
         setCreatingFile(false);
         setLoading(true);
         void loadProgress(controller.signal);
-        void loadChoiceQuestion(controller.signal);
         void loadAssessment(controller.signal);
         api.listFiles("journey", journeyId)
             .then((nextFiles) => {
@@ -297,7 +216,6 @@ export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(func
         if (contentVersion === 0 && progressVersion === 0) return;
         const controller = new AbortController();
         void loadProgress(controller.signal);
-        void loadChoiceQuestion(controller.signal);
         void loadAssessment(controller.signal);
         return () => controller.abort();
     }, [contentVersion, progressVersion, journeyId]);
@@ -354,61 +272,8 @@ export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(func
         }
     };
 
-    const compile = async () => {
-        if (state.dirty || compiling || testing) {
-            if (state.dirty) setFeedback("请先保存当前文件，再执行编译。");
-            return;
-        }
-        setCompiling(true);
-        setFeedback(null);
-        setRuntimeSummary(null);
-        try {
-            const response = await fetch(`${BACKEND_URL}/api/journeys/${journeyId}/practice/compile`, {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: "{}",
-            });
-            if (!response.ok) throw new Error("编译请求失败");
-            const result = await response.json() as CompileResponse;
-            setDiagnostics(result.diagnostics);
-            setRuntimeSummary(result.summary);
-            setFeedback(result.success ? "TypeScript 编译通过。" : "TypeScript 编译失败，请查看执行摘要和诊断。");
-        } catch (error: unknown) {
-            setFeedback(error instanceof Error ? error.message : "无法执行编译");
-        } finally {
-            setCompiling(false);
-        }
-    };
-
-    const runTests = async () => {
-        if (state.dirty || compiling || testing) {
-            if (state.dirty) setFeedback("请先保存当前文件，再执行测试。");
-            return;
-        }
-        setTesting(true);
-        setFeedback(null);
-        setRuntimeSummary(null);
-        try {
-            const response = await fetch(`${BACKEND_URL}/api/journeys/${journeyId}/practice/tests`, {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: "{}",
-            });
-            if (!response.ok) throw new Error("测试请求失败");
-            const result = await response.json() as TestResponse;
-            setRuntimeSummary(result.summary);
-            setFeedback(result.passed
-                ? `测试通过（${result.testCount} 个）。`
-                : `测试未通过（${result.testCount} 个）。`);
-        } catch (error: unknown) {
-            setFeedback(error instanceof Error ? error.message : "无法执行测试");
-        } finally {
-            setTesting(false);
-        }
-    };
-
     const verify = async () => {
-        if (state.dirty || compiling || testing || verifying) {
+        if (state.dirty || verifying) {
             if (state.dirty) setFeedback("请先保存当前文件，再验证 Practice。");
             return;
         }
@@ -424,7 +289,6 @@ export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(func
                 throw new Error(error?.message ?? `Practice 验证请求失败（${response.status}）`);
             }
             const result = await response.json() as VerifyResponse;
-            setCodeVerified(result.verified);
             setFeedback("检查结果已保存，正在请 Tutor 综合代码和理解情况评估。");
             onRequestAssessment?.({
                 attemptId: result.assessmentAttemptId,
@@ -461,32 +325,6 @@ export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(func
         }
     };
 
-    const verifyChoice = async () => {
-        if (!choiceQuestion || !selectedChoiceId || choiceSubmitting) return;
-        setChoiceSubmitting(true);
-        setChoiceFeedback(null);
-        try {
-            const response = await fetch(
-                `${BACKEND_URL}/api/journeys/${journeyId}/practice/tasks/${choiceQuestion.taskId}/choice/verify`,
-                {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({optionId: selectedChoiceId}),
-                });
-            if (!response.ok) throw new Error("选择题提交失败");
-            const result = await response.json() as ChoiceVerifyResponse;
-            if (!result.verified) {
-                setChoiceFeedback("还不对，再试一次；可以回看上面的课程内容。");
-                return;
-            }
-            setChoiceFeedback("答案已记录；学习进度由 Tutor 综合评估，并在你确认后更新。");
-        } catch (error: unknown) {
-            setChoiceFeedback(error instanceof Error ? error.message : "无法提交选择题");
-        } finally {
-            setChoiceSubmitting(false);
-        }
-    };
-
     const lessonPanel = <LearnModePanel
         progress={progress}
         loading={progressLoading}
@@ -498,7 +336,7 @@ export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(func
             <button
                 type="button"
                 onClick={() => void verify()}
-                disabled={state.dirty || saving || compiling || testing || verifying || tutorBusy || progress?.status === "COMPLETED"}
+                disabled={state.dirty || saving || verifying || tutorBusy || progress?.status === "COMPLETED"}
                 aria-busy={verifying}
             >
                 {verifying ? "检查中…" : "提交检查"}
@@ -553,29 +391,15 @@ export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(func
                 creating={creatingFile}
                 dirty={state.dirty}
                 saving={saving}
-                compiling={compiling}
-                testing={testing}
                 verifying={verifying || tutorBusy}
-                codeVerified={codeVerified}
-                choiceQuestion={choiceQuestion}
-                choiceLoading={choiceLoading}
-                choiceSubmitting={choiceSubmitting}
-                choiceFeedback={choiceFeedback}
-                selectedChoiceId={selectedChoiceId}
                 feedback={feedback}
-                runtimeSummary={runtimeSummary}
-                diagnostics={diagnostics}
                 onSelectFile={selectWorkspaceFile}
                 onContentChange={(content) => setState((current) => editDraft(current, content))}
                 onSave={save}
-                onCompile={compile}
-                onTest={runTests}
                 onCreateFile={createFile}
                 onVerify={() => {
                     if (!tutorBusy) void verify();
                 }}
-                onSelectChoice={setSelectedChoiceId}
-                onVerifyChoice={verifyChoice}
                 theme={theme}
                 fullscreen={practiceFullscreen}
                 onToggleFullscreen={() => setPracticeFullscreen((current) => !current)}

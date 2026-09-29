@@ -14,7 +14,6 @@ Architecture
 → Learn
 → Skill + Memory
 → Sandbox + Permission
-→ Project + Plan
 → MCP
 → Subagent
 → Eval
@@ -35,7 +34,6 @@ Architecture
 | 6    | Learn Mode                   |
 | 7    | Skills + Memory              |
 | 8    | Sandbox + Permission         |
-| 9    | Project + Plan               |
 | 10   | MCP                          |
 | 11   | Subagent                     |
 | 12   | Native + Eval + Polish       |
@@ -46,4 +44,4 @@ Step 5 完成：Agent 可以陪用户完成一道真实 TypeScript 编程练习�
 
 ## M2
 
-Step 11 完成：Agent 可以通过 Plan、MCP、Subagent 带用户完成真实 TypeScript 项目。
+Step 11 完成：Tutor 可以按需使用 Plan、MCP、Subagent 支持多步学习与编码练习。

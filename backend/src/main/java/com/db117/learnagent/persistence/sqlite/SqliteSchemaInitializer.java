@@ -7,19 +7,18 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import javax.sql.DataSource;
 
 /**
  * 创建并验证当前 clean-slate SQLite 结构。
  *
- * <p>数据库版本不匹配时先保存本地副本，再按当前结构重新创建；不会迁移旧表。</p>
+ * <p>只对当前 v13 schema 执行一次保留学习数据的精简迁移；其他旧版本拒绝启动，避免覆盖数据。</p>
  */
 public final class SqliteSchemaInitializer {
     public static final String SCHEMA_MARKER = "learn-agent-app-v2";
-    public static final int SCHEMA_VERSION = 13;
+    public static final int SCHEMA_VERSION = 14;
+    private static final int MIGRATED_SCHEMA_VERSION = 13;
     public static final String SCHEMA_SOURCE = "step-3-journey-bootstrap";
 
     private static final List<String> REQUIRED_TABLES = List.of(
@@ -34,9 +33,6 @@ public final class SqliteSchemaInitializer {
             "practice_attempt",
             "practice_evidence",
             "practice_assessment",
-            "project",
-            "project_milestone",
-            "project_evidence",
             "r2_sync_configuration");
 
     private final DataSource dataSource;
@@ -58,8 +54,10 @@ public final class SqliteSchemaInitializer {
                 connection.commit();
             } else {
                 int version = readSchemaVersion(connection);
-                if (version != SCHEMA_VERSION) {
-                    backupAndRecreateSchema(connection);
+                if (version == MIGRATED_SCHEMA_VERSION) {
+                    migrateVersion13To14(connection);
+                } else if (version != SCHEMA_VERSION) {
+                    throw new IllegalStateException("unsupported SQLite schema version: " + version);
                 } else {
                     connection.setAutoCommit(false);
                     verifySchema(connection);
@@ -68,6 +66,61 @@ public final class SqliteSchemaInitializer {
             }
         } catch (SQLException error) {
             throw new IllegalStateException("Unable to initialize the v2 SQLite schema", error);
+        }
+    }
+
+    private void migrateVersion13To14(Connection connection) throws SQLException {
+        backupDatabase(connection);
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("PRAGMA foreign_keys = OFF");
+        }
+        connection.setAutoCommit(false);
+        try {
+            execute(connection, "DELETE FROM practice_assessment WHERE practice_task_id IN "
+                    + "(SELECT id FROM practice_task WHERE type = 'CHOICE') OR practice_attempt_id IN "
+                    + "(SELECT id FROM practice_attempt WHERE practice_task_id IN "
+                    + "(SELECT id FROM practice_task WHERE type = 'CHOICE'))");
+            execute(connection, "DELETE FROM practice_evidence WHERE attempt_id IN "
+                    + "(SELECT id FROM practice_attempt WHERE practice_task_id IN "
+                    + "(SELECT id FROM practice_task WHERE type = 'CHOICE'))");
+            execute(connection, "DELETE FROM practice_attempt WHERE practice_task_id IN "
+                    + "(SELECT id FROM practice_task WHERE type = 'CHOICE')");
+            execute(connection, "DELETE FROM practice_task WHERE type = 'CHOICE'");
+            execute(connection, "DROP TABLE IF EXISTS project_evidence");
+            execute(connection, "DROP TABLE IF EXISTS project_milestone");
+            execute(connection, "DROP TABLE IF EXISTS project");
+
+            migrateVerificationPolicies(connection);
+            execute(connection, "ALTER TABLE practice_task DROP COLUMN choice_question");
+            execute(connection, "ALTER TABLE practice_task DROP COLUMN type");
+            execute(connection, "ALTER TABLE practice_evidence DROP COLUMN choice_correct");
+            execute(connection, "UPDATE schema_metadata SET schema_version = " + SCHEMA_VERSION + " WHERE id = 1");
+            verifySchema(connection);
+            connection.commit();
+        } catch (SQLException | RuntimeException error) {
+            try {
+                connection.rollback();
+            } catch (SQLException rollbackError) {
+                error.addSuppressed(rollbackError);
+            }
+            throw error;
+        } finally {
+            connection.setAutoCommit(true);
+            SqliteSupport.enableForeignKeys(connection);
+        }
+    }
+
+    private void migrateVerificationPolicies(Connection connection) throws SQLException {
+        try (PreparedStatement select = connection.prepareStatement(
+                "SELECT id, verification_policy FROM practice_task");
+             ResultSet tasks = select.executeQuery();
+             PreparedStatement update = connection.prepareStatement(
+                     "UPDATE practice_task SET verification_policy = ? WHERE id = ?")) {
+            while (tasks.next()) {
+                update.setString(1, SqliteJson.withoutChoiceRequirement(tasks.getString("verification_policy")));
+                update.setLong(2, tasks.getLong("id"));
+                update.executeUpdate();
+            }
         }
     }
 
@@ -88,29 +141,6 @@ public final class SqliteSchemaInitializer {
         verifyRequiredTables(connection);
         if (!tableExists(connection, "model_configuration")) {
             throw new IllegalStateException("recognized schema is missing table: model_configuration");
-        }
-    }
-
-    private void backupAndRecreateSchema(Connection connection) throws SQLException {
-        backupDatabase(connection);
-        try (Statement statement = connection.createStatement()) {
-            statement.execute("PRAGMA foreign_keys = OFF");
-        }
-        connection.setAutoCommit(false);
-        try {
-            dropExistingSchema(connection);
-            createSchema(connection);
-            connection.commit();
-        } catch (SQLException | RuntimeException error) {
-            try {
-                connection.rollback();
-            } catch (SQLException rollbackError) {
-                error.addSuppressed(rollbackError);
-            }
-            throw error;
-        } finally {
-            connection.setAutoCommit(true);
-            SqliteSupport.enableForeignKeys(connection);
         }
     }
 
@@ -139,26 +169,6 @@ public final class SqliteSchemaInitializer {
             }
         }
         return null;
-    }
-
-    private void dropExistingSchema(Connection connection) throws SQLException {
-        List<String> drops = new ArrayList<>();
-        try (Statement statement = connection.createStatement();
-             ResultSet result = statement.executeQuery(
-                     "SELECT type, name FROM sqlite_master "
-                             + "WHERE type IN ('view', 'table') AND name NOT LIKE 'sqlite_%' "
-                             + "ORDER BY CASE type WHEN 'view' THEN 0 ELSE 1 END")) {
-            while (result.next()) {
-                String type = result.getString("type").toUpperCase(Locale.ROOT);
-                String name = result.getString("name").replace("\"", "\"\"");
-                drops.add("DROP " + type + " IF EXISTS \"" + name + "\"");
-            }
-        }
-        for (String drop : drops) {
-            try (Statement statement = connection.createStatement()) {
-                statement.execute(drop);
-            }
-        }
     }
 
     private void verifyRequiredTables(Connection connection) throws SQLException {
@@ -281,12 +291,10 @@ public final class SqliteSchemaInitializer {
                     journey_id INTEGER NOT NULL REFERENCES learning_journey(id),
                     learn_unit_id INTEGER NOT NULL,
                     language_pack_id TEXT NOT NULL,
-                    type TEXT NOT NULL,
                     title TEXT NOT NULL,
                     description TEXT NOT NULL,
                     difficulty INTEGER NOT NULL CHECK (difficulty >= 0),
                     starter_template TEXT NOT NULL,
-                    choice_question TEXT,
                     verification_policy TEXT NOT NULL,
                     status TEXT NOT NULL CHECK (status IN ('OPEN', 'VERIFIED')),
                     created_at TEXT NOT NULL,
@@ -311,44 +319,10 @@ public final class SqliteSchemaInitializer {
                     runtime_result TEXT NOT NULL CHECK (runtime_result IN ('NOT_RUN', 'PASSED', 'FAILED')),
                     submitted_files TEXT NOT NULL,
                     verified_at TEXT,
-                    choice_correct INTEGER NOT NULL CHECK (choice_correct IN (0, 1)),
                     workspace_digest TEXT NOT NULL
                 )
                 """);
         createPracticeAssessmentTable(connection);
-        execute(connection, """
-                CREATE TABLE project (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    journey_id INTEGER NOT NULL UNIQUE REFERENCES learning_journey(id),
-                    title TEXT NOT NULL,
-                    status TEXT NOT NULL CHECK (status IN ('PLANNED', 'ACTIVE', 'COMPLETED')),
-                    created_at TEXT NOT NULL,
-                    completed_at TEXT,
-                    CHECK ((status = 'COMPLETED' AND completed_at IS NOT NULL)
-                        OR (status <> 'COMPLETED' AND completed_at IS NULL))
-                )
-                """);
-        execute(connection, """
-                CREATE TABLE project_milestone (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
-                    code TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    sequence INTEGER NOT NULL CHECK (sequence >= 0),
-                    status TEXT NOT NULL CHECK (status IN ('PENDING', 'IN_PROGRESS', 'COMPLETED')),
-                    UNIQUE (project_id, code)
-                )
-                """);
-        execute(connection, """
-                CREATE TABLE project_evidence (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    milestone_id INTEGER NOT NULL REFERENCES project_milestone(id) ON DELETE CASCADE,
-                    artifact_reference TEXT NOT NULL,
-                    verification_summary TEXT NOT NULL,
-                    passed INTEGER NOT NULL CHECK (passed IN (0, 1)),
-                    verified_at TEXT NOT NULL
-                )
-                """);
         createModelConfigurationTable(connection);
         createR2SyncConfigurationTable(connection);
         // Mastery 是 LearningPathItem 的只读投影，不另建可写的第二事实源。

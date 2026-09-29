@@ -8,9 +8,7 @@ import com.db117.learnagent.learning.domain.JourneyRepository;
 import com.db117.learnagent.learning.domain.LearnerRepository;
 import com.db117.learnagent.learning.domain.LearningJourney;
 import com.db117.learnagent.learning.domain.LearningJourneyRepository;
-import com.db117.learnagent.project.domain.ProjectRepository;
 import com.db117.learnagent.workspace.domain.LearningWorkspace;
-import com.db117.learnagent.workspace.domain.ProjectWorkspace;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -23,7 +21,6 @@ public final class WorkspaceApplicationService {
     private final LearnerRepository learnerRepository;
     private final JourneyRepository journeyRepository;
     private final LearningJourneyRepository learningJourneyRepository;
-    private final ProjectRepository projectRepository;
     private final LanguagePackCatalog languagePackCatalog;
     private final WorkspaceManager workspaceManager;
 
@@ -32,13 +29,11 @@ public final class WorkspaceApplicationService {
             LearnerRepository learnerRepository,
             JourneyRepository journeyRepository,
             LearningJourneyRepository learningJourneyRepository,
-            ProjectRepository projectRepository,
             LanguagePackCatalog languagePackCatalog,
             WorkspaceManager workspaceManager) {
         this.learnerRepository = learnerRepository;
         this.journeyRepository = journeyRepository;
         this.learningJourneyRepository = learningJourneyRepository;
-        this.projectRepository = projectRepository;
         this.languagePackCatalog = languagePackCatalog;
         this.workspaceManager = workspaceManager;
     }
@@ -67,20 +62,6 @@ public final class WorkspaceApplicationService {
         return ensureLearningWorkspace(journey, learnerId);
     }
 
-    /** 返回指定用户 Project 的已初始化 Workspace。 */
-    public ProjectWorkspace projectWorkspace(long projectId) {
-        long learnerId = currentLearnerId();
-        com.db117.learnagent.project.domain.Project project = projectRepository.findById(projectId)
-                .filter(value -> ownsLearningJourney(value.journeyId(), learnerId))
-                .orElseThrow(() -> LearningRequestException.notFound(
-                        "PROJECT_NOT_FOUND", "Project 不存在"));
-        try {
-            return workspaceManager.ensureProjectWorkspace(project.id());
-        } catch (IOException error) {
-            throw new WorkspaceInitializationException(error);
-        }
-    }
-
     private LearningWorkspace ensureLearningWorkspace(Journey journey, long learnerId) {
         LearningJourney learningJourney = learningJourneyRepository.findById(journey.learningJourneyId())
                 .filter(value -> value.learnerId() == learnerId)
@@ -107,12 +88,6 @@ public final class WorkspaceApplicationService {
                 .filter(value -> value.learnerId() == learnerId)
                 .orElseThrow(() -> LearningRequestException.notFound(
                         "JOURNEY_NOT_FOUND", "学习 Journey 不存在"));
-    }
-
-    private boolean ownsLearningJourney(long learningJourneyId, long learnerId) {
-        return learningJourneyRepository.findById(learningJourneyId)
-                .map(value -> value.learnerId() == learnerId)
-                .orElse(false);
     }
 
     private long currentLearnerId() {

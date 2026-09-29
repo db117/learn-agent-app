@@ -47,7 +47,7 @@ class TutorWorkspaceToolsTest {
                 manager,
                 new EmptyPracticeTaskRepository());
         WorkspaceApplicationService access = new WorkspaceApplicationService(
-                null, null, null, null, null, manager);
+                null, null, null, null, manager);
         TutorWorkspaceTools tools = new TutorWorkspaceTools(manager, access, runtime);
         Toolkit toolkit = new Toolkit();
 

@@ -19,12 +19,12 @@ class WorkspaceResourceTest {
     Path dataDir;
 
     @Test
-    void listsReadsAndWritesProjectFiles() throws IOException {
+    void listsReadsAndWritesLearningFiles() throws IOException {
         WorkspaceResource resource = resource();
-        resource.writeProjectFile(1, "src/index.ts", new WorkspaceContentRequest("中文"));
+        resource.writeLearningFile(1, "src/index.ts", new WorkspaceContentRequest("中文"));
 
-        assertEquals("src/index.ts", resource.listProjectFiles(1).getFirst().path());
-        WorkspaceFileResponse file = resource.readProjectFile(1, "src/index.ts");
+        assertEquals("src/index.ts", resource.listLearningFiles(1).getFirst().path());
+        WorkspaceFileResponse file = resource.readLearningFile(1, "src/index.ts");
         assertEquals("中文", file.content());
         assertEquals("中文".getBytes(java.nio.charset.StandardCharsets.UTF_8).length, file.size());
     }
@@ -32,12 +32,12 @@ class WorkspaceResourceTest {
     @Test
     void editorFileListUsesWorkspaceGitignoreRules() throws IOException {
         WorkspaceResource resource = resource();
-        resource.writeProjectFile(3, ".gitignore", new WorkspaceContentRequest("*.tmp\n!keep.tmp\n"));
-        resource.writeProjectFile(3, "hidden.tmp", new WorkspaceContentRequest("ignored"));
-        resource.writeProjectFile(3, "keep.tmp", new WorkspaceContentRequest("visible"));
-        resource.writeProjectFile(3, "src/index.ts", new WorkspaceContentRequest("visible"));
+        resource.writeLearningFile(3, ".gitignore", new WorkspaceContentRequest("*.tmp\n!keep.tmp\n"));
+        resource.writeLearningFile(3, "hidden.tmp", new WorkspaceContentRequest("ignored"));
+        resource.writeLearningFile(3, "keep.tmp", new WorkspaceContentRequest("visible"));
+        resource.writeLearningFile(3, "src/index.ts", new WorkspaceContentRequest("visible"));
 
-        List<String> paths = resource.listProjectFiles(3).stream()
+        List<String> paths = resource.listLearningFiles(3).stream()
                 .map(WorkspaceFileEntryResponse::path)
                 .toList();
 
@@ -58,12 +58,12 @@ class WorkspaceResourceTest {
     @Test
     void mapsUnsafeAndMissingFileRequests() throws IOException {
         WorkspaceResource resource = resource();
-        resource.writeProjectFile(2, ".env", new WorkspaceContentRequest("x"));
+        resource.writeLearningFile(2, ".env", new WorkspaceContentRequest("x"));
 
         assertThrows(WorkspaceRequestException.class,
-                () -> resource.readProjectFile(2, "../outside"));
+                () -> resource.readLearningFile(2, "../outside"));
         WorkspaceRequestException error = assertThrows(WorkspaceRequestException.class,
-                () -> resource.readProjectFile(2, "missing.txt"));
+                () -> resource.readLearningFile(2, "missing.txt"));
         assertEquals(404, error.status());
     }
 

@@ -12,11 +12,6 @@ import com.db117.learnagent.practice.domain.PracticeTask;
 import com.db117.learnagent.practice.domain.PracticeTaskStatus;
 import com.db117.learnagent.practice.domain.RuntimeResult;
 import com.db117.learnagent.practice.domain.VerificationPolicy;
-import com.db117.learnagent.project.domain.Project;
-import com.db117.learnagent.project.domain.ProjectEvidence;
-import com.db117.learnagent.project.domain.ProjectMilestone;
-import com.db117.learnagent.project.domain.ProjectMilestoneStatus;
-import com.db117.learnagent.project.domain.ProjectStatus;
 import com.db117.learnagent.shared.domain.DomainRuleViolation;
 import org.junit.jupiter.api.Test;
 
@@ -106,7 +101,6 @@ class Step2DomainTest {
                 100,
                 200,
                 "java",
-                "CODE",
                 "Fix it",
                 "Make the test pass",
                 1,
@@ -125,30 +119,6 @@ class Step2DomainTest {
         assertEquals(2, verified.attempts().size());
         assertThrows(DomainRuleViolation.class,
                 () -> verified.recordAttempt(PracticeAttempt.submit(passed, T0.plusSeconds(3))));
-    }
-
-    @Test
-    void projectCompletesOnlyAfterPassingMilestoneEvidence() {
-        Project project = Project.create(
-                100,
-                "Todo app",
-                List.of(ProjectMilestone.create("m1", "First milestone", 0)),
-                T0);
-        assertThrows(DomainRuleViolation.class, () -> project.startMilestone("m1"));
-
-        Project active = project.activate().startMilestone("m1");
-        Project failed = active.recordEvidence(
-                "m1",
-                new ProjectEvidence("workspace://todo", "tests failed", false, T0.plusSeconds(1)));
-        assertEquals(ProjectStatus.ACTIVE, failed.status());
-        assertEquals(ProjectMilestoneStatus.IN_PROGRESS, failed.milestones().get(0).status());
-
-        Project completed = failed.recordEvidence(
-                "m1",
-                new ProjectEvidence("workspace://todo", "tests passed", true, T0.plusSeconds(2)));
-        assertEquals(ProjectStatus.COMPLETED, completed.status());
-        assertEquals(ProjectMilestoneStatus.COMPLETED, completed.milestones().get(0).status());
-        assertEquals(T0.plusSeconds(2), completed.completedAt());
     }
 
     private LearningJourney journey() {

@@ -10,7 +10,6 @@
 
 - Learn：学习编程概念
 - Practice：在真实 Workspace 中写代码、编译、测试、诊断
-- Project：通过 Plan、Permission、MCP、Subagent 完成真实项目
 - Skill：按需加载 Agent 工作方法
 - Memory：记录长期偏好、背景与误区
 - Sandbox：隔离代码执行
@@ -45,7 +44,6 @@
 - `steps/06-learn-mode.md`
 - `steps/07-skills-memory.md`
 - `steps/08-sandbox-permission.md`
-- `steps/09-project-plan.md`
 - `steps/10-mcp.md`
 - `steps/11-subagents.md`
 - `steps/12-native-eval-polish.md`

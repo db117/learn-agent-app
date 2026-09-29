@@ -2,10 +2,10 @@
 
 ## Plan
 
-简单问题无需 Plan；真实项目使用 Plan。
+简单交互无需 Plan；需要拆解的多步学习或编码任务可以使用 Plan。
 
 ```text
-Build TypeScript REST API
+Implement a TypeScript practice task
 1. Initialize
 2. Domain model
 3. Persistence
@@ -14,7 +14,7 @@ Build TypeScript REST API
 6. Refactor
 ```
 
-`ProjectMilestone` 是 Domain，`Agent Plan` 是 Runtime。
+Plan 是 Agent Runtime 中的任务组织状态，不是 Learning Domain 的完成事实。
 
 ## Permission
 

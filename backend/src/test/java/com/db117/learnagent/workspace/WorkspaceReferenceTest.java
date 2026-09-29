@@ -10,6 +10,5 @@ class WorkspaceReferenceTest {
     @Test
     void exposesStableExternalReferenceWithoutHostPath() {
         assertEquals("learning:7", new WorkspaceReference(WorkspaceKind.LEARNING, 7).externalForm());
-        assertEquals("project:8", new WorkspaceReference(WorkspaceKind.PROJECT, 8).externalForm());
     }
 }

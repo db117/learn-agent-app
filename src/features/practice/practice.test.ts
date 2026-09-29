@@ -2,92 +2,29 @@ import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
 import {describe, expect, it, vi} from "vitest";
 import {PracticePanel} from "./PracticePanel";
-import {formatDiagnostic, sortDiagnostics} from "./practiceDiagnostics";
-import type {ChoiceQuestion, PracticeDiagnostic, PracticePanelProps} from "./practiceTypes";
-
-const diagnostics: PracticeDiagnostic[] = [
-    {
-        file: "src/main.ts",
-        line: 4,
-        column: 2,
-        code: "TS2322",
-        severity: "ERROR",
-        message: "Type 'string' is not assignable to type 'number'.",
-    },
-    {
-        file: "src/main.ts",
-        line: 2,
-        column: 1,
-        code: "TS6133",
-        severity: "WARNING",
-        message: "变量已声明但从未读取。",
-    },
-];
+import type {PracticePanelProps} from "./practiceTypes";
 
 function panelProps(overrides: Partial<PracticePanelProps> = {}): PracticePanelProps {
     return {
         files: [{path: "src/main.ts", size: 12, modifiedAt: "now"}],
-        selectedPath: null,
-        content: "",
+        selectedPath: "src/main.ts",
+        content: "export const answer = 42;",
         onSelectFile: vi.fn(),
         onContentChange: vi.fn(),
         onSave: vi.fn(),
-        onCompile: vi.fn(),
-        onTest: vi.fn(),
         onCreateFile: vi.fn(),
         ...overrides,
     };
 }
 
-describe("practice diagnostics", () => {
-    it("sorts without mutating input and formats source locations", () => {
-        const ordered = sortDiagnostics(diagnostics);
-        expect(ordered.map((diagnostic) => diagnostic.line)).toEqual([2, 4]);
-        expect(diagnostics[0].line).toBe(4);
-        expect(formatDiagnostic(ordered[0])).toContain("src/main.ts:2:1");
-        expect(formatDiagnostic(ordered[0])).toContain("TS6133");
-    });
-});
-
 describe("PracticePanel", () => {
-    it("renders workspace actions, file tree and diagnostics from props", () => {
-        const markup = renderToStaticMarkup(createElement(PracticePanel, panelProps({
-            diagnostics,
-            runtimeSummary: "failed to start COMPILE: pnpm.cmd",
-        })));
-        expect(markup).toContain("编译");
-        expect(markup).toContain("测试");
+    it("keeps the editable workspace and removes standalone compile and test actions", () => {
+        const markup = renderToStaticMarkup(createElement(PracticePanel, panelProps()));
+
+        expect(markup).toContain("src/main.ts");
         expect(markup).toContain("保存");
         expect(markup).toContain("新建文件");
-        expect(markup).toContain("main.ts");
-        expect(markup).toContain("src/main.ts:2:1");
-        expect(markup).toContain("TS2322");
-        expect(markup).toContain("failed to start COMPILE: pnpm.cmd");
-    });
-
-    it("shows the choice stage only after code verification", () => {
-        const choiceQuestion: ChoiceQuestion = {
-            taskId: 11,
-            title: "选择题：类型检查",
-            prompt: "TypeScript 的类型检查主要发生在哪里？",
-            options: [
-                {id: "a", label: "编译期"},
-                {id: "b", label: "运行时"},
-            ],
-        };
-        const lockedMarkup = renderToStaticMarkup(createElement(PracticePanel, panelProps({choiceQuestion})));
-        expect(lockedMarkup).toContain("代码练习");
-        expect(lockedMarkup).not.toContain("TypeScript 的类型检查主要发生在哪里？");
-
-        const markup = renderToStaticMarkup(createElement(PracticePanel, panelProps({
-            choiceQuestion,
-            codeVerified: true,
-        })));
-
-        expect(markup).toContain("CHOICE CHECK · 已解锁");
-        expect(markup).toContain("TypeScript 的类型检查主要发生在哪里？");
-        expect(markup).toContain('class="stored-choice-options"');
-        expect(markup).toContain("编译期");
-        expect(markup).not.toContain("correctOptionId");
+        expect(markup).not.toContain("编译");
+        expect(markup).not.toContain("测试");
     });
 });

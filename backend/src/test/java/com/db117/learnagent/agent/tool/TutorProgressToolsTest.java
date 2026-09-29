@@ -52,10 +52,10 @@ class TutorProgressToolsTest {
         String digest = workspaces.contentDigest(workspace);
         PracticeEvidence evidence = new PracticeEvidence(
                 true, true, 1, false, RuntimeResult.NOT_RUN, List.of("src/index.ts"),
-                Instant.parse("2026-01-01T00:00:30Z"), false, digest);
+                Instant.parse("2026-01-01T00:00:30Z"), digest);
         PracticeAttempt attempt = PracticeAttempt.submit(evidence, evidence.verifiedAt()).withId(31L);
         PracticeTask task = PracticeTask.create(
-                        1L, 1L, "typescript", "CODE", "代码练习", "理解变量", 1, "",
+                        1L, 1L, "typescript", "代码练习", "理解变量", 1, "",
                         new VerificationPolicy(true, true, false, false), evidence.verifiedAt())
                 .recordAttempt(PracticeAttempt.submit(evidence, evidence.verifiedAt()))
                 .withPersistedIds(21L, List.of(attempt));

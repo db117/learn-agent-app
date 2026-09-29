@@ -6,7 +6,7 @@ import java.util.Locale;
  * Workspace 的稳定身份。
  *
  * @param kind Workspace 的业务归属类型
- * @param ownerId 拥有该 Workspace 的 Journey 或 Project 主键
+ * @param ownerId 拥有该 Workspace 的 Journey 主键
  */
 public record WorkspaceReference(
         WorkspaceKind kind,

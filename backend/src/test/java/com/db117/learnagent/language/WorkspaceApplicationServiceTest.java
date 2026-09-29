@@ -11,9 +11,6 @@ import com.db117.learnagent.learning.domain.Learner;
 import com.db117.learnagent.learning.domain.LearnerRepository;
 import com.db117.learnagent.learning.domain.LearningJourney;
 import com.db117.learnagent.learning.domain.LearningJourneyRepository;
-import com.db117.learnagent.project.domain.Project;
-import com.db117.learnagent.project.domain.ProjectMilestone;
-import com.db117.learnagent.project.domain.ProjectRepository;
 import com.db117.learnagent.workspace.api.WorkspaceContentRequest;
 import com.db117.learnagent.workspace.api.WorkspaceResource;
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
@@ -70,50 +67,8 @@ class WorkspaceApplicationServiceTest {
         assertEquals(404, error.status());
     }
 
-    @Test
-    void resolvesProjectWorkspaceThroughItsLearningJourneyOwner() throws Exception {
-        Learner learner = new Learner(1L, "Alice", "TypeScript developer", CREATED_AT);
-        Journey journey = new Journey(
-                2L, learner.id(), "Build a TypeScript app", JourneyStatus.ACTIVE,
-                CREATED_AT, null, 3L, true);
-        LearningJourney learningJourney = learningJourney(learner.id());
-        Project project = Project.create(learningJourney.id(), "Project", List.of(
-                        ProjectMilestone.create("first", "First milestone", 0)), CREATED_AT)
-                .withPersistedIds(8L, List.of(
-                        ProjectMilestone.create("first", "First milestone", 0).withId(9L)));
-        WorkspaceApplicationService service = service(learner, journey, learningJourney, project);
-
-        com.db117.learnagent.workspace.domain.ProjectWorkspace workspace = service.projectWorkspace(project.id());
-
-        assertEquals(dataDir.resolve("projects/8/workspace"), workspace.root());
-    }
-
-    @Test
-    void rejectsProjectWorkspaceFromAnotherLearner() {
-        Learner learner = new Learner(1L, "Alice", "TypeScript developer", CREATED_AT);
-        Journey journey = new Journey(
-                2L, learner.id(), "Build a TypeScript app", JourneyStatus.ACTIVE,
-                CREATED_AT, null, 3L, true);
-        LearningJourney otherLearningJourney = learningJourney(2L);
-        Project project = Project.create(otherLearningJourney.id(), "Private Project", List.of(
-                        ProjectMilestone.create("first", "First milestone", 0)), CREATED_AT)
-                .withPersistedIds(8L, List.of(
-                        ProjectMilestone.create("first", "First milestone", 0).withId(9L)));
-        WorkspaceApplicationService service = service(learner, journey, otherLearningJourney, project);
-
-        LearningRequestException error = assertThrows(LearningRequestException.class,
-                () -> service.projectWorkspace(project.id()));
-
-        assertEquals(404, error.status());
-    }
-
     private WorkspaceApplicationService service(
             Learner learner, Journey journey, LearningJourney learningJourney) {
-        return service(learner, journey, learningJourney, null);
-    }
-
-    private WorkspaceApplicationService service(
-            Learner learner, Journey journey, LearningJourney learningJourney, Project project) {
         LearnerRepository learnerRepository = new LearnerRepository() {
             @Override
             public Learner save(Learner value) {
@@ -183,27 +138,10 @@ class WorkspaceApplicationServiceTest {
                 return Optional.empty();
             }
         };
-        ProjectRepository projectRepository = new ProjectRepository() {
-            @Override
-            public Project save(Project value) {
-                return value;
-            }
-
-            @Override
-            public Optional<Project> findById(long id) {
-                return project != null && project.id() == id ? Optional.of(project) : Optional.empty();
-            }
-
-            @Override
-            public Optional<Project> findByJourneyId(long journeyId) {
-                return Optional.empty();
-            }
-        };
         return new WorkspaceApplicationService(
                 learnerRepository,
                 journeyRepository,
                 learningJourneyRepository,
-                projectRepository,
                 new LanguagePackCatalog(List.of(new TypeScriptLanguagePack())),
                 new WorkspaceManager(runtimeConfig()));
     }

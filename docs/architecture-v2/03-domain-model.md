@@ -33,8 +33,6 @@ Learner 1 ── * Journey 1 ── 0..1 LearningJourney ── * LearnUnit
 PracticeTask
 PracticeAttempt
 PracticeEvidence
-ChoiceQuestion
-ChoiceOption
 ```
 
 `PracticeTask` 回答： **用什么任务练？**
@@ -66,22 +64,15 @@ lintPassed
 runtimeResult
 submittedFiles
 verifiedAt
-choiceCorrect
 ```
 
-## Project Domain
-
-```text
-Project
-ProjectMilestone
-ProjectEvidence
-```
-
-注意：`ProjectMilestone` 属于 Domain；`Agent Plan` 属于 Runtime，二者不等价。
+PracticeTask 只用于编码练习。PracticeEvidence 保存编译、测试等客观结果，供 Tutor 诊断和评估学习情况；客观检查通过本身不代表
+LearnUnit 已掌握，也不自动推进路径。Tutor 评估学习者已准备好继续后，由学习者确认，Learning Domain 再更新学习进度。
 
 ## Mastery
 
-Mastery 必须通过确定性策略计算；当前实现只使用通过的 PracticeEvidence。
+Mastery 由 Learning Domain 管理。Tutor 的学习评估与客观 PracticeEvidence 是决策依据，但 Tutor 不直接写 mastery 或
+completion。
 
 Agent 可以提供分析，但不能直接写入 mastery 状态。
 

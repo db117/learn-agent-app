@@ -19,19 +19,14 @@ agent/
 journeys/{journeyId}/
   workspace/
   artifacts/
-
-projects/{projectId}/
-  workspace/
-  artifacts/
 ```
 
-## 三类 Workspace
+## 两类 Workspace
 
 - Agent Workspace：Agent 能力与长期上下文。
-- Learning Workspace：Practice 代码。
-- Project Workspace：完整项目代码。
+- Learning Workspace：当前 Journey 的 Practice 代码及其项目目录。
 
-三者不能混用。
+Agent Workspace 与 Learning Workspace 不能混用。Practice 工作区按 Journey 隔离。
 
 ## ExecutionEnvironment
 
@@ -66,6 +61,7 @@ Domain Tool：`get_learning_context`、`get_current_unit`、`get_progress`、`ve
 第一语言 TypeScript 使用：Node、pnpm、tsc、Vitest。
 
 Step 5 的当前 LocalExecutionEnvironment 将 compile、run_tests 和 Workspace 内固定脚本的 run_program
-用于 Practice 验证，并为 TutorAgent 的可验证项目练习提供固定的 npm 初始化、TypeScript 安装和项目编译操作；这些操作
+用于 Practice 验证。initialize_npm_project、install_typescript 和 compile_project 是 Learning Workspace 内
+TypeScript 项目目录的固定操作；compile_project 不是独立 Project 模式，也不代表 ProjectWorkspace。这些操作
 仍然不接受任意 shell。lint 尚未实现。Practice 验证不会把未执行的 lint/runtime 检查写入通过证据，要求这些检查的任务
 会在应用边界被明确拒绝。Sandbox、Permission 和更完整的任务运行契约属于后续步骤。
