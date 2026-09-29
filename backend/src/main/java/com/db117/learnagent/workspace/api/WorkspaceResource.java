@@ -1,11 +1,17 @@
 package com.db117.learnagent.workspace.api;
 
 import com.db117.learnagent.workspace.application.WorkspaceApplicationService;
+import com.db117.learnagent.workspace.application.WorkspaceIgnoreRules;
 import com.db117.learnagent.workspace.application.WorkspaceInitializationException;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.Workspace;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
 import java.io.IOException;
@@ -100,7 +106,9 @@ public class WorkspaceResource {
 
     private List<WorkspaceFileEntryResponse> list(Workspace workspace) {
         try {
-            return workspaces.listFiles(workspace).stream().map(WorkspaceFileEntryResponse::from).toList();
+            return WorkspaceIgnoreRules.filter(workspace.root(), workspaces.listFiles(workspace)).stream()
+                    .map(WorkspaceFileEntryResponse::from)
+                    .toList();
         } catch (IllegalArgumentException error) {
             throw WorkspaceRequestException.badRequest(error);
         } catch (NoSuchFileException error) {

@@ -18,11 +18,15 @@ import org.sqlite.SQLiteDataSource;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -62,7 +66,30 @@ class JourneyTransferSyncTest {
             Journey sourceJourney = sourceJourneys.save(Journey.create(sourceLearner.id(), "Learn R2 sync", CREATED_AT));
             sourceJourneys.selectCurrent(sourceJourney.id(), sourceLearner.id());
             WorkspaceManager sourceWorkspaces = workspaceManager(sourceData);
-            sourceWorkspaces.writeFile(sourceWorkspaces.learningWorkspace(sourceJourney.id()), ".env", "TOKEN=local");
+            com.db117.learnagent.workspace.domain.LearningWorkspace sourceWorkspace =
+                    sourceWorkspaces.learningWorkspace(sourceJourney.id());
+            sourceWorkspaces.writeFile(sourceWorkspace, ".env", "TOKEN=local");
+            Files.createDirectories(tempDirectory.resolve(".git"));
+            Files.writeString(tempDirectory.resolve(".gitignore"), "parent.secret\n");
+            Files.writeString(sourceWorkspace.root().resolve(".gitignore"),
+                    "*.tmp\n!keep.tmp\nsecret[0-9].txt\n**/deep.secret\nbuild/\n!build/\nbuild/private/\n");
+            Files.writeString(sourceWorkspace.root().resolve("ignored.tmp"), "omit");
+            Files.writeString(sourceWorkspace.root().resolve("keep.tmp"), "keep");
+            Files.writeString(sourceWorkspace.root().resolve("parent.secret"), "omit");
+            Files.writeString(sourceWorkspace.root().resolve("secret4.txt"), "omit");
+            Files.createDirectories(sourceWorkspace.root().resolve("build/private"));
+            Files.writeString(sourceWorkspace.root().resolve("build/visible.txt"), "keep");
+            Files.writeString(sourceWorkspace.root().resolve("build/private/hidden.txt"), "omit");
+            Files.createDirectories(sourceWorkspace.root().resolve("nested"));
+            Files.createDirectories(sourceWorkspace.root().resolve("nested/.git"));
+            Files.writeString(sourceWorkspace.root().resolve("nested/.gitignore"), "local.txt\nkeep.tmp\n");
+            Files.writeString(sourceWorkspace.root().resolve("nested/local.txt"), "omit");
+            Files.writeString(sourceWorkspace.root().resolve("nested/keep.tmp"), "omit by deeper rule");
+            Files.writeString(sourceWorkspace.root().resolve("nested/deep.secret"), "omit");
+            Files.writeString(sourceWorkspace.root().resolve("nested/parent.secret"), "inner repository");
+            Files.writeString(sourceWorkspace.root().resolve("nested/visible.txt"), "keep");
+            assertTrue(sourceWorkspaces.listFiles(sourceWorkspace).stream()
+                    .anyMatch(file -> file.path().equals("ignored.tmp")));
 
             R2SyncService r2 = new R2SyncService(source);
             r2.save(new R2SyncService.ConfigurationRequest(
@@ -73,6 +100,25 @@ class JourneyTransferSyncTest {
             assertFalse(r2.configuration().toString().contains("secret-key"));
             JourneyTransferService sourceTransfer = transferService(source, sourceWorkspaces);
             byte[] archive = sourceTransfer.exportAll();
+            Set<String> archiveEntries = new HashSet<String>();
+            try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(archive))) {
+                ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null) {
+                    archiveEntries.add(entry.getName());
+                }
+            }
+            assertTrue(archiveEntries.stream().anyMatch(path -> path.endsWith("/.gitignore")));
+            assertTrue(archiveEntries.stream().anyMatch(path -> path.endsWith("/keep.tmp")));
+            assertTrue(archiveEntries.stream().anyMatch(path -> path.endsWith("/build/visible.txt")));
+            assertTrue(archiveEntries.stream().anyMatch(path -> path.endsWith("/nested/visible.txt")));
+            assertTrue(archiveEntries.stream().anyMatch(path -> path.endsWith("/nested/parent.secret")));
+            assertFalse(archiveEntries.stream().anyMatch(path -> path.endsWith("/ignored.tmp")));
+            assertFalse(archiveEntries.stream().anyMatch(path -> path.endsWith("/workspace/parent.secret")));
+            assertFalse(archiveEntries.stream().anyMatch(path -> path.endsWith("/secret4.txt")));
+            assertFalse(archiveEntries.stream().anyMatch(path -> path.endsWith("/build/private/hidden.txt")));
+            assertFalse(archiveEntries.stream().anyMatch(path -> path.endsWith("/nested/local.txt")));
+            assertFalse(archiveEntries.stream().anyMatch(path -> path.endsWith("/nested/keep.tmp")));
+            assertTrue(archiveEntries.stream().anyMatch(path -> path.endsWith("/nested/deep.secret")));
             try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(archive))) {
                 zip.getNextEntry();
                 String manifest = new String(zip.readAllBytes(), StandardCharsets.UTF_8);
@@ -115,8 +161,12 @@ class JourneyTransferSyncTest {
             assertEquals(1, replacementPreview.conflicts().size());
             assertEquals(0, replacementPreview.additionCount());
             assertThrows(OverwriteConfirmationRequired.class, () -> destinationTransfer.importAll(archive, false));
+            Path importedWorkspaceRoot = destinationWorkspaces.learningWorkspace(current.id()).root();
+            Files.writeString(importedWorkspaceRoot.resolve(".gitignore"), "local-only.tmp\n");
+            Files.writeString(importedWorkspaceRoot.resolve("local-only.tmp"), "delete on full replace");
             destinationTransfer.importAll(archive, true);
             assertEquals(2, destinationJourneys.findByLearnerId(importedLearner.id()).size());
+            assertFalse(Files.exists(importedWorkspaceRoot.resolve("local-only.tmp")));
         }
     }
 

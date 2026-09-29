@@ -419,7 +419,10 @@ export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(func
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
             });
-            if (!response.ok) throw new Error("Practice 验证请求失败");
+            if (!response.ok) {
+                const error = await response.json().catch(() => null) as { message?: string } | null;
+                throw new Error(error?.message ?? `Practice 验证请求失败（${response.status}）`);
+            }
             const result = await response.json() as VerifyResponse;
             setCodeVerified(result.verified);
             setFeedback("检查结果已保存，正在请 Tutor 综合代码和理解情况评估。");
@@ -513,6 +516,7 @@ export const PracticeWorkspace = forwardRef<PracticeWorkspaceHandle, Props>(func
                 {editorExpanded ? "收起内置编辑器" : "展开内置编辑器"}
             </button>
         </div>
+        {!editorExpanded && feedback && <p className="form-feedback" role="alert">{feedback}</p>}
         {assessment && (
             <section className={`practice-assessment ${assessment.verdict === "READY" ? "ready" : "continue"}`}
                      aria-labelledby="practice-assessment-title">

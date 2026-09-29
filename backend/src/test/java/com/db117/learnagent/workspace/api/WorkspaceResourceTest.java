@@ -7,9 +7,12 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorkspaceResourceTest {
     @TempDir
@@ -24,6 +27,24 @@ class WorkspaceResourceTest {
         WorkspaceFileResponse file = resource.readProjectFile(1, "src/index.ts");
         assertEquals("中文", file.content());
         assertEquals("中文".getBytes(java.nio.charset.StandardCharsets.UTF_8).length, file.size());
+    }
+
+    @Test
+    void editorFileListUsesWorkspaceGitignoreRules() throws IOException {
+        WorkspaceResource resource = resource();
+        resource.writeProjectFile(3, ".gitignore", new WorkspaceContentRequest("*.tmp\n!keep.tmp\n"));
+        resource.writeProjectFile(3, "hidden.tmp", new WorkspaceContentRequest("ignored"));
+        resource.writeProjectFile(3, "keep.tmp", new WorkspaceContentRequest("visible"));
+        resource.writeProjectFile(3, "src/index.ts", new WorkspaceContentRequest("visible"));
+
+        List<String> paths = resource.listProjectFiles(3).stream()
+                .map(WorkspaceFileEntryResponse::path)
+                .toList();
+
+        assertTrue(paths.contains(".gitignore"));
+        assertTrue(paths.contains("keep.tmp"));
+        assertTrue(paths.contains("src/index.ts"));
+        assertFalse(paths.contains("hidden.tmp"));
     }
 
     @Test

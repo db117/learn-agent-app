@@ -85,9 +85,11 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    void hidesDependenciesAndCachesFromTheWorkspaceFileList() throws IOException {
+    void hidesDependenciesCachesAndGitMetadataFromWorkspaceOperations() throws IOException {
         WorkspaceManager manager = manager();
         com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(12, new TypeScriptLanguagePack());
+        Files.createDirectories(workspace.root().resolve(".git"));
+        Files.write(workspace.root().resolve(".git/index"), new byte[]{(byte) 0xff});
         Files.createDirectories(workspace.root().resolve("node_modules/.bin"));
         Files.writeString(workspace.root().resolve("node_modules/.bin/tool"), "tool");
         Files.createDirectories(workspace.root().resolve("src/.cache"));
@@ -105,6 +107,7 @@ class WorkspaceManagerTest {
                 "vitest.config.mjs"), manager.listFiles(workspace).stream()
                 .map(WorkspaceFileEntry::path)
                 .toList());
+        assertEquals(64, manager.contentDigest(workspace).length());
     }
 
     @Test

@@ -32,8 +32,8 @@ import java.util.stream.Stream;
 @ApplicationScoped
 public final class WorkspaceManager {
     private static final long MAX_FILE_BYTES = 2L * 1024 * 1024;
-    private static final Set<String> REBUILDABLE_DIRECTORIES = Set.of(
-            "node_modules", ".venv", ".cache", ".vite", ".next", ".turbo", ".parcel-cache",
+    private static final Set<String> IGNORED_DIRECTORIES = Set.of(
+            ".git", "node_modules", ".venv", ".cache", ".vite", ".next", ".turbo", ".parcel-cache",
             ".pytest_cache", "__pycache__");
     private final RuntimeConfig config;
 
@@ -99,7 +99,7 @@ public final class WorkspaceManager {
         ensureManagedRootHasNoSymlink(workspace.root());
         try (Stream<Path> paths = Files.walk(workspace.root())) {
             return paths.filter(path -> !path.equals(workspace.root()))
-                    .filter(path -> !isDependencyPath(workspace, path))
+                    .filter(path -> !isIgnoredPath(workspace, path))
                     .filter(path -> isRegularNonSymlink(workspace, path))
                     .map(path -> entry(workspace, path))
                     .sorted(Comparator.comparing(WorkspaceFileEntry::path))
@@ -347,13 +347,13 @@ public final class WorkspaceManager {
         }
     }
 
-    private static boolean isDependencyPath(Workspace workspace, Path path) {
+    private static boolean isIgnoredPath(Workspace workspace, Path path) {
         Path relative = workspace.root().relativize(path);
         if (relative.getNameCount() == 0) {
             return false;
         }
         for (Path part : relative) {
-            if (REBUILDABLE_DIRECTORIES.contains(part.toString())) {
+            if (IGNORED_DIRECTORIES.contains(part.toString())) {
                 return true;
             }
         }

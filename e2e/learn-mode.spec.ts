@@ -64,8 +64,19 @@ test("Tutor assessment waits for learner confirmation before advancing Learn Mod
     await replaceEditor(page, 'export const answer: number = "broken";');
     await page.getByRole("button", {name: "保存", exact: true}).click();
     await expect(page.getByRole("button", {name: "保存", exact: true})).toBeDisabled();
-    await page.locator(".practice-workspace-controls")
-        .getByRole("button", {name: "提交检查", exact: true}).click();
+    await page.getByRole("button", {name: "收起内置编辑器", exact: true}).click();
+    await page.route("**/practice/verify", (route) => route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({code: "CHECK_UNAVAILABLE", message: "检查暂不可用"}),
+    }));
+    const submitCheck = page.locator(".practice-workspace-controls")
+        .getByRole("button", {name: "提交检查", exact: true});
+    await submitCheck.click();
+    await expect(page.getByRole("alert")).toContainText("检查暂不可用");
+    await page.unroute("**/practice/verify");
+    await expect(submitCheck).toBeEnabled();
+    await submitCheck.click();
 
     const assessment = page.locator(".practice-assessment.ready");
     await expect(assessment).toBeVisible({timeout: 120_000});

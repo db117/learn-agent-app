@@ -1,7 +1,9 @@
 package com.db117.learnagent.transfer.application;
 
+import com.db117.learnagent.workspace.application.WorkspaceIgnoreRules;
 import com.db117.learnagent.workspace.application.WorkspaceManager;
 import com.db117.learnagent.workspace.domain.Workspace;
+import com.db117.learnagent.workspace.domain.WorkspaceFileEntry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.runtime.annotations.RegisterForReflection;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -332,8 +334,9 @@ public class JourneyTransferService {
         if (Files.notExists(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
             return List.of();
         }
+        List<WorkspaceFileEntry> workspaceFiles = WorkspaceIgnoreRules.filter(root, workspaces.listFiles(workspace));
         ArrayList<String> paths = new ArrayList<String>();
-        for (com.db117.learnagent.workspace.domain.WorkspaceFileEntry entry : workspaces.listFiles(workspace)) {
+        for (WorkspaceFileEntry entry : workspaceFiles) {
             String archivePath = workspaceEntry(portableId, kind, entry.path());
             if (destination.putIfAbsent(archivePath, workspaces.readBytes(workspace, entry.path())) != null) {
                 throw new IllegalArgumentException("Workspace 中存在重复的迁移路径");
