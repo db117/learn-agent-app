@@ -1,6 +1,13 @@
 package com.db117.learnagent.agent.application;
 
-import com.db117.learnagent.agent.api.*;
+import com.db117.learnagent.agent.api.CreateTutorSessionRequest;
+import com.db117.learnagent.agent.api.SendTutorMessageRequest;
+import com.db117.learnagent.agent.api.TutorCancelResponse;
+import com.db117.learnagent.agent.api.TutorEvent;
+import com.db117.learnagent.agent.api.TutorEventType;
+import com.db117.learnagent.agent.api.TutorMessage;
+import com.db117.learnagent.agent.api.TutorSessionMode;
+import com.db117.learnagent.agent.api.TutorSessionResponse;
 import com.db117.learnagent.agent.runtime.TutorAgentRuntime;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -9,7 +16,11 @@ import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.event.AgentEvent;
 import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.event.TextBlockDeltaEvent;
-import io.agentscope.core.message.*;
+import io.agentscope.core.message.AssistantMessage;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.MsgRole;
+import io.agentscope.core.message.TextBlock;
+import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentState;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
@@ -22,7 +33,13 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -80,6 +97,7 @@ public class TutorSessionService {
                 sessionId,
                 state.isPresent(),
                 context.currentLearnUnitCode(),
+                context.mode() == TutorSessionMode.LEARNING && !context.currentContent().isBlank(),
                 context.mode(),
                 state.map(this::publicMessages).orElseGet(List::of));
     }

@@ -175,6 +175,79 @@ const plan = {
     }],
 };
 
+test("从对象存储同步已有 LearnUnit 内容时不请求 Tutor 生成", async ({page}) => {
+    let tutorMessageRequestCount = 0;
+    page.on("request", (request) => {
+        const requestPath = new URL(request.url()).pathname;
+        if (request.method() === "POST" && /^\/api\/tutor\/sessions\/[^/]+\/messages$/.test(requestPath)) {
+            tutorMessageRequestCount += 1;
+        }
+    });
+
+    const learner = await page.request.put(`${backend}/api/learner`, {
+        data: {backgroundSummary: "TypeScript 学习者"},
+    });
+    expect(learner.ok()).toBeTruthy();
+    await page.goto("/");
+    await expect(page.getByRole("button", {name: "数据迁移"})).toBeVisible();
+
+    const created = await page.request.post(`${backend}/api/journeys`, {
+        data: {goalDescription: "复用已有的 LearnUnit 内容"},
+    });
+    expect(created.ok()).toBeTruthy();
+    const journey = await created.json() as { id: number };
+    try {
+        const confirmed = await page.request.post(`${backend}/api/journeys/${journey.id}/confirm-plan`, {
+            data: {plan: JSON.stringify(plan)},
+        });
+        expect(confirmed.ok()).toBeTruthy();
+        const databasePath = await databasePathForJourney(page, journey.id);
+        withDatabase(databasePath, (database) => {
+            database.prepare(`
+                UPDATE learn_unit SET content = ?
+                WHERE journey_id = (SELECT learning_journey_id FROM journey WHERE id = ?) AND code = ?
+            `).run("## Concept\n已有讲解。\n\n## Example\nconst answer = 42;\n\n## Practice\n定义一个变量。", journey.id, "variables");
+        });
+        const archiveResponse = await page.request.get(`${backend}/api/transfer/journeys`);
+        expect(archiveResponse.ok()).toBeTruthy();
+        const archive = await archiveResponse.body();
+
+        await page.route(`${backend}/api/transfer/r2/config`, (route) => route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+                configured: true,
+                endpoint: "https://objects.example.com",
+                region: "auto",
+                bucketName: "learn-app",
+                accessKeyId: "browser-test",
+            }),
+        }));
+        await page.route(`${backend}/api/transfer/r2/status`, (route) => route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({configured: true, remoteLastModified: "2026-09-29T00:00:00Z"}),
+        }));
+        await page.route(`${backend}/api/transfer/r2/download`, (route) => route.fulfill({
+            status: 200,
+            contentType: "application/zip",
+            body: archive,
+        }));
+
+        await page.getByRole("button", {name: "数据迁移"}).click();
+        await page.getByRole("button", {name: "从对象存储同步到本机"}).click();
+        await expect(page.getByRole("heading", {name: "确认同步到本机"})).toBeVisible();
+        await page.getByRole("button", {name: "确认同步到本机"}).click();
+        await expect(page.getByRole("status").filter({hasText: "从对象存储同步完成"})).toBeVisible();
+        await expect(page.getByText("当前 LearnUnit：variables")).toBeVisible();
+        await page.waitForTimeout(250);
+        expect(tutorMessageRequestCount).toBe(0);
+    } finally {
+        const databasePath = await databasePathForJourney(page, journey.id);
+        withDatabase(databasePath, (database) => deleteJourneyData(database, journey.id));
+    }
+});
+
 test("Journey 数据和模型配置可以从文件导出并导入", async ({page}) => {
     const learner = await page.request.put(`${backend}/api/learner`, {
         data: {backgroundSummary: "TypeScript 学习者"},
@@ -292,6 +365,7 @@ test("Journey 数据和模型配置可以从文件导出并导入", async ({page
         mimeType: "application/zip",
         buffer: journeyArchive,
     });
+    await page.getByRole("button", {name: "确认导入"}).click();
     await expect(page.getByRole("status").filter({hasText: "导入完成"})).toBeVisible();
 
     const bootstrap = await page.request.get(`${backend}/api/bootstrap`);
@@ -396,12 +470,12 @@ test("Journey 数据和模型配置可以从文件导出并导入", async ({page
         database.prepare("UPDATE project SET title = '目标设备上的项目改动' WHERE id = ?")
             .run(importedProject.project!.id);
     });
-    page.once("dialog", (dialog) => void dialog.accept());
     await page.locator("#journey-transfer-file").setInputFiles({
         name: "journeys.zip",
         mimeType: "application/zip",
         buffer: journeyArchive,
     });
+    await page.getByRole("button", {name: "确认导入"}).click();
     await expect(page.getByRole("status").filter({hasText: "导入完成"})).toBeVisible();
 
     const restoredProgress = await page.request.get(
@@ -447,12 +521,12 @@ test("Journey 数据和模型配置可以从文件导出并导入", async ({page
         database.prepare("UPDATE project SET title = '取消覆盖时的本地项目' WHERE id = ?")
             .run(replacedProject!.id);
     });
-    page.once("dialog", (dialog) => void dialog.dismiss());
     await page.locator("#journey-transfer-file").setInputFiles({
         name: "journeys.zip",
         mimeType: "application/zip",
         buffer: journeyArchive,
     });
+    await page.getByRole("button", {name: "取消", exact: true}).click();
     await expect(page.getByRole("status").filter({hasText: "已取消导入"})).toBeVisible();
     const canceled = await page.request.get(
         `${backend}/api/journeys/${importedJourney!.id}/workspace/files/notes.txt`,
@@ -470,6 +544,38 @@ test("Journey 数据和模型配置可以从文件导出并导入", async ({page
         database.prepare("SELECT title FROM project WHERE id = ?")
             .get(replacedProject!.id) as { title: string });
     expect(canceledProject.title).toBe("取消覆盖时的本地项目");
+
+    await page.route(`${backend}/api/transfer/r2/config`, (route) => route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+            configured: true,
+            endpoint: "https://objects.example.com",
+            region: "auto",
+            bucketName: "learn-app",
+            accessKeyId: "browser-test",
+        }),
+    }));
+    await page.route(`${backend}/api/transfer/r2/status`, (route) => route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({configured: true, remoteLastModified: "2026-09-29T00:00:00Z"}),
+    }));
+    await page.route(`${backend}/api/transfer/r2/download`, (route) => route.fulfill({
+        status: 200,
+        contentType: "application/zip",
+        body: journeyArchive,
+    }));
+    await page.getByRole("button", {name: "关闭数据迁移"}).click();
+    await page.getByRole("button", {name: "数据迁移"}).click();
+    await page.getByRole("button", {name: "从对象存储同步到本机"}).click();
+    await expect(page.getByRole("heading", {name: "确认同步到本机"})).toBeVisible();
+    await page.getByRole("button", {name: "取消", exact: true}).click();
+    await expect(page.getByRole("status").filter({hasText: "已取消从对象存储同步"})).toBeVisible();
+    await page.getByRole("button", {name: "从对象存储同步到本机"}).click();
+    await expect(page.getByRole("button", {name: "确认同步到本机"})).toBeVisible();
+    await page.getByRole("button", {name: "确认同步到本机"}).click();
+    await expect(page.getByRole("status").filter({hasText: "从对象存储同步完成"})).toBeVisible();
 
     const configWrite = await page.request.put(`${backend}/api/model-config`, {
         data: {

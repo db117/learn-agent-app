@@ -118,6 +118,21 @@
     padding-top: 0.15rem;
 }
 
+.model-settings-confirmation {
+    display: grid;
+    gap: 0.85rem;
+    margin-top: 1.35rem;
+}
+
+.model-settings-confirmation h3,
+.model-settings-confirmation p {
+    margin: 0;
+}
+
+.model-settings-confirmation-message {
+    white-space: pre-wrap;
+}
+
 :root[data-theme="light"] .model-settings-dialog {
     border-color: var(--light-border);
     background: var(--light-surface);

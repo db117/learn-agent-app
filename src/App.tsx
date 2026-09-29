@@ -410,6 +410,7 @@ export default function App() {
                 sessionId: string;
                 restored: boolean;
                 currentLearnUnitCode: string | null;
+                currentLearnUnitHasContent: boolean;
                 mode: SessionMode;
                 messages: TutorMessage[];
             };
@@ -417,7 +418,9 @@ export default function App() {
             setSessionMode(session.mode);
             setCurrentLearnUnit(session.currentLearnUnitCode);
             setMessages(session.messages);
-            setPendingLearningPrompt(session.mode === "LEARNING" && session.messages.length === 0);
+            setPendingLearningPrompt(session.mode === "LEARNING"
+                && session.messages.length === 0
+                && !session.currentLearnUnitHasContent);
             setActivity(session.restored ? "已恢复 Tutor Session" : "Tutor Session 已准备");
         } catch (requestError) {
             if (targetKey && sessionTargetRef.current === targetKey) sessionTargetRef.current = null;

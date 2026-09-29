@@ -12,6 +12,9 @@ type Preview = {
     importedCurrentJourneyGoal: string | null;
 };
 type ImportResult = { added: string[]; replaced: string[] };
+type PendingTransferConfirmation =
+    | { operation: "upload" }
+    | { operation: "download" | "import"; archive: ArrayBuffer; preview: Preview };
 type ObjectStorageConfiguration = {
     configured: boolean;
     endpoint: string | null;
@@ -53,7 +56,7 @@ function formatLastModified(value: string | null) {
     return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-function importConfirmation(preview: Preview, action = "导入") {
+function importConfirmation(preview: Preview) {
     const learnerAction = preview.learnerWillBeReplaced ? "现有 Learner 资料将被覆盖" : "将导入 Learner 资料";
     const learnerName = preview.importedLearnerDisplayName ?? "未命名 Learner";
     const currentJourney = preview.importedCurrentJourneyGoal
@@ -70,7 +73,6 @@ function importConfirmation(preview: Preview, action = "导入") {
         currentJourney,
         conflicts,
         "本机独有的 Journey 会保留。",
-        `确认继续${action}？`,
     ].join("\n\n");
 }
 
@@ -108,6 +110,7 @@ export function DataTransferDialog({
     onBeforeSync: (operation: "upload" | "download") => Promise<boolean>;
 }) {
     const dialogRef = useRef<HTMLDialogElement>(null);
+    const confirmationHeadingRef = useRef<HTMLHeadingElement>(null);
     const [busy, setBusy] = useState(false);
     const [status, setStatus] = useState("");
     const [error, setError] = useState("");
@@ -115,6 +118,7 @@ export function DataTransferDialog({
     const [r2Configuration, setR2Configuration] = useState(EMPTY_OBJECT_STORAGE_CONFIGURATION);
     const [remoteLastModified, setRemoteLastModified] = useState<string | null>(null);
     const [secretAccessKey, setSecretAccessKey] = useState("");
+    const [pendingConfirmation, setPendingConfirmation] = useState<PendingTransferConfirmation | null>(null);
 
     useEffect(() => {
         const dialog = dialogRef.current;
@@ -124,10 +128,15 @@ export function DataTransferDialog({
     }, [open]);
 
     useEffect(() => {
+        if (pendingConfirmation) confirmationHeadingRef.current?.focus();
+    }, [pendingConfirmation]);
+
+    useEffect(() => {
         if (open) {
             setBusy(false);
             setStatus("");
             setError("");
+            setPendingConfirmation(null);
             setSecretAccessKey("");
             setR2Configuration(EMPTY_OBJECT_STORAGE_CONFIGURATION);
             setRemoteLastModified(null);
@@ -174,6 +183,7 @@ export function DataTransferDialog({
 
     const close = () => {
         if (busy) return;
+        setPendingConfirmation(null);
         setSecretAccessKey("");
         onClose();
     };
@@ -216,31 +226,77 @@ export function DataTransferDialog({
         }
     };
 
-    const uploadToR2 = async () => {
-        if (!window.confirm("上传会直接替换对象存储上的同步数据，远端只保留最新一份。确认继续？")) {
-            setStatus("已取消上传到对象存储");
-            return;
-        }
+    const uploadToR2 = () => {
+        setError("");
+        setStatus("请确认上传；远端现有同步数据将被替换。");
+        setPendingConfirmation({operation: "upload"});
+    };
+
+    const confirmPendingTransfer = async () => {
+        const pending = pendingConfirmation;
+        if (!pending) return;
         setBusy(true);
         setError("");
-        setStatus("正在保存编辑并等待写入完成…");
         try {
-            if (!await onBeforeSync("upload")) {
-                setStatus("已取消上传；请先保存编辑并等待写入完成。");
-                return;
+            if (pending.operation === "upload") {
+                setStatus("正在保存编辑并等待写入完成…");
+                if (!await onBeforeSync("upload")) {
+                    setStatus("已取消上传；请先保存编辑并等待写入完成。");
+                    return;
+                }
+                setStatus("正在同步本机数据到对象存储…");
+                const response = await fetch(`${TRANSFER_URL}/r2/upload`, {method: "POST"});
+                if (!response.ok) throw new Error(await errorMessage(response, "同步到对象存储失败"));
+                const remoteStatus = await response.json() as ObjectStorageStatus;
+                setRemoteLastModified(remoteStatus.remoteLastModified);
+                setPendingConfirmation(null);
+                setStatus(`同步到对象存储完成。远端最后修改：${formatLastModified(remoteStatus.remoteLastModified)}`);
+            } else {
+                if (pending.operation === "download") {
+                    setStatus("正在保存编辑并等待写入完成…");
+                    if (!await onBeforeSync("download")) {
+                        setStatus("已取消同步；请先保存编辑并等待写入完成。");
+                        return;
+                    }
+                } else {
+                    setStatus("正在导入学习数据…");
+                }
+                setStatus(pending.operation === "download"
+                    ? "正在同步 Learner、Journey、学习进度和 Workspace…"
+                    : "正在导入学习数据…");
+                const result = await importJourneysArchive(
+                    pending.archive,
+                    pending.operation === "download" || pending.preview.conflicts.length > 0,
+                );
+                setPendingConfirmation(null);
+                try {
+                    await onJourneysImported();
+                } catch (cause) {
+                    throw new Error(`数据已导入，但页面刷新失败：${cause instanceof Error ? cause.message : "请重新载入学习环境"}`);
+                }
+                setStatus(pending.operation === "download"
+                    ? `从对象存储同步完成：新增 ${result.added.length} 个，覆盖 ${result.replaced.length} 个 Journey`
+                    : `导入完成：新增 ${result.added.length} 个，覆盖 ${result.replaced.length} 个 Journey`);
             }
-            setStatus("正在同步本机数据到对象存储…");
-            const response = await fetch(`${TRANSFER_URL}/r2/upload`, {method: "POST"});
-            if (!response.ok) throw new Error(await errorMessage(response, "同步到对象存储失败"));
-            const remoteStatus = await response.json() as ObjectStorageStatus;
-            setRemoteLastModified(remoteStatus.remoteLastModified);
-            setStatus(`同步到对象存储完成。远端最后修改：${formatLastModified(remoteStatus.remoteLastModified)}`);
         } catch (cause) {
             setStatus("");
-            setError(cause instanceof Error ? cause.message : "同步到对象存储失败");
+            const fallback = pending.operation === "upload"
+                ? "同步到对象存储失败"
+                : pending.operation === "download" ? "从对象存储同步失败" : "导入学习数据失败";
+            setError(cause instanceof Error ? cause.message : fallback);
         } finally {
             setBusy(false);
         }
+    };
+
+    const cancelPendingTransfer = () => {
+        if (!pendingConfirmation || busy) return;
+        const message = pendingConfirmation.operation === "upload"
+            ? "已取消上传到对象存储"
+            : pendingConfirmation.operation === "download" ? "已取消从对象存储同步" : "已取消导入";
+        setPendingConfirmation(null);
+        setError("");
+        setStatus(message);
     };
 
     const downloadFromR2 = async () => {
@@ -254,23 +310,8 @@ export function DataTransferDialog({
             }
             const archive = await downloadResponse.arrayBuffer();
             const preview = await previewJourneys(archive);
-            if (!window.confirm(importConfirmation(preview, "同步到本机"))) {
-                setStatus("已取消从对象存储同步");
-                return;
-            }
-            setStatus("正在保存编辑并等待写入完成…");
-            if (!await onBeforeSync("download")) {
-                setStatus("已取消同步；请先保存编辑并等待写入完成。");
-                return;
-            }
-            setStatus("正在同步 Learner、Journey、学习进度和 Workspace…");
-            const result = await importJourneysArchive(archive, true);
-            try {
-                await onJourneysImported();
-            } catch (cause) {
-                throw new Error(`数据已导入，但页面刷新失败：${cause instanceof Error ? cause.message : "请重新载入学习环境"}`);
-            }
-            setStatus(`从对象存储同步完成：新增 ${result.added.length} 个，覆盖 ${result.replaced.length} 个 Journey`);
+            setPendingConfirmation({operation: "download", archive, preview});
+            setStatus("请检查远端数据预览，并确认同步到本机。");
         } catch (cause) {
             setStatus("");
             setError(cause instanceof Error ? cause.message : "从对象存储同步失败");
@@ -300,18 +341,8 @@ export function DataTransferDialog({
         try {
             const archive = await file.arrayBuffer();
             const preview = await previewJourneys(archive);
-            const confirmed = window.confirm(importConfirmation(preview));
-            if (!confirmed) {
-                setStatus("已取消导入");
-                return;
-            }
-            const result = await importJourneysArchive(archive, preview.conflicts.length > 0);
-            try {
-                await onJourneysImported();
-            } catch (cause) {
-                throw new Error(`数据已导入，但页面刷新失败：${cause instanceof Error ? cause.message : "请重新载入学习环境"}`);
-            }
-            setStatus(`导入完成：新增 ${result.added.length} 个，覆盖 ${result.replaced.length} 个 Journey`);
+            setPendingConfirmation({operation: "import", archive, preview});
+            setStatus("请检查学习数据预览，并确认导入。");
         } catch (cause) {
             setStatus("");
             setError(cause instanceof Error ? `导入失败：${cause.message}` : "导入失败：文件无效");
@@ -384,6 +415,32 @@ export function DataTransferDialog({
                     >×
                     </button>
                 </header>
+                {pendingConfirmation && (
+                    <section className="model-settings-confirmation" aria-labelledby="transfer-confirmation-title">
+                        <h3 id="transfer-confirmation-title" ref={confirmationHeadingRef} tabIndex={-1}>
+                            {pendingConfirmation.operation === "upload"
+                                ? "确认上传到对象存储"
+                                : pendingConfirmation.operation === "download" ? "确认同步到本机" : "确认导入学习数据"}
+                        </h3>
+                        <p className="model-settings-hint model-settings-confirmation-message">
+                            {pendingConfirmation.operation === "upload"
+                                ? "上传会直接替换对象存储上的同步数据，远端只保留最新一份。"
+                                : importConfirmation(pendingConfirmation.preview)}
+                        </p>
+                        {status && <p className="model-settings-feedback" role="status">{status}</p>}
+                        {error && <p className="model-settings-feedback error" role="alert">{error}</p>}
+                        <div className="model-settings-actions">
+                            <button type="button" className="secondary" onClick={cancelPendingTransfer} disabled={busy}>
+                                取消
+                            </button>
+                            <button type="button" onClick={() => void confirmPendingTransfer()} disabled={busy}>
+                                {busy ? "处理中…" : pendingConfirmation.operation === "upload"
+                                    ? "确认上传" : pendingConfirmation.operation === "download" ? "确认同步到本机" : "确认导入"}
+                            </button>
+                        </div>
+                    </section>
+                )}
+                <div hidden={pendingConfirmation !== null}>
                 <h3>S3 兼容对象存储</h3>
                 <p className="model-settings-hint">
                     远端仅保留一份全量学习数据；手动上传会覆盖远端内容。配置和密钥只保存在本机，不进入同步包。
@@ -537,6 +594,7 @@ export function DataTransferDialog({
                 {busy && <p className="model-settings-feedback" role="status">{status || "处理中…"}</p>}
                 {!busy && status && <p className="model-settings-feedback success" role="status">{status}</p>}
                 {error && <p className="model-settings-feedback error" role="alert">{error}</p>}
+                </div>
             </section>
         </dialog>
     );

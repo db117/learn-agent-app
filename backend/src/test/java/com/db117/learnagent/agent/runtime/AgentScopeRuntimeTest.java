@@ -109,6 +109,7 @@ class AgentScopeRuntimeTest {
                 runtime);
         try {
             com.db117.learnagent.agent.api.TutorSessionResponse session = service.createSession(new CreateTutorSessionRequest(1L, 1L));
+            assertTrue(session.currentLearnUnitHasContent());
             List<com.db117.learnagent.agent.api.TutorEvent> events = service.streamTurn(
                             session.sessionId(),
                             new SendTutorMessageRequest("turn-1", "Explain this unit"))
