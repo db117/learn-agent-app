@@ -212,6 +212,7 @@ export default function App() {
     const [tutorWidth, setTutorWidth] = useState(TUTOR_WIDTH_DEFAULT);
     const [pathCollapsed, setPathCollapsed] = useState(false);
     const [tutorCollapsed, setTutorCollapsed] = useState(false);
+    const [tutorFullscreen, setTutorFullscreen] = useState(false);
     const [resizeState, setResizeState] = useState<ResizeState | null>(null);
     const streamController = useRef<AbortController | null>(null);
     const sessionTargetRef = useRef<string | null>(null);
@@ -228,6 +229,20 @@ export default function App() {
             // 本地存储不可用时仍保留当前页面的主题切换。
         }
     }, [theme]);
+
+    useEffect(() => {
+        if (!tutorFullscreen) return;
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") setTutorFullscreen(false);
+        };
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = "hidden";
+        document.addEventListener("keydown", closeOnEscape);
+        return () => {
+            document.body.style.overflow = previousOverflow;
+            document.removeEventListener("keydown", closeOnEscape);
+        };
+    }, [tutorFullscreen]);
 
     useEffect(() => {
         if (!sending) return;
@@ -1187,13 +1202,23 @@ export default function App() {
                 )}
 
                 {bootstrap?.learner && currentJourney && showLearningCard && (
-                    <article className="status-card tutor-card" aria-labelledby="tutor-title">
+                    <article className={`status-card tutor-card ${tutorFullscreen ? "tutor-card-fullscreen" : ""}`}
+                             aria-labelledby="tutor-title">
                         <div className="card-heading card-heading-actions">
                             <div className="card-heading">
                                 <span className={`status-dot ${sessionId ? "connected" : "connecting"}`}
                                       aria-hidden="true"/>
                                 <h2 id="tutor-title">{visibleSessionMode === "PLANNING" ? "规划草稿" : "Tutor Session"}</h2>
                             </div>
+                            <button
+                                type="button"
+                                className="secondary"
+                                aria-pressed={tutorFullscreen}
+                                aria-label={tutorFullscreen ? "退出聊天全屏" : "全屏显示聊天"}
+                                onClick={() => setTutorFullscreen((current) => !current)}
+                            >
+                                {tutorFullscreen ? "退出全屏" : "全屏聊天"}
+                            </button>
                             <button
                                 type="button"
                                 className="secondary"

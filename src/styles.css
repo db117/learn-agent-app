@@ -471,6 +471,24 @@ h3 {
     grid-column: 1 / -1;
 }
 
+.tutor-card-fullscreen {
+    position: fixed;
+    inset: 5.75rem clamp(1rem, 2.5vw, 4rem) 1rem;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: #101a31;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+
+.tutor-card-fullscreen .chat-log {
+    flex: 1 1 16rem;
+    min-height: 12rem;
+    max-height: none;
+}
+
 .card-heading {
     display: flex;
     align-items: center;
@@ -1501,6 +1519,10 @@ button.secondary {
         padding-top: 3rem;
     }
 
+    .tutor-card-fullscreen {
+        inset-block-start: 13rem;
+    }
+
     .status-grid {
         grid-template-columns: 1fr;
         margin-top: 1rem;
@@ -1540,6 +1562,11 @@ button.secondary {
     .app-shell {
         padding-right: 1rem;
         padding-left: 1rem;
+    }
+
+    .tutor-card-fullscreen {
+        inset-block-start: 14.5rem;
+        inset-inline: 1rem;
     }
 
     .status-card {
@@ -1647,6 +1674,11 @@ button.secondary {
 }
 
 :root[data-theme="light"] .workspace-panel-fullscreen {
+    background: var(--light-page);
+    box-shadow: 0 24px 80px rgba(31, 46, 69, 0.22);
+}
+
+:root[data-theme="light"] .tutor-card-fullscreen {
     background: var(--light-page);
     box-shadow: 0 24px 80px rgba(31, 46, 69, 0.22);
 }
