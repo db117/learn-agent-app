@@ -345,21 +345,29 @@ class AgentScopeRuntimeTest {
                     .collectList()
                     .block();
 
+            assertEquals(TutorEventType.TURN_STARTED, events.getFirst().type());
+            assertEquals(TutorEventType.TURN_COMPLETED, events.getLast().type());
             assertTrue(model.sawWorkspaceToolSchema, model.toolSchemaText);
             assertTrue(model.sawLearningContext);
             assertTrue(model.sawToolResult, model.toolResultText + " schema=" + model.toolSchemaText);
-            assertEquals(TutorEventType.TURN_STARTED, events.getFirst().type());
-            assertEquals(TutorEventType.TURN_COMPLETED, events.getLast().type());
             assertTrue(events.stream().anyMatch(event -> event.type() == TutorEventType.TOOL_STARTED));
             assertTrue(events.stream().anyMatch(event -> event.type() == TutorEventType.TOOL_COMPLETED));
+            assertTrue(events.stream().anyMatch(event -> event.type() == TutorEventType.WORKSPACE_CHANGED));
             assertTrue(events.stream().anyMatch(event -> event.type() == TutorEventType.MESSAGE_DELTA));
             assertTrue(events.stream().allMatch(event -> Set.of(
                     TutorEventType.TURN_STARTED,
                     TutorEventType.ACTIVITY,
                     TutorEventType.TOOL_STARTED,
                     TutorEventType.TOOL_COMPLETED,
+                    TutorEventType.WORKSPACE_CHANGED,
                     TutorEventType.MESSAGE_DELTA,
                     TutorEventType.TURN_COMPLETED).contains(event.type())));
+            assertEquals(List.of(TutorEventType.TOOL_COMPLETED, TutorEventType.WORKSPACE_CHANGED),
+                    events.stream()
+                            .filter(event -> "已完成工具 write_file".equals(event.text())
+                                    || event.type() == TutorEventType.WORKSPACE_CHANGED)
+                            .map(event -> event.type())
+                            .toList());
             assertEquals("已读取当前 Workspace。", events.stream()
                     .filter(event -> event.type() == TutorEventType.MESSAGE_DELTA)
                     .findFirst()
@@ -372,9 +380,11 @@ class AgentScopeRuntimeTest {
                     || event.text().contains("private thought")
                     || event.text().contains("provider-secret"))));
             assertTrue(events.stream().filter(event -> event.type() == TutorEventType.TOOL_STARTED)
-                    .allMatch(event -> "已开始工具 read_file".equals(event.text())));
+                    .allMatch(event -> Set.of("已开始工具 read_file", "已开始工具 write_file")
+                            .contains(event.text())));
             assertTrue(events.stream().filter(event -> event.type() == TutorEventType.TOOL_COMPLETED)
-                    .allMatch(event -> "已完成工具 read_file".equals(event.text())));
+                    .allMatch(event -> Set.of("已完成工具 read_file", "已完成工具 write_file")
+                            .contains(event.text())));
         } finally {
             runtime.close();
         }
@@ -436,12 +446,22 @@ class AgentScopeRuntimeTest {
                 toolSchemaText = readFileSchema.map(schema -> schema.getParameters().toString())
                         .orElse("read_file schema was not observed");
                 return Flux.just(ChatResponse.builder()
-                        .content(List.of(ToolUseBlock.builder()
-                                .id("list-files-1")
-                                .name("read_file")
-                                .input(java.util.Map.of("path", "src/index.ts"))
-                                .content("{\"path\":\"src/index.ts\"}")
-                                .build()))
+                        .content(List.of(
+                                ToolUseBlock.builder()
+                                        .id("read-file-1")
+                                        .name("read_file")
+                                        .input(java.util.Map.of("path", "src/index.ts"))
+                                        .content("{\"path\":\"src/index.ts\"}")
+                                        .build(),
+                                ToolUseBlock.builder()
+                                        .id("write-file-1")
+                                        .name("write_file")
+                                        .input(java.util.Map.of(
+                                                "path", "generated/package.json",
+                                                "content", "{\"type\":\"module\"}"))
+                                        .content("{\"path\":\"generated/package.json\","
+                                                + "\"content\":\"{\\\"type\\\":\\\"module\\\"}\"}")
+                                        .build()))
                         .finishReason("tool_calls")
                         .build());
             }

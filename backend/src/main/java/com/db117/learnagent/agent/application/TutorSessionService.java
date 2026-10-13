@@ -252,40 +252,36 @@ public class TutorSessionService {
     }
 
     private Flux<TutorEvent> project(Flux<AgentEvent> events, ActiveTurn active) {
-        return events.handle((event, sink) -> {
-            for (TutorEventMapper.Projection projection : TutorEventMapper.map(event)) {
-                sink.next(active.event(projection.type(), projection.text(), projection.errorCode()));
-            }
+        return events.concatMap(event -> {
+            Flux<TutorEvent> projectedEvents = Flux.fromIterable(TutorEventMapper.map(event))
+                    .map(projection -> active.event(
+                            projection.type(), projection.text(), projection.errorCode()));
             if (event instanceof TextBlockDeltaEvent textDelta) {
-                emitVisibleText(textDelta.getDelta(), active, sink);
+                return projectedEvents.concatWith(emitVisibleText(textDelta.getDelta(), active));
             } else if (event instanceof AgentResultEvent result && !active.hasDelta.get()) {
-                emitVisibleText(result.getResult(), active, sink);
+                return projectedEvents.concatWith(emitVisibleText(result.getResult(), active));
             }
+            return projectedEvents;
         });
     }
 
-    private void emitVisibleText(
-            String text,
-            ActiveTurn active,
-            reactor.core.publisher.SynchronousSink<TutorEvent> sink) {
-        if (text == null || text.isBlank()) {
-            return;
-        }
-        active.hasDelta.set(true);
-        active.answer.append(text);
-        sink.next(active.event(TutorEventType.MESSAGE_DELTA, text, null));
+    private Flux<TutorEvent> emitVisibleText(String text, ActiveTurn active) {
+        return Flux.defer(() -> {
+            if (text == null || text.isBlank()) {
+                return Flux.empty();
+            }
+            active.hasDelta.set(true);
+            active.answer.append(text);
+            return Flux.just(active.event(TutorEventType.MESSAGE_DELTA, text, null));
+        });
     }
 
-    private void emitVisibleText(
-            Msg message,
-            ActiveTurn active,
-            reactor.core.publisher.SynchronousSink<TutorEvent> sink) {
+    private Flux<TutorEvent> emitVisibleText(Msg message, ActiveTurn active) {
         if (message == null) {
-            return;
+            return Flux.empty();
         }
-        for (TextBlock block : message.getContentBlocks(TextBlock.class)) {
-            emitVisibleText(block.getText(), active, sink);
-        }
+        return Flux.fromIterable(message.getContentBlocks(TextBlock.class))
+                .concatMap(block -> emitVisibleText(block.getText(), active));
     }
 
     private Flux<TutorEvent> complete(ActiveTurn active) {

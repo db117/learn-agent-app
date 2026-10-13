@@ -6,16 +6,27 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.model.ModelHttpException;
 import io.agentscope.core.model.ToolSchema;
+import io.agentscope.core.model.transport.HttpTransportException;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import io.agentscope.extensions.model.openai.exception.OpenAIException;
 import jakarta.enterprise.context.ApplicationScoped;
 import reactor.core.publisher.Flux;
+import reactor.util.retry.Retry;
 
+import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Tutor 使用的可热切换模型；AgentScope Harness 始终持有本委托对象。 */
 @ApplicationScoped
 public class TutorModel implements Model {
+    private static final int MAX_MODEL_RETRIES = 5;
+    private static final Duration MODEL_RETRY_INITIAL_BACKOFF = Duration.ofSeconds(1);
+    private static final Duration MODEL_RETRY_MAX_BACKOFF = Duration.ofSeconds(16);
+
     private volatile ActiveModel active = new ActiveModel(
             new ModelConfiguration("", "", "", OpenAIProtocol.CHAT_COMPLETIONS), null);
 
@@ -75,7 +86,38 @@ public class TutorModel implements Model {
         if (model == null) {
             return Flux.error(new IllegalStateException("tutor model is not configured"));
         }
-        return model.stream(messages, tools, options);
+        return Flux.defer(() -> {
+            AtomicBoolean responseEmitted = new AtomicBoolean();
+            return Flux.defer(() -> model.stream(messages, tools, options)
+                            .doOnNext(ignored -> responseEmitted.set(true)))
+                    .retryWhen(Retry.backoff(MAX_MODEL_RETRIES, MODEL_RETRY_INITIAL_BACKOFF)
+                            .maxBackoff(MODEL_RETRY_MAX_BACKOFF)
+                            .jitter(0)
+                            .filter(error -> !responseEmitted.get() && isRetryableModelFailure(error))
+                            .onRetryExhaustedThrow((spec, signal) -> signal.failure()));
+        });
+    }
+
+    private static boolean isRetryableModelFailure(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ModelHttpException modelHttpException
+                    && (modelHttpException.isRetryableHttpStatus()
+                    || Integer.valueOf(408).equals(modelHttpException.getStatusCode()))) {
+                return true;
+            }
+            if (cause instanceof HttpTransportException transportException
+                    && transportException.isRetryable()) {
+                return true;
+            }
+            // 兼容网关会把流内的这类临时上游故障错误地标成 HTTP 400。
+            if (cause instanceof OpenAIException
+                    && cause.getMessage() != null
+                    && cause.getMessage().toLowerCase(Locale.ROOT)
+                    .contains("upstream service temporarily unavailable")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
