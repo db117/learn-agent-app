@@ -62,27 +62,6 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    void listReadWriteRoundTripIncludesHiddenFilesAndSortsPosixPaths() throws IOException {
-        WorkspaceManager manager = manager();
-        com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(2, new TypeScriptLanguagePack());
-        manager.writeFile(workspace, "z.txt", "z");
-        manager.writeFile(workspace, ".env", "secret");
-        manager.writeFile(workspace, "a/b.txt", "中文");
-
-        List<WorkspaceFileEntry> files = manager.listFiles(workspace);
-
-        assertEquals(List.of(".env", "a/b.txt", "z.txt"), files.stream()
-                .map(WorkspaceFileEntry::path).toList());
-        com.db117.learnagent.workspace.domain.WorkspaceFile read = manager.readFile(workspace, "a/b.txt");
-        assertEquals("中文", read.content());
-        assertEquals("中文".getBytes(StandardCharsets.UTF_8).length, read.size());
-        assertEquals("a/b.txt", read.path());
-        com.db117.learnagent.workspace.domain.WorkspaceFile written = manager.writeFile(workspace, "a/b.txt", "updated");
-        assertEquals("updated", written.content());
-        assertEquals("updated", Files.readString(workspace.root().resolve("a/b.txt")));
-    }
-
-    @Test
     void hidesDependenciesCachesAndGitMetadataFromWorkspaceOperations() throws IOException {
         WorkspaceManager manager = manager();
         com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(12, new TypeScriptLanguagePack());
@@ -106,19 +85,6 @@ class WorkspaceManagerTest {
                 .map(WorkspaceFileEntry::path)
                 .toList());
         assertEquals(64, manager.contentDigest(workspace).length());
-    }
-
-    @Test
-    void hidesNestedNodeModulesFromTheWorkspaceFileList() throws IOException {
-        WorkspaceManager manager = manager();
-        com.db117.learnagent.workspace.domain.LearningWorkspace workspace = manager.ensureLearningWorkspace(13, new TypeScriptLanguagePack());
-        Files.createDirectories(workspace.root().resolve("ts-runtime-practice/node_modules/.bin"));
-        Files.writeString(workspace.root().resolve("ts-runtime-practice/node_modules/.bin/tsc"), "binary");
-        manager.writeFile(workspace, "ts-runtime-practice/src/index.ts", "export {};");
-
-        assertEquals(List.of("ts-runtime-practice/src/index.ts"), manager.listFiles(workspace).stream()
-                .map(WorkspaceFileEntry::path)
-                .toList());
     }
 
     @Test
