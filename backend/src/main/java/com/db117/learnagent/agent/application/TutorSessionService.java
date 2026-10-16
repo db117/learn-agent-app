@@ -347,7 +347,7 @@ public class TutorSessionService {
         messages.set(userIndex, user.withMetadata(metadata));
 
         if (!COMPLETED.equals(status)) {
-            removeAssistantMessagesAfter(messages, userIndex);
+            removeTurnMessagesAfter(messages, userIndex);
         } else if (findAssistantAfter(messages, userIndex).isEmpty()) {
             messages.add(AssistantMessage.builder().textContent(active.answer.toString()).build());
         }
@@ -434,14 +434,12 @@ public class TutorSessionService {
         return Optional.empty();
     }
 
-    private void removeAssistantMessagesAfter(List<Msg> messages, int userIndex) {
+    private void removeTurnMessagesAfter(List<Msg> messages, int userIndex) {
         for (int index = messages.size() - 1; index > userIndex; index--) {
             if (messages.get(index).getRole() == MsgRole.USER) {
                 break;
             }
-            if (messages.get(index).getRole() == MsgRole.ASSISTANT) {
-                messages.remove(index);
-            }
+            messages.remove(index);
         }
     }
 

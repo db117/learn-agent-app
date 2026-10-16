@@ -203,6 +203,39 @@ class AgentScopeRuntimeTest {
     }
 
     @Test
+    void failedTurnRemovesToolResultsFromAgentState() throws Exception {
+        Path root = Files.createTempDirectory("tutor-tool-failure");
+        ToolThenFailingModel model = new ToolThenFailingModel();
+        TutorAgentRuntime runtime = new TutorAgentRuntime(
+                testConfig(root, true), new TutorModel(model), root.resolve("agent"));
+        TutorSessionService service = new TutorSessionService(
+                contextAssembler(
+                        new FakeLearnerRepository(),
+                        new FakeParentJourneyRepository(),
+                        new FakeJourneyRepository()),
+                runtime);
+        try {
+            com.db117.learnagent.agent.api.TutorSessionResponse session = service.createSession(
+                    new CreateTutorSessionRequest(1L, 1L));
+            List<com.db117.learnagent.agent.api.TutorEvent> events = service.streamTurn(
+                            session.sessionId(),
+                            new SendTutorMessageRequest("tool-fail", "请保存记忆后解释"))
+                    .collectList()
+                    .block();
+
+            assertEquals(TutorEventType.TURN_FAILED, events.get(events.size() - 1).type());
+            assertTrue(model.sawToolResult);
+            assertEquals(2, model.calls.get());
+            AgentState state = runtime.loadState("1", session.sessionId()).orElseThrow();
+            assertFalse(state.getContext().stream()
+                    .flatMap(message -> message.getContentBlocks(ToolResultBlock.class).stream())
+                    .anyMatch(result -> "memory_save".equals(result.getName())));
+        } finally {
+            runtime.close();
+        }
+    }
+
+    @Test
     void planningSessionStartsBeforeLearningJourneyExists() throws Exception {
         Path root = Files.createTempDirectory("tutor-planning");
         TutorAgentRuntime runtime = new TutorAgentRuntime(testConfig(root), new TutorModel(null), root.resolve("agent"));
@@ -506,6 +539,38 @@ class AgentScopeRuntimeTest {
         @Override
         public String getModelName() {
             return "failing-tutor";
+        }
+    }
+
+    private static final class ToolThenFailingModel implements Model {
+        private final AtomicInteger calls = new AtomicInteger();
+        private boolean sawToolResult;
+
+        @Override
+        public Flux<ChatResponse> stream(
+                List<Msg> messages,
+                List<ToolSchema> tools,
+                GenerateOptions options) {
+            if (calls.incrementAndGet() == 1) {
+                return Flux.just(ChatResponse.builder()
+                        .content(List.of(ToolUseBlock.builder()
+                                .id("memory-save-1")
+                                .name("memory_save")
+                                .input(Map.of("content", "- regression memory"))
+                                .content("{\"content\":\"- regression memory\"}")
+                                .build()))
+                        .finishReason("tool_calls")
+                        .build());
+            }
+            sawToolResult = messages.stream()
+                    .flatMap(message -> message.getContentBlocks(ToolResultBlock.class).stream())
+                    .anyMatch(result -> "memory_save".equals(result.getName()));
+            return Flux.error(new IllegalStateException("expected failure after tool result"));
+        }
+
+        @Override
+        public String getModelName() {
+            return "tool-then-failing-tutor";
         }
     }
 
